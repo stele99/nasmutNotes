@@ -1,0 +1,95 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Domain\TaskBoardService;
+use App\Support\CurrentUser;
+use App\Support\JsonResponse;
+use Psr\Http\Message\ResponseInterface as Response;
+use Psr\Http\Message\ServerRequestInterface as Request;
+
+final class TaskController
+{
+    public function __construct(private readonly TaskBoardService $board)
+    {
+    }
+
+    /** @param array<string, string> $args */
+    public function store(Request $request, Response $response, array $args): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $task = $this->board->createTask(
+            CurrentUser::require($request),
+            (int) $args['id'],
+            (string) ($body['title'] ?? ''),
+            isset($body['description']) ? (string) $body['description'] : null,
+            isset($body['responsible']) ? (string) $body['responsible'] : null,
+            isset($body['link']) ? (string) $body['link'] : null,
+        );
+
+        return JsonResponse::json($response, self::serialize($task), 201);
+    }
+
+    /** @param array<string, string> $args */
+    public function update(Request $request, Response $response, array $args): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $task = $this->board->updateTask(CurrentUser::require($request), (int) $args['id'], $body);
+
+        return JsonResponse::json($response, self::serialize($task));
+    }
+
+    /** @param array<string, string> $args */
+    public function destroy(Request $request, Response $response, array $args): Response
+    {
+        $this->board->deleteTask(CurrentUser::require($request), (int) $args['id']);
+
+        return $response->withStatus(204);
+    }
+
+    /** @param array<string, string> $args */
+    public function duplicate(Request $request, Response $response, array $args): Response
+    {
+        $task = $this->board->duplicateTask(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, self::serialize($task), 201);
+    }
+
+    /** @param array<string, string> $args */
+    public function move(Request $request, Response $response, array $args): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $task = $this->board->moveTask(
+            CurrentUser::require($request),
+            (int) $args['id'],
+            (int) ($body['category_id'] ?? 0),
+            (int) ($body['position'] ?? 0),
+        );
+
+        return JsonResponse::json($response, self::serialize($task));
+    }
+
+    /**
+     * @param array<string, mixed> $task
+     * @return array<string, mixed>
+     */
+    public static function serialize(array $task): array
+    {
+        return [
+            'id' => (int) $task['id'],
+            'category_id' => (int) $task['category_id'],
+            'title' => $task['title'],
+            'description' => $task['description'],
+            'responsible' => $task['responsible'],
+            'link' => $task['link'],
+            'position' => (int) $task['position'],
+            'is_done' => ((int) $task['is_done']) === 1,
+            'due_date' => $task['due_date'],
+            'priority' => $task['priority'],
+            'created_at' => $task['created_at'],
+            'updated_at' => $task['updated_at'],
+        ];
+    }
+}
