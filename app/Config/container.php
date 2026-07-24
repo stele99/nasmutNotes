@@ -6,9 +6,11 @@ use App\Controllers\HealthController;
 use App\Domain\Auth\AuthService;
 use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
+use App\Domain\Notes\AttachmentService;
 use App\Domain\PageService;
 use App\Domain\SessionService;
 use App\Repositories\InviteRepository;
+use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\SearchRepository;
 use App\Repositories\SessionRepository;
@@ -20,6 +22,7 @@ use App\Support\Database;
 use App\Support\Env;
 use App\Support\RateLimiter;
 use App\Support\Renderer;
+use App\Support\UploadStorage;
 use App\Support\View;
 use App\Support\Vite;
 use DI\ContainerBuilder;
@@ -69,6 +72,9 @@ return static function (string $rootPath): DI\Container {
 
         SearchRepository::class => static fn (PDO $pdo): SearchRepository => new SearchRepository($pdo),
 
+        NoteAttachmentRepository::class => static fn (PDO $pdo): NoteAttachmentRepository
+            => new NoteAttachmentRepository($pdo),
+
         SessionService::class => static fn (SessionRepository $sessions, UserRepository $users): SessionService
             => new SessionService($sessions, $users, Env::int('SESSION_LIFETIME_DAYS', 30)),
 
@@ -82,7 +88,24 @@ return static function (string $rootPath): DI\Container {
 
         Renderer::class => static fn (View $view, Vite $vite): Renderer => new Renderer($view, $vite),
 
-        HealthController::class => static fn (PDO $pdo): HealthController => new HealthController($pdo, $rootPath),
+        UploadStorage::class => static fn (): UploadStorage => new UploadStorage(
+            $rootPath,
+            Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads',
+        ),
+
+        AttachmentService::class => static fn (
+            PageService $pages,
+            NoteAttachmentRepository $attachments,
+            UploadStorage $storage,
+        ): AttachmentService => new AttachmentService(
+            $pages,
+            $attachments,
+            $storage,
+            Env::int('MAX_UPLOAD_MB', 10),
+        ),
+
+        HealthController::class => static fn (PDO $pdo, UploadStorage $storage): HealthController
+            => new HealthController($pdo, $storage),
 
         WorkspaceRepository::class => static fn (PDO $pdo): WorkspaceRepository => new WorkspaceRepository($pdo),
 

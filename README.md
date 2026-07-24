@@ -11,12 +11,12 @@ Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
 - Google-OAuth-2.0-Login (Authorization Code Flow + PKCE), Invite-Link-Registrierung, Admin-Bootstrap über `ADMIN_EMAILS`
 - Workspace- und Seitenverwaltung (Notiz-/Task-Seiten, Papierkorb, Favoriten, Sortierung/Filter)
 - Freigabe von Notiz- und Task-Seiten per Link mit Lese-/Schreibberechtigung und Empfänger-Seitenliste
-- Notizseiten mit TipTap-Editor, Autosave, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
+- Notizseiten mit TipTap-Editor, Autosave, Screenshot-Paste/Drag-and-drop, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
 - Task-Seiten mit Kategorien und Tasks (Anlegen, Bearbeiten, Verschieben, Duplizieren, Löschen mit Verschieben/Kaskade)
 - Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff
 - Automatisierte Tests (PHPUnit) und PHPStan Level 8 für `app/`, `bin/console.php`, `tests/`
 
-Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche (Kap. 6 — Schema ist vorbereitet), Bulk-Import (5.6), Export (5.8), vollständiges Admin-Panel (Nutzerliste/Audit-Ansicht), Papierkorb-Retention-Cron, Versionsverlauf-UI, Bild-Upload, Listen-Ansicht für Tasks.
+Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche (Kap. 6 — Schema ist vorbereitet), Export (5.8), vollständiges Admin-Panel (Nutzerliste/Audit-Ansicht), Papierkorb-Retention-Cron, Versionsverlauf-UI und Listen-Ansicht für Tasks.
 
 ## Voraussetzungen
 
@@ -69,6 +69,9 @@ dem Upload automatisch `php bin/console.php migrate` ausgeführt.
    relativ zum Projekt-Root.
 4. Den PHP-CLI-Befehl des Hosters ermitteln. Das ist je nach Anbieter zum
    Beispiel `php`, `php8.4` oder ein absoluter Pfad.
+5. Das persistente `UPLOAD_PATH` anlegen und für den PHP-Prozess beschreibbar
+   machen. `upload_max_filesize` und `post_max_size` müssen mindestens so groß
+   wie `MAX_UPLOAD_MB` konfiguriert sein.
 
 Der Hoster benötigt neben SSH auch `scp`, `tar` und einen passenden PHP-CLI-
 Befehl. Der für GitHub Actions verwendete private Schlüssel darf in der
@@ -139,7 +142,8 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 | `APP_KEY` | Zufälliger Schlüssel für Signaturen (OAuth-Flight-Cookie); `base64:`-Prefix, ≥ 32 Byte |
 | `APP_DEBUG` | Im Produktivbetrieb zwingend `false` (sonst Stacktraces im Response) |
 | `DB_PATH` | Pfad zur SQLite-Datei, relativ zum Projekt-Root oder absolut (`:memory:` für Tests) |
-| `UPLOAD_PATH` | Verzeichnis für zukünftige Datei-Uploads |
+| `UPLOAD_PATH` | Persistentes Upload-Verzeichnis außerhalb des Webroots; relativ zum Projekt-Root oder absolut |
+| `MAX_UPLOAD_MB` | Maximale Größe eines eingefügten Bildes; PHP-Uploadlimits müssen mindestens genauso hoch sein |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | OAuth-Client-Zugangsdaten |
 | `GOOGLE_HOSTED_DOMAIN` | Optional: Login auf eine Google-Workspace-Domain beschränken |
 | `ADMIN_EMAILS` | Kommagetrennte Liste von Admin-E-Mail-Adressen (case-insensitiv) |

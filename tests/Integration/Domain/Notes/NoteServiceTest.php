@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain\Notes;
 
+use App\Domain\Notes\NoteContentException;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\Notes\VersionConflictException;
 use App\Domain\PageService;
 use App\Domain\User;
+use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NoteContentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\WorkspaceRepository;
@@ -29,7 +31,12 @@ final class NoteServiceTest extends TestCase
         $pdo = $this->makeDatabase();
         $workspaces = new WorkspaceRepository($pdo);
         $pages = new PageService(new PageRepository($pdo), $workspaces);
-        $this->notes = new NoteService($pages, new NoteContentRepository($pdo), new ProseMirrorValidator());
+        $this->notes = new NoteService(
+            $pages,
+            new NoteContentRepository($pdo),
+            new NoteAttachmentRepository($pdo),
+            new ProseMirrorValidator(),
+        );
 
         $this->user = $this->makeUser($pdo, $workspaces, 'a@example.com');
         $page = $pages->create($this->user, 'note', 'Notiz', null);
@@ -80,5 +87,24 @@ final class NoteServiceTest extends TestCase
         } catch (VersionConflictException $e) {
             self::assertSame(2, $e->currentVersion);
         }
+    }
+
+    public function testRejectsAttachmentThatDoesNotBelongToPage(): void
+    {
+        $this->expectException(NoteContentException::class);
+
+        $this->notes->save($this->user, $this->pageId, [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => [
+                    'src' => '/api/attachments/' . str_repeat('c', 64),
+                    'alt' => 'Screenshot',
+                    'title' => null,
+                    'width' => 1,
+                    'height' => 1,
+                ],
+            ]],
+        ], 1);
     }
 }

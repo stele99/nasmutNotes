@@ -7,9 +7,10 @@ const LOCAL_CACHE_PREFIX = 'notes-note-cache-';
 export function noteEditorPage() {
   // ProseMirror keeps mutable transaction state and must not be made reactive by Alpine.
   let editor = null;
+  const pendingUploads = new Set();
 
   return {
-    status: 'loading', // loading | saved | saving | unsaved | offline | conflict
+    status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
     version: 0,
     pageId: null,
     canEditPage: Boolean(window.__CURRENT_PAGE_CAN_EDIT__),
@@ -27,6 +28,13 @@ export function noteEditorPage() {
     beforeUnloadHandler: null,
     keyDownHandler: null,
     navigationHandler: null,
+    pendingImageUploads: 0,
+    imageUploadError: '',
+    saveError: '',
+    linkMenuOpen: false,
+    activeLinkHref: '',
+    activeLinkPosition: 0,
+    linkMenuStyle: '',
 
     async init() {
       const pageRoot = this.$root;
@@ -61,6 +69,12 @@ export function noteEditorPage() {
         editable: this.canEditPage,
         onUpdate: (json) => this.onChange(json),
         onTransaction: () => this.syncToolbar(),
+        onImageUpload: (file) => this.uploadImage(file),
+        onImageUploadError: (error) => this.handleImageUploadError(error),
+        onPendingImageUploads: (count) => {
+          this.pendingImageUploads = count;
+        },
+        onLinkClick: (link) => this.openLinkMenu(link),
       });
       this.syncToolbar();
 
@@ -86,6 +100,7 @@ export function noteEditorPage() {
       };
       window.addEventListener('keydown', this.keyDownHandler);
       this.navigationHandler = async () => {
+        await Promise.allSettled(Array.from(pendingUploads));
         if (this.status === 'unsaved') {
           await this.saveNow();
         }
@@ -110,6 +125,7 @@ export function noteEditorPage() {
       const content = editor.getJSON();
       this.pendingSave = true;
       this.status = 'saving';
+      this.saveError = '';
 
       try {
         const result = await apiFetch(`/api/pages/${this.pageId}/content`, {
@@ -127,6 +143,9 @@ export function noteEditorPage() {
           this.status = 'conflict';
           this.conflictContent = e.payload.current;
           this.version = e.payload.current.version;
+        } else if (e.status === 400 || e.status === 403 || e.status === 413 || e.status === 422) {
+          this.status = 'invalid';
+          this.saveError = e.message || 'Der Notizinhalt konnte nicht gespeichert werden.';
         } else {
           this.status = 'offline';
           this.pendingSave = false;
@@ -146,14 +165,74 @@ export function noteEditorPage() {
     },
 
     statusLabel() {
+      if (this.pendingImageUploads > 0) {
+        return this.pendingImageUploads === 1 ? 'Bild wird hochgeladen…' : 'Bilder werden hochgeladen…';
+      }
       return {
         loading: 'Lädt…',
         saved: 'Gespeichert',
         saving: 'Speichern…',
         unsaved: 'Nicht gespeichert',
         offline: 'Keine Verbindung – wird erneut versucht…',
+        invalid: 'Speichern fehlgeschlagen',
         conflict: 'Konflikt: Version wurde anderswo geändert',
       }[this.status];
+    },
+
+    uploadImage(file) {
+      this.imageUploadError = '';
+      const body = new FormData();
+      body.append('file', file, file.name || 'screenshot.png');
+      const request = apiFetch(`/api/pages/${this.pageId}/attachments`, {
+        method: 'POST',
+        body,
+      });
+      pendingUploads.add(request);
+      request.then(
+        () => pendingUploads.delete(request),
+        () => pendingUploads.delete(request),
+      );
+
+      return request;
+    },
+
+    handleImageUploadError(error) {
+      this.imageUploadError = error?.message || 'Das Bild konnte nicht eingefügt werden.';
+    },
+
+    openLinkMenu(link) {
+      this.activeLinkHref = link.href;
+      this.activeLinkPosition = link.position;
+      this.linkMenuStyle = `left: ${Math.max(8, link.left)}px; top: ${Math.max(8, link.top)}px;`;
+      this.linkMenuOpen = true;
+    },
+
+    closeLinkMenu() {
+      this.linkMenuOpen = false;
+    },
+
+    openActiveLink() {
+      if (!this.activeLinkHref) {
+        return;
+      }
+      const opened = window.open(this.activeLinkHref, '_blank', 'noopener,noreferrer');
+      if (opened) {
+        opened.opener = null;
+      }
+      this.closeLinkMenu();
+    },
+
+    editActiveLink() {
+      if (!this.canEditPage || !editor) {
+        return;
+      }
+      editor.chain()
+        .focus()
+        .setTextSelection(this.activeLinkPosition)
+        .extendMarkRange('link')
+        .run();
+      this.closeLinkMenu();
+      this.toggleLink();
     },
 
     async savePageTitle() {
@@ -300,6 +379,9 @@ export function noteEditorPage() {
     toggleLink() {
       if (!editor) {
         return;
+      }
+      if (editor.isActive('link')) {
+        editor.chain().extendMarkRange('link').run();
       }
       const current = editor.getAttributes('link').href || '';
       const href = prompt('Link-Adresse', current);

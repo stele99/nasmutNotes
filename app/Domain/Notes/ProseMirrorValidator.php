@@ -18,9 +18,10 @@ final class ProseMirrorValidator
         'taskList', 'taskItem',
         'codeBlock', 'blockquote', 'horizontalRule', 'hardBreak',
         'table', 'tableRow', 'tableCell', 'tableHeader',
+        'image',
     ];
 
-    private const MARK_TYPES = ['bold', 'italic', 'strike', 'code', 'link'];
+    private const MARK_TYPES = ['bold', 'italic', 'underline', 'strike', 'code', 'link'];
 
     /** @param array<string, mixed> $doc */
     public function validate(array $doc): void
@@ -45,6 +46,12 @@ final class ProseMirrorValidator
             if (!is_int($level) || $level < 1 || $level > 3) {
                 throw new NoteContentException('Überschriften sind nur in den Ebenen H1–H3 erlaubt.');
             }
+        }
+
+        if ($type === 'image') {
+            $this->validateImage($node['attrs'] ?? null);
+
+            return;
         }
 
         if ($type === 'text') {
@@ -92,6 +99,64 @@ final class ProseMirrorValidator
         $this->collectText($doc, $parts);
 
         return trim(preg_replace('/\n{3,}/', "\n\n", implode('', $parts)) ?? '');
+    }
+
+    /**
+     * @param array<string, mixed> $doc
+     * @return string[]
+     */
+    public function attachmentTokens(array $doc): array
+    {
+        $tokens = [];
+        $this->collectAttachmentTokens($doc, $tokens);
+
+        return array_values(array_unique($tokens));
+    }
+
+    private function validateImage(mixed $attrs): void
+    {
+        if (!is_array($attrs)) {
+            throw new NoteContentException('Bildknoten ohne gültige Attribute.');
+        }
+
+        $src = $attrs['src'] ?? null;
+        if (!is_string($src) || preg_match('#^/api/attachments/[a-f0-9]{64}$#', $src) !== 1) {
+            throw new NoteContentException('Bilder müssen aus dem geschützten Attachment-Speicher stammen.');
+        }
+
+        foreach (['alt', 'title'] as $key) {
+            $value = $attrs[$key] ?? null;
+            if ($value !== null && (!is_string($value) || mb_strlen($value) > 500)) {
+                throw new NoteContentException("Ungültiges Bildattribut: {$key}.");
+            }
+        }
+
+        foreach (['width', 'height'] as $key) {
+            $value = $attrs[$key] ?? null;
+            if ($value !== null && (!is_int($value) && !is_float($value) || $value < 1 || $value > 20_000)) {
+                throw new NoteContentException("Ungültiges Bildattribut: {$key}.");
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $node
+     * @param string[] $tokens
+     */
+    private function collectAttachmentTokens(array $node, array &$tokens): void
+    {
+        if (($node['type'] ?? null) === 'image') {
+            $src = $node['attrs']['src'] ?? null;
+            if (is_string($src) && preg_match('#^/api/attachments/([a-f0-9]{64})$#', $src, $matches) === 1) {
+                $tokens[] = $matches[1];
+            }
+        }
+
+        foreach ((array) ($node['content'] ?? []) as $child) {
+            if (is_array($child)) {
+                $this->collectAttachmentTokens($child, $tokens);
+            }
+        }
     }
 
     /**

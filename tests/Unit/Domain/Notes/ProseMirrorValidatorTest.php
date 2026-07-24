@@ -27,6 +27,7 @@ final class ProseMirrorValidatorTest extends TestCase
                 ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'Titel']]],
                 ['type' => 'paragraph', 'content' => [
                     ['type' => 'text', 'text' => 'fett', 'marks' => [['type' => 'bold']]],
+                    ['type' => 'text', 'text' => 'unterstrichen', 'marks' => [['type' => 'underline']]],
                     ['type' => 'text', 'text' => 'link', 'marks' => [['type' => 'link', 'attrs' => ['href' => 'https://example.com']]]],
                 ]],
                 ['type' => 'codeBlock', 'attrs' => ['language' => 'php'], 'content' => [['type' => 'text', 'text' => 'echo 1;']]],
@@ -48,6 +49,52 @@ final class ProseMirrorValidatorTest extends TestCase
             'type' => 'doc',
             'content' => [['type' => 'script', 'content' => [['type' => 'text', 'text' => 'alert(1)']]]],
         ]);
+    }
+
+    public function testAcceptsProtectedImageNode(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $this->validator->validate([
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => [
+                    'src' => '/api/attachments/' . str_repeat('a', 64),
+                    'alt' => 'Screenshot',
+                    'title' => null,
+                    'width' => 800,
+                    'height' => 600,
+                ],
+            ]],
+        ]);
+    }
+
+    public function testRejectsExternalImageSource(): void
+    {
+        $this->expectException(NoteContentException::class);
+
+        $this->validator->validate([
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => ['src' => 'https://example.com/image.png'],
+            ]],
+        ]);
+    }
+
+    public function testExtractsAttachmentTokens(): void
+    {
+        $token = str_repeat('b', 64);
+        $tokens = $this->validator->attachmentTokens([
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => ['src' => '/api/attachments/' . $token],
+            ]],
+        ]);
+
+        self::assertSame([$token], $tokens);
     }
 
     public function testRejectsHeadingLevelOutsideH1ToH3(): void
@@ -79,7 +126,7 @@ final class ProseMirrorValidatorTest extends TestCase
         $this->validator->validate([
             'type' => 'doc',
             'content' => [['type' => 'paragraph', 'content' => [
-                ['type' => 'text', 'text' => 'x', 'marks' => [['type' => 'underline']]],
+                ['type' => 'text', 'text' => 'x', 'marks' => [['type' => 'highlight']]],
             ]]],
         ]);
     }

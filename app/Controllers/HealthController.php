@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Support\JsonResponse;
+use App\Support\UploadStorage;
 use PDO;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 final class HealthController
 {
-    public function __construct(private readonly PDO $pdo, private readonly string $rootPath)
-    {
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly UploadStorage $uploadStorage,
+    ) {
     }
 
     public function __invoke(Request $request, Response $response): Response
@@ -27,8 +30,7 @@ final class HealthController
             $dbOk = false;
         }
 
-        $uploadPath = $this->rootPath . '/' . (getenv('UPLOAD_PATH') ?: 'var/uploads');
-        $uploadWritable = is_dir($uploadPath) && is_writable($uploadPath);
+        $uploadWritable = $this->uploadStorage->isWritable();
 
         $status = $dbOk && $uploadWritable ? 'ok' : 'degraded';
 

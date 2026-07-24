@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Controllers\Admin\InviteAdminController;
 use App\Controllers\AppController;
+use App\Controllers\AttachmentController;
 use App\Controllers\AuthController;
 use App\Controllers\BoardController;
 use App\Controllers\CategoryController;
@@ -57,6 +58,7 @@ return static function (App $app): void {
         $group->delete('/{id}/share-access', [ShareController::class, 'leave']);
         $group->get('/{id}/content', [NoteController::class, 'show']);
         $group->put('/{id}/content', [NoteController::class, 'update']);
+        $group->post('/{id}/attachments', [AttachmentController::class, 'store']);
         $group->get('/{id}/board', [BoardController::class, 'show']);
         $group->post('/{id}/categories', [BoardController::class, 'createCategory']);
     })->add(new RequireAuthMiddleware(true));
@@ -76,6 +78,9 @@ return static function (App $app): void {
     })->add(new RequireAuthMiddleware(true));
 
     $app->delete('/api/shares/{id}', [ShareController::class, 'destroy'])
+        ->add(new RequireAuthMiddleware(true));
+
+    $app->get('/api/attachments/{token}', [AttachmentController::class, 'show'])
         ->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));

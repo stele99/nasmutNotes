@@ -6,6 +6,7 @@ namespace App\Domain\Notes;
 
 use App\Domain\PageService;
 use App\Domain\User;
+use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NoteContentRepository;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
@@ -17,6 +18,7 @@ final class NoteService
     public function __construct(
         private readonly PageService $pages,
         private readonly NoteContentRepository $noteContents,
+        private readonly NoteAttachmentRepository $attachments,
         private readonly ProseMirrorValidator $validator,
     ) {
     }
@@ -52,6 +54,13 @@ final class NoteService
         $this->pages->assertCanWrite($user, $pageId);
 
         $this->validator->validate($content);
+        $attachmentHashes = array_map(
+            static fn (string $token): string => hash('sha256', $token),
+            $this->validator->attachmentTokens($content),
+        );
+        if (!$this->attachments->allBelongToPage((int) $page['id'], $attachmentHashes)) {
+            throw new NoteContentException('Mindestens ein Bild gehört nicht zu dieser Notizseite.');
+        }
 
         $encoded = json_encode($content, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($encoded === false || strlen($encoded) > self::MAX_BYTES) {

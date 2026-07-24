@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Notes\AttachmentService;
 use App\Domain\PageService;
 use App\Repositories\AuditLogRepository;
 use App\Support\CurrentUser;
@@ -17,6 +18,7 @@ final class PageController
     public function __construct(
         private readonly PageService $pages,
         private readonly AuditLogRepository $auditLog,
+        private readonly AttachmentService $attachments,
     ) {
     }
 
@@ -78,7 +80,9 @@ final class PageController
     {
         $user = CurrentUser::require($request);
         $pageId = (int) $args['id'];
+        $storageNames = $this->attachments->storageNamesForOwnedPage($user, $pageId);
         $this->pages->purge($user, $pageId);
+        $this->attachments->deleteStoredFiles($storageNames);
         $this->auditLog->log($user->id, 'page_purged', 'page', $pageId, RequestIp::hash($request));
 
         return $response->withStatus(204);

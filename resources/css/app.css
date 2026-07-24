@@ -120,6 +120,28 @@ textarea::placeholder {
   padding-bottom: 1rem;
 }
 
+.note-page {
+  --note-sticky-header-height: 3rem;
+}
+
+.note-sticky-header {
+  background: var(--color-bg);
+  min-height: var(--note-sticky-header-height);
+  padding-top: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.note-sticky-toolbar {
+  background: var(--color-bg);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-border) 70%, transparent);
+  padding-top: 0.75rem;
+  position: sticky;
+  top: var(--note-sticky-header-height);
+  z-index: 25;
+}
+
 .page-title-input {
   appearance: none;
   background: transparent;
@@ -272,6 +294,104 @@ textarea::placeholder {
   margin: 2em 0;
 }
 
+.prose-editor .tiptap img {
+  border-radius: var(--radius-md);
+  display: block;
+  height: auto;
+  margin: 1.5rem auto;
+  max-width: 100%;
+}
+
+.prose-editor .tiptap img.ProseMirror-selectednode {
+  outline: 3px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  outline-offset: 3px;
+}
+
+.prose-editor [data-resize-container] {
+  justify-content: center;
+  margin: 1.5rem auto;
+  max-width: 100%;
+}
+
+.prose-editor [data-resize-wrapper] {
+  max-width: 100%;
+}
+
+.prose-editor [data-resize-wrapper] > img {
+  margin: 0;
+  max-width: 100%;
+}
+
+.prose-editor [data-resize-handle] {
+  background: var(--color-bg);
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  bottom: -7px !important;
+  height: 14px;
+  opacity: 0;
+  transition: opacity 150ms ease, transform 150ms ease;
+  width: 14px;
+  z-index: 2;
+}
+
+.prose-editor [data-resize-handle="bottom-left"] {
+  cursor: nesw-resize;
+  left: -7px !important;
+}
+
+.prose-editor [data-resize-handle="bottom-right"] {
+  cursor: nwse-resize;
+  right: -7px !important;
+}
+
+.prose-editor [data-resize-container]:hover [data-resize-handle],
+.prose-editor [data-resize-container][data-resize-state="true"] [data-resize-handle],
+.prose-editor [data-resize-container].ProseMirror-selectednode [data-resize-handle] {
+  opacity: 1;
+}
+
+.prose-editor [data-resize-container][data-resize-state="true"] [data-resize-handle] {
+  transform: scale(1.15);
+}
+
+.image-upload-placeholder {
+  align-items: center;
+  background: var(--color-bg-subtle);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: 0.875rem;
+  justify-content: center;
+  margin: 1.5rem 0;
+  min-height: 7rem;
+  padding: 1rem;
+}
+
+.link-action-menu {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  position: fixed;
+  z-index: 60;
+}
+
+.link-action-button {
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.4rem 0.65rem;
+}
+
+.link-action-button:hover,
+.link-action-button:focus-visible {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
 .prose-editor pre {
   font-family: var(--font-mono);
   background: var(--color-bg-subtle);
@@ -314,6 +434,10 @@ textarea::placeholder {
 }
 
 @media (max-width: 767px) {
+  .note-sticky-header {
+    padding-left: 3rem;
+  }
+
   .prose-editor .tiptap {
     font-size: 1rem;
     line-height: 1.65;
