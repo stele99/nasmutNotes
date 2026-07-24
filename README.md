@@ -43,6 +43,52 @@ php -S localhost:8080 -t public
 
 Anwendung erreichbar unter `http://localhost:8080`. `/health` liefert den Status von Datenbank, Migrationsstand und Upload-Verzeichnis.
 
+## Deployment über GitHub Actions
+
+Der Workflow `.github/workflows/ci.yml` deployt nach erfolgreicher Backend- und
+Frontend-CI automatisch bei einem Push auf `main`. Ein manueller Start ist über
+GitHub unter **Actions → CI → Run workflow** möglich. Pull Requests deployen
+nicht.
+
+Das Deployment-Paket enthält den PHP-Code, `vendor/`, Migrationen und die mit
+Vite erzeugten Dateien unter `public/build/`. Die Produktions-Assets werden in
+der Action gebaut und müssen nicht committed werden. Die serverseitige `.env`, die
+SQLite-Datei und `var/` werden nicht überschrieben. Auf dem Hoster wird nach
+dem Upload automatisch `php bin/console.php migrate` ausgeführt.
+
+### Hoster vorbereiten
+
+1. Einen SSH-Schlüssel nur für GitHub Actions erzeugen und den öffentlichen
+   Schlüssel beim Hoster in `authorized_keys` hinterlegen.
+2. Ein Zielverzeichnis außerhalb oder oberhalb des Web-Roots anlegen und dort
+   eine produktive `.env` erstellen. `DB_PATH` sollte auf die persistente
+   SQLite-Datei zeigen, zum Beispiel `var/data/app.sqlite`.
+3. Den Web-Root des Hosters auf das Unterverzeichnis `public/` des Projekts
+   zeigen lassen. `public/index.php` erwartet `app/`, `resources/` und `vendor/`
+   relativ zum Projekt-Root.
+4. Den PHP-CLI-Befehl des Hosters ermitteln. Das ist je nach Anbieter zum
+   Beispiel `php`, `php8.4` oder ein absoluter Pfad.
+
+Der Hoster benötigt neben SSH auch `scp`, `tar` und einen passenden PHP-CLI-
+Befehl. Der für GitHub Actions verwendete private Schlüssel darf in der
+aktuellen Action keine Passphrase haben.
+
+Die folgenden Secrets im GitHub-Environment `production` anlegen:
+
+| Secret | Inhalt |
+|---|---|
+| `DEPLOY_HOST` | SSH-Hostname des Hosters |
+| `DEPLOY_PORT` | SSH-Port, meistens `22` |
+| `DEPLOY_USER` | SSH-Benutzer |
+| `DEPLOY_PATH` | Absoluter Projektpfad auf dem Hoster |
+| `DEPLOY_PHP_BIN` | PHP-CLI-Befehl, zum Beispiel `php8.4` |
+| `DEPLOY_SSH_KEY` | Privater Inhalt des Deploy-Schlüssels |
+| `DEPLOY_KNOWN_HOSTS` | Geprüfter Eintrag aus `known_hosts` |
+
+`DEPLOY_KNOWN_HOSTS` sollte vor dem Hinterlegen mit dem Hoster-Fingerabdruck
+abgeglichen werden, zum Beispiel über `ssh-keyscan -p 22 host.example`.
+Private Schlüssel, `.env` und Produktionsdaten gehören nicht ins Repository.
+
 ### Entwicklung mit Hot-Module-Reload
 
 Für Frontend-Arbeit mit Live-Reload zwei Prozesse parallel starten:

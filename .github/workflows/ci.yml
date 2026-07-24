@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   backend:
@@ -52,3 +53,92 @@ jobs:
 
       - name: Build assets
         run: npm run build
+
+  deploy:
+    name: Deploy to production
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo, pdo_sqlite, sqlite3, mbstring, json
+          coverage: none
+
+      - name: Install production Composer dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Build production assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Create deployment archive
+        run: tar -czf deploy.tar.gz app bin database public resources vendor composer.json composer.lock
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+
+      - name: Upload and activate deployment
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PHP_BIN: ${{ secrets.DEPLOY_PHP_BIN }}
+        run: |
+          set -eu
+          : "${DEPLOY_HOST:?DEPLOY_HOST fehlt}"
+          : "${DEPLOY_USER:?DEPLOY_USER fehlt}"
+          : "${DEPLOY_PATH:?DEPLOY_PATH fehlt}"
+
+          port="${DEPLOY_PORT:-22}"
+          php_bin="${DEPLOY_PHP_BIN:-php}"
+          archive="/tmp/shareinfo-${GITHUB_SHA}.tar.gz"
+          ssh_options=(-i "$HOME/.ssh/deploy_key" -p "$port" -o BatchMode=yes -o IdentitiesOnly=yes)
+          scp_options=(-i "$HOME/.ssh/deploy_key" -P "$port" -o BatchMode=yes -o IdentitiesOnly=yes)
+
+          scp "${scp_options[@]}" deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$archive"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$DEPLOY_PATH" "$archive" "$php_bin" <<'REMOTE'
+          set -eu
+          deploy_path="$1"
+          archive="$2"
+          php_bin="$3"
+
+          mkdir -p "$deploy_path" "$deploy_path/var/data" "$deploy_path/var/log" "$deploy_path/var/uploads"
+          tar -xzf "$archive" --no-same-owner -C "$deploy_path"
+          cd "$deploy_path"
+
+          if [ ! -f .env ]; then
+            printf '%s\n' 'Deployment abgebrochen: .env fehlt im Zielverzeichnis.' >&2
+            exit 1
+          fi
+
+          "$php_bin" bin/console.php migrate
+          rm -f "$archive"
+          REMOTE
