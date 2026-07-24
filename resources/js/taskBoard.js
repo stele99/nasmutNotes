@@ -5,8 +5,10 @@ export function taskBoard() {
     pageId: null,
     categories: [],
     collapsedCategories: {},
+    hiddenCompletedCategories: {},
     loading: true,
     activeTask: null,
+    savingTask: false,
     newCategoryName: '',
     creatingCategory: false,
     importCategory: null,
@@ -30,6 +32,7 @@ export function taskBoard() {
         : Boolean(window.__CURRENT_PAGE_CAN_EDIT__);
       this.savedPageTitle = this.pageTitle;
       this.loadCollapsedCategories();
+      this.loadHiddenCompletedCategories();
 
       if (!this.pageId) {
         this.loading = false;
@@ -41,6 +44,10 @@ export function taskBoard() {
 
     categoryStateKey() {
       return `task-board-collapsed-${this.pageId}`;
+    },
+
+    hiddenCompletedStateKey() {
+      return `task-board-hidden-completed-${this.pageId}`;
     },
 
     loadCollapsedCategories() {
@@ -61,6 +68,24 @@ export function taskBoard() {
       }
     },
 
+    loadHiddenCompletedCategories() {
+      try {
+        const stored = localStorage.getItem(this.hiddenCompletedStateKey());
+        const parsed = stored ? JSON.parse(stored) : {};
+        this.hiddenCompletedCategories = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      } catch (error) {
+        this.hiddenCompletedCategories = {};
+      }
+    },
+
+    saveHiddenCompletedCategories() {
+      try {
+        localStorage.setItem(this.hiddenCompletedStateKey(), JSON.stringify(this.hiddenCompletedCategories));
+      } catch (error) {
+        // Lokaler Speicher kann deaktiviert oder voll sein.
+      }
+    },
+
     isCategoryCollapsed(category) {
       return Boolean(this.collapsedCategories[category.id]);
     },
@@ -73,6 +98,16 @@ export function taskBoard() {
       return category.tasks.filter((task) => task.is_done).length;
     },
 
+    areCompletedTasksHidden(category) {
+      return Boolean(this.hiddenCompletedCategories[category.id]);
+    },
+
+    visibleTasks(category) {
+      return this.areCompletedTasksHidden(category)
+        ? category.tasks.filter((task) => !task.is_done)
+        : category.tasks;
+    },
+
     toggleCategory(category) {
       const categoryKey = String(category.id);
       if (this.isCategoryCollapsed(category)) {
@@ -81,6 +116,16 @@ export function taskBoard() {
         this.collapsedCategories[categoryKey] = true;
       }
       this.saveCollapsedCategories();
+    },
+
+    toggleCompletedTasks(category) {
+      const categoryKey = String(category.id);
+      if (this.areCompletedTasksHidden(category)) {
+        delete this.hiddenCompletedCategories[categoryKey];
+      } else {
+        this.hiddenCompletedCategories[categoryKey] = true;
+      }
+      this.saveHiddenCompletedCategories();
     },
 
     async refresh() {
@@ -273,26 +318,42 @@ export function taskBoard() {
     },
 
     closeTask() {
+      if (this.savingTask) {
+        return;
+      }
       this.activeTask = null;
     },
 
+    handleTaskEditorEnter(event) {
+      if (event.isComposing || event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      this.saveTask();
+    },
+
     async saveTask() {
-      if (!this.canEditPage || !this.activeTask) {
+      if (!this.canEditPage || !this.activeTask || this.savingTask) {
         return;
       }
       const t = this.activeTask;
-      await apiFetch(`/api/tasks/${t.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          title: t.title,
-          description: t.description,
-          responsible: t.responsible,
-          link: t.link,
-          is_done: t.is_done,
-        }),
-      });
-      this.activeTask = null;
-      await this.refresh();
+      this.savingTask = true;
+      try {
+        await apiFetch(`/api/tasks/${t.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            title: t.title,
+            description: t.description,
+            responsible: t.responsible,
+            link: t.link,
+            is_done: t.is_done,
+          }),
+        });
+        this.activeTask = null;
+        await this.refresh();
+      } finally {
+        this.savingTask = false;
+      }
     },
 
     async toggleDone(task) {

@@ -35,8 +35,8 @@ final class Vite
         $nonceAttr = $nonce !== null ? " nonce=\"{$nonce}\"" : '';
 
         return
-            "<script type=\"module\" data-cfasync=\"false\" src=\"{$this->devServerUrl}/@vite/client\"{$nonceAttr}></script>\n" .
-            "<script type=\"module\" data-cfasync=\"false\" src=\"{$this->devServerUrl}/resources/js/{$entry}\"{$nonceAttr}></script>\n";
+            "<script type=\"module\" data-cfasync=\"false\" src=\"{$this->devServerUrl}/build/@vite/client\"{$nonceAttr}></script>\n" .
+            "<script type=\"module\" data-cfasync=\"false\" src=\"{$this->devServerUrl}/build/resources/js/{$entry}\"{$nonceAttr}></script>\n";
     }
 
     private function prodTags(string $entry, ?string $nonce): string

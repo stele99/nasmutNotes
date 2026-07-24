@@ -120,6 +120,33 @@ textarea::placeholder {
   padding-bottom: 1rem;
 }
 
+.page-title-input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: inherit;
+  font-size: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  outline: none;
+  padding: 0;
+}
+
+.page-title-input:focus,
+.page-title-input:focus-visible {
+  box-shadow: none;
+  outline: none;
+}
+
+@media (min-width: 640px) {
+  .page-title-input {
+    font-size: 3rem;
+  }
+}
+
 .task-list > * + * {
   border-color: color-mix(in srgb, var(--color-border) 72%, transparent);
 }

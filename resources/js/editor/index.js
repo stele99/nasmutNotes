@@ -15,7 +15,7 @@ export function createEditor({ element, content, editable = true, onUpdate, onTr
     editable,
     content,
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
+      StarterKit.configure({ codeBlock: false, link: false }),
       CodeBlockLowlight.configure({ lowlight }),
       Link.configure({
         openOnClick: false,

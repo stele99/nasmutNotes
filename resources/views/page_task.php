@@ -17,10 +17,12 @@
     <div class="pt-10">
     <div class="mb-14 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-            <div class="flex size-12 items-center justify-center rounded-xl" style="background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent);" x-icon="list-todo"></div>
-            <div class="mt-5 min-w-0">
-                <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
-                <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="w-full min-w-72 rounded-md border px-3 py-2 text-3xl font-semibold tracking-tight sm:text-4xl" style="border-color: var(--color-border); background: var(--color-bg);">
+            <div class="flex min-w-0 items-center gap-3">
+                <span class="shrink-0" style="color: var(--color-text);" x-icon="list-todo"></span>
+                <div class="min-w-0 flex-1">
+                    <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+                    <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-72 text-4xl font-semibold tracking-tight sm:text-5xl">
+                </div>
             </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
@@ -66,6 +68,10 @@
                         </p>
                     </div>
                     <div class="flex shrink-0 items-center gap-1">
+                        <button @click="toggleCompletedTasks(category)" class="icon-action" :aria-pressed="areCompletedTasksHidden(category)" :aria-label="areCompletedTasksHidden(category) ? 'Erledigte Aufgaben einblenden' : 'Erledigte Aufgaben ausblenden'" :title="areCompletedTasksHidden(category) ? 'Erledigte Aufgaben einblenden' : 'Erledigte Aufgaben ausblenden'">
+                            <span x-show="areCompletedTasksHidden(category)" x-icon="eye"></span>
+                            <span x-show="!areCompletedTasksHidden(category)" x-icon="eye-off"></span>
+                        </button>
                         <button x-show="canEditPage" @click="openImportDialog(category)" class="icon-action flex items-center gap-1.5 border px-2 py-1.5 text-sm" style="border-color: var(--color-border);" title="Aufgaben einfügen" aria-label="Aufgaben einfügen">
                             <span x-icon="clipboard-paste"></span>Einfügen
                         </button>
@@ -75,7 +81,7 @@
 
                 <div x-show="!isCategoryCollapsed(category)">
                 <ul class="task-list mt-4 border-y" style="border-color: var(--color-border);">
-                    <template x-for="task in category.tasks" :key="task.id">
+                    <template x-for="task in visibleTasks(category)" :key="task.id">
                         <li class="group flex items-center gap-2 border-t px-2 py-2 text-base sm:px-3" style="border-color: color-mix(in srgb, var(--color-border) 70%, transparent);" :class="task.is_done ? 'opacity-60' : ''">
                             <input type="checkbox" :checked="task.is_done" @change="toggleDone(task)" :disabled="!canEditPage" class="h-4 w-4 shrink-0">
                             <button @click="openTask(task)" class="min-w-0 flex-1 text-left" :class="task.is_done ? 'line-through' : ''" x-text="task.title"></button>
@@ -167,22 +173,22 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeTask()"
     >
-        <div x-show="activeTask" class="w-full max-w-xl rounded-2xl border p-6 space-y-4 sm:p-8" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);" @keydown.escape.window="closeTask()">
+        <form x-show="activeTask" @submit.prevent="saveTask" @keydown.escape.window="closeTask()" @keydown.enter="handleTaskEditorEnter($event)" class="w-full max-w-xl rounded-2xl border p-6 space-y-4 sm:p-8" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <template x-if="activeTask">
                 <div class="space-y-3">
                     <input x-model="activeTask.title" :readonly="!canEditPage" class="w-full rounded-lg border px-4 py-3 text-base font-medium" style="border-color: var(--color-border);">
                     <textarea x-model="activeTask.description" :readonly="!canEditPage" rows="5" placeholder="Beschreibung" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);"></textarea>
                     <input x-model="activeTask.responsible" :readonly="!canEditPage" placeholder="Verantwortlich" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
                     <input x-model="activeTask.link" :readonly="!canEditPage" placeholder="https://…" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
-                    <label class="flex items-center gap-2 text-base">
-                        <input type="checkbox" x-model="activeTask.is_done" :disabled="!canEditPage"> Erledigt
+                    <label class="flex cursor-pointer items-center gap-3 text-base">
+                        <input type="checkbox" x-model="activeTask.is_done" :disabled="!canEditPage" class="h-6 w-6 shrink-0"> Erledigt
                     </label>
                     <div class="flex justify-end gap-2 pt-2">
-                        <button @click="closeTask()" class="px-3 py-2 text-base" style="color: var(--color-text-muted);">Abbrechen</button>
-                        <button x-show="canEditPage" @click="saveTask()" class="rounded-lg px-4 py-2.5 text-base font-medium text-white" style="background: var(--color-accent);">Speichern</button>
+                        <button type="button" @click="closeTask()" class="px-3 py-2 text-base" style="color: var(--color-text-muted);">Abbrechen</button>
+                        <button x-show="canEditPage" type="submit" class="rounded-lg px-4 py-2.5 text-base font-medium text-white" style="background: var(--color-accent);" :disabled="savingTask" x-text="savingTask ? 'Speichert…' : 'Speichern'"></button>
                     </div>
                 </div>
             </template>
-        </div>
+        </form>
     </div>
 </div>

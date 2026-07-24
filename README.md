@@ -39,7 +39,7 @@ php -r "echo 'base64:'.base64_encode(random_bytes(32)), PHP_EOL;"
 php bin/console.php migrate
 npm run build      # oder: npm run dev (Vite-Dev-Server mit HMR, siehe unten)
 
-php -S localhost:8080 -t public
+php -S localhost:8080 -t public public/index.php
 ```
 
 Anwendung erreichbar unter `http://localhost:8080`. `/health` liefert den Status von Datenbank, Migrationsstand und Upload-Verzeichnis.
@@ -112,7 +112,7 @@ Für Frontend-Arbeit mit Live-Reload zwei Prozesse parallel starten:
 
 ```bash
 npm run dev              # Vite-Dev-Server auf Port 5173
-php -S localhost:8080 -t public   # PHP-Anwendung
+php -S localhost:8080 -t public public/index.php   # PHP-Anwendung
 ```
 
 `APP_ENV=development` muss in `.env` gesetzt sein, damit `public/index.php` Assets vom Vite-Dev-Server statt aus `public/build/` lädt.

@@ -4,6 +4,7 @@ export function pageShare() {
   return {
     pageId: window.__CURRENT_PAGE_ID__,
     isShared: Boolean(window.__CURRENT_PAGE_IS_SHARED__),
+    currentPermission: window.__CURRENT_PAGE_PERMISSION__ || null,
     permission: 'read',
     shareDialogOpen: false,
     generatedLink: '',
@@ -11,6 +12,10 @@ export function pageShare() {
     successMessage: '',
     errorMessage: '',
     generating: false,
+
+    permissionLabel() {
+      return this.currentPermission === 'write' ? 'schreibend' : 'lesend';
+    },
 
     init() {
       const pageRoot = this.$root;

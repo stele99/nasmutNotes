@@ -17,6 +17,21 @@ use Slim\Factory\AppFactory;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+if (PHP_SAPI === 'cli-server') {
+    $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    $publicPath = realpath(__DIR__);
+    $requestedFile = is_string($requestPath) ? realpath(__DIR__ . '/' . ltrim($requestPath, '/')) : false;
+
+    if (
+        $publicPath !== false
+        && $requestedFile !== false
+        && str_starts_with($requestedFile, $publicPath . DIRECTORY_SEPARATOR)
+        && is_file($requestedFile)
+    ) {
+        return false;
+    }
+}
+
 $rootPath = dirname(__DIR__);
 Env::load($rootPath);
 
@@ -28,6 +43,9 @@ $app = AppFactory::create();
 
 $isProduction = Env::get('APP_ENV') === 'production';
 $isDebug = Env::bool('APP_DEBUG', false);
+$viteDevServerUrl = Env::bool('APP_DEBUG', false) && Env::get('APP_ENV') === 'development'
+    ? Env::get('VITE_DEV_SERVER', 'http://localhost:5173')
+    : null;
 
 $registerRoutes = require $rootPath . '/app/Config/routes.php';
 $registerRoutes($app);
@@ -42,7 +60,7 @@ $app->add(new CsrfMiddleware(
     $isProduction,
 ));
 $app->add($container->get(SessionAuthMiddleware::class));
-$app->add(new SecurityHeadersMiddleware($isProduction));
+$app->add(new SecurityHeadersMiddleware($isProduction, $viteDevServerUrl));
 $app->add(new RequestIdMiddleware());
 
 $errorMiddleware = $app->addErrorMiddleware($isDebug, true, true, $container->get(LoggerInterface::class));

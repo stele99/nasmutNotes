@@ -5,8 +5,10 @@ const DEBOUNCE_MS = 1500;
 const LOCAL_CACHE_PREFIX = 'notes-note-cache-';
 
 export function noteEditorPage() {
+  // ProseMirror keeps mutable transaction state and must not be made reactive by Alpine.
+  let editor = null;
+
   return {
-    editor: null,
     status: 'loading', // loading | saved | saving | unsaved | offline | conflict
     version: 0,
     pageId: null,
@@ -52,14 +54,14 @@ export function noteEditorPage() {
       this.updatedAt = initial.updated_at;
       this.lastEditorName = initial.last_editor_name;
 
-      this.editor = createEditor({
+      editor?.destroy();
+      editor = createEditor({
         element: this.$refs.editor,
         content: initial.content,
         editable: this.canEditPage,
         onUpdate: (json) => this.onChange(json),
         onTransaction: () => this.syncToolbar(),
       });
-      this.bindToolbar();
       this.syncToolbar();
 
       this.status = 'saved';
@@ -100,12 +102,12 @@ export function noteEditorPage() {
     },
 
     async saveNow() {
-      if (!this.editor || this.pendingSave) {
+      if (!editor || this.pendingSave) {
         return;
       }
       clearTimeout(this.saveTimer);
 
-      const content = this.editor.getJSON();
+      const content = editor.getJSON();
       this.pendingSave = true;
       this.status = 'saving';
 
@@ -196,10 +198,10 @@ export function noteEditorPage() {
     },
 
     runEditorCommand(command) {
-      const chain = this.editor?.chain().focus();
-      if (!chain) {
+      if (!this.canEditPage || !editor || !editor.isEditable) {
         return;
       }
+      const chain = editor.chain().focus();
       switch (command) {
         case 'bold':
           chain.toggleBold().run();
@@ -234,52 +236,81 @@ export function noteEditorPage() {
       }
     },
 
-    bindToolbar() {
-      this.$refs.toolbar?.addEventListener('mousedown', (event) => {
-        const button = event.target.closest('[data-editor-command]');
-        if (!(button instanceof HTMLButtonElement)) {
-          return;
-        }
-        event.preventDefault();
-        this.runEditorCommand(button.dataset.editorCommand);
-      });
+    toggleBold() {
+      this.runEditorCommand('bold');
+    },
+
+    toggleItalic() {
+      this.runEditorCommand('italic');
+    },
+
+    toggleStrike() {
+      this.runEditorCommand('strike');
+    },
+
+    toggleHeading1() {
+      this.runEditorCommand('heading1');
+    },
+
+    toggleHeading2() {
+      this.runEditorCommand('heading2');
+    },
+
+    toggleBulletList() {
+      this.runEditorCommand('bulletList');
+    },
+
+    toggleBlockquote() {
+      this.runEditorCommand('blockquote');
+    },
+
+    editLink() {
+      this.runEditorCommand('link');
+    },
+
+    undo() {
+      this.runEditorCommand('undo');
+    },
+
+    redo() {
+      this.runEditorCommand('redo');
     },
 
     syncToolbar() {
       const toolbar = this.$refs.toolbar;
-      if (!this.editor || !toolbar) {
+      if (!editor || !toolbar) {
         return;
       }
       for (const button of toolbar.querySelectorAll('[data-editor-command]')) {
         const command = button.dataset.editorCommand;
         const active = {
-          bold: this.editor.isActive('bold'),
-          italic: this.editor.isActive('italic'),
-          strike: this.editor.isActive('strike'),
-          heading1: this.editor.isActive('heading', { level: 1 }),
-          heading2: this.editor.isActive('heading', { level: 2 }),
-          bulletList: this.editor.isActive('bulletList'),
-          blockquote: this.editor.isActive('blockquote'),
-          link: this.editor.isActive('link'),
+          bold: editor.isActive('bold'),
+          italic: editor.isActive('italic'),
+          strike: editor.isActive('strike'),
+          heading1: editor.isActive('heading', { level: 1 }),
+          heading2: editor.isActive('heading', { level: 2 }),
+          bulletList: editor.isActive('bulletList'),
+          blockquote: editor.isActive('blockquote'),
+          link: editor.isActive('link'),
         }[command] ?? false;
         button.classList.toggle('is-active', active);
       }
     },
 
     toggleLink() {
-      if (!this.editor) {
+      if (!editor) {
         return;
       }
-      const current = this.editor.getAttributes('link').href || '';
+      const current = editor.getAttributes('link').href || '';
       const href = prompt('Link-Adresse', current);
       if (href === null) {
         return;
       }
       if (href.trim() === '') {
-        this.editor.chain().focus().unsetLink().run();
+        editor.chain().focus().unsetLink().run();
         return;
       }
-      this.editor.chain().focus().setLink({ href: href.trim() }).run();
+      editor.chain().focus().setLink({ href: href.trim() }).run();
       this.syncToolbar();
     },
 
@@ -336,7 +367,8 @@ export function noteEditorPage() {
         delete window.__prepareWorkspaceNavigation;
       }
       clearTimeout(this.saveTimer);
-      this.editor?.destroy();
+      editor?.destroy();
+      editor = null;
     },
   };
 }
