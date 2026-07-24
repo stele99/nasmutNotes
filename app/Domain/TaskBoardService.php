@@ -6,6 +6,7 @@ namespace App\Domain;
 
 use App\Repositories\CategoryRepository;
 use App\Repositories\TaskRepository;
+use App\Support\Env;
 use App\Support\NotFoundException;
 use App\Support\UrlValidator;
 use App\Support\ValidationException;
@@ -135,6 +136,52 @@ final class TaskBoardService
         );
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function importTasks(User $user, int $categoryId, string $text): array
+    {
+        $category = $this->resolveOwnedCategory($user, $categoryId);
+        $lines = preg_split('/\r\n|\r|\n/', $text);
+        if ($lines === false) {
+            throw new ValidationException('Der Importtext konnte nicht gelesen werden.');
+        }
+
+        $titles = [];
+        foreach ($lines as $line) {
+            $title = trim($line);
+            if ($title !== '') {
+                $titles[] = $this->validateTitle($title);
+            }
+        }
+
+        $maxLines = Env::int('IMPORT_MAX_LINES', 500);
+        if (count($titles) > $maxLines) {
+            throw new ValidationException("Der Import ist auf {$maxLines} Aufgaben begrenzt.");
+        }
+        if ($titles === []) {
+            throw new ValidationException('Bitte mindestens eine Aufgabe eingeben.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $tasks = [];
+            foreach ($titles as $title) {
+                $tasks[] = $this->tasks->create(
+                    (int) $category['id'],
+                    $title,
+                    null,
+                    null,
+                    null,
+                );
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return $tasks;
+    }
+
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -256,6 +303,7 @@ final class TaskBoardService
 
         // Wirft NotFoundException, falls die Seite nicht dem Workspace des Nutzers gehört (IDOR-Schutz).
         $this->pages->find($user, (int) $category['page_id']);
+        $this->pages->assertCanWrite($user, (int) $category['page_id']);
 
         return $category;
     }

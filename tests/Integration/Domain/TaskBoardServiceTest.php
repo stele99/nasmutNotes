@@ -82,6 +82,35 @@ final class TaskBoardServiceTest extends TestCase
         self::assertCount(1, $board[0]['tasks']);
     }
 
+    public function testImportCreatesOneTaskPerNonEmptyLineInOrder(): void
+    {
+        $tasks = $this->board->importTasks(
+            $this->userA,
+            $this->firstCategoryId(),
+            " Erste Aufgabe\r\n\nZweite Aufgabe\n  Dritte Aufgabe  ",
+        );
+
+        self::assertSame(['Erste Aufgabe', 'Zweite Aufgabe', 'Dritte Aufgabe'], array_column($tasks, 'title'));
+        self::assertSame([0, 1, 2], array_map('intval', array_column($tasks, 'position')));
+    }
+
+    public function testImportDoesNotCreatePartialTasksWhenValidationFails(): void
+    {
+        try {
+            $this->board->importTasks(
+                $this->userA,
+                $this->firstCategoryId(),
+                "Gültige Aufgabe\n" . str_repeat('x', 201),
+            );
+            self::fail('Ein ungültiger Import muss abgelehnt werden.');
+        } catch (ValidationException) {
+            // Erwarteter Validierungsfehler.
+        }
+
+        $board = $this->board->board($this->userA, $this->taskPageId);
+        self::assertSame([], $board[0]['tasks']);
+    }
+
     public function testInvalidTaskLinkRejected(): void
     {
         $this->expectException(ValidationException::class);

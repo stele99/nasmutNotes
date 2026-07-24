@@ -9,9 +9,10 @@ import { createLowlight, common } from 'lowlight';
 
 const lowlight = createLowlight(common);
 
-export function createEditor({ element, content, onUpdate, onTransaction }) {
+export function createEditor({ element, content, editable = true, onUpdate, onTransaction }) {
   return new Editor({
     element,
+    editable,
     content,
     extensions: [
       StarterKit.configure({ codeBlock: false }),

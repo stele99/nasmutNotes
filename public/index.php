@@ -7,6 +7,7 @@ use App\Middleware\RequestIdMiddleware;
 use App\Middleware\SecurityHeadersMiddleware;
 use App\Middleware\SessionAuthMiddleware;
 use App\Support\Env;
+use App\Support\ForbiddenException;
 use App\Support\JsonResponse;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
@@ -56,6 +57,12 @@ $errorMiddleware->setErrorHandler(
     NotFoundException::class,
     fn (Request $request, \Throwable $e): \Psr\Http\Message\ResponseInterface
         => JsonResponse::error(new Slim\Psr7\Response(), 'NOT_FOUND', $e->getMessage(), 404),
+    true,
+);
+$errorMiddleware->setErrorHandler(
+    ForbiddenException::class,
+    fn (Request $request, \Throwable $e): \Psr\Http\Message\ResponseInterface
+        => JsonResponse::error(new Slim\Psr7\Response(), 'FORBIDDEN', $e->getMessage(), 403),
     true,
 );
 

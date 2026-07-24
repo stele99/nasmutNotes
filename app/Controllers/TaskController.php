@@ -33,6 +33,22 @@ final class TaskController
     }
 
     /** @param array<string, string> $args */
+    public function import(Request $request, Response $response, array $args): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $tasks = $this->board->importTasks(
+            CurrentUser::require($request),
+            (int) $args['id'],
+            (string) ($body['text'] ?? ''),
+        );
+
+        return JsonResponse::json($response, [
+            'created' => count($tasks),
+            'tasks' => array_map([self::class, 'serialize'], $tasks),
+        ], 201);
+    }
+
+    /** @param array<string, string> $args */
     public function update(Request $request, Response $response, array $args): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);

@@ -10,6 +10,7 @@ export function noteEditorPage() {
     status: 'loading', // loading | saved | saving | unsaved | offline | conflict
     version: 0,
     pageId: null,
+    canEditPage: Boolean(window.__CURRENT_PAGE_CAN_EDIT__),
     saveTimer: null,
     retryDelay: 1000,
     pendingSave: false,
@@ -20,6 +21,10 @@ export function noteEditorPage() {
     savingPageTitle: false,
     updatedAt: null,
     lastEditorName: null,
+    visibilityHandler: null,
+    beforeUnloadHandler: null,
+    keyDownHandler: null,
+    navigationHandler: null,
 
     async init() {
       this.pageId = window.__CURRENT_PAGE_ID__;
@@ -41,6 +46,7 @@ export function noteEditorPage() {
       this.editor = createEditor({
         element: this.$refs.editor,
         content: initial.content,
+        editable: this.canEditPage,
         onUpdate: (json) => this.onChange(json),
         onTransaction: () => this.syncToolbar(),
       });
@@ -49,22 +55,31 @@ export function noteEditorPage() {
 
       this.status = 'saved';
 
-      document.addEventListener('visibilitychange', () => {
+      this.visibilityHandler = () => {
         if (document.visibilityState === 'hidden') {
           this.saveNow();
         }
-      });
-      window.addEventListener('beforeunload', () => {
+      };
+      document.addEventListener('visibilitychange', this.visibilityHandler);
+      this.beforeUnloadHandler = () => {
         if (this.status === 'unsaved') {
           this.saveNow();
         }
-      });
-      window.addEventListener('keydown', (event) => {
+      };
+      window.addEventListener('beforeunload', this.beforeUnloadHandler);
+      this.keyDownHandler = (event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === 's') {
           event.preventDefault();
           this.saveNow();
         }
-      });
+      };
+      window.addEventListener('keydown', this.keyDownHandler);
+      this.navigationHandler = async () => {
+        if (this.status === 'unsaved') {
+          await this.saveNow();
+        }
+      };
+      window.__prepareWorkspaceNavigation = this.navigationHandler;
     },
 
     onChange(json) {
@@ -159,6 +174,9 @@ export function noteEditorPage() {
     },
 
     startEditingPageTitle() {
+      if (!this.canEditPage) {
+        return;
+      }
       this.editingPageTitle = true;
       this.$nextTick(() => this.$refs.titleInput?.focus());
     },
@@ -293,6 +311,23 @@ export function noteEditorPage() {
       } catch (e) {
         /* ignore */
       }
+    },
+
+    destroy() {
+      if (this.visibilityHandler) {
+        document.removeEventListener('visibilitychange', this.visibilityHandler);
+      }
+      if (this.beforeUnloadHandler) {
+        window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+      }
+      if (this.keyDownHandler) {
+        window.removeEventListener('keydown', this.keyDownHandler);
+      }
+      if (window.__prepareWorkspaceNavigation === this.navigationHandler) {
+        delete window.__prepareWorkspaceNavigation;
+      }
+      clearTimeout(this.saveTimer);
+      this.editor?.destroy();
     },
   };
 }

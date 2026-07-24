@@ -31,9 +31,10 @@
                 </div>
                 <div class="divide-y" style="border-color: var(--color-border);">
                         <template x-for="page in recentPages()" :key="page.id">
-                            <a :href="pageUrl(page)" class="flex items-center gap-3 py-4 hover:opacity-70">
+                            <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-center gap-3 py-4 hover:opacity-70">
                                 <span x-show="page.type === 'note'" style="color: var(--color-text-muted);" x-icon="file-text"></span>
                                 <span x-show="page.type === 'task'" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
+                                <span x-show="page.is_shared" style="color: var(--color-accent);" title="Geteilte Seite" x-icon="share-2"></span>
                                 <div class="min-w-0 flex-1">
                                     <p class="truncate text-base font-medium" x-text="page.title"></p>
                                     <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="page.type === 'note' ? 'Notiz' : 'Aufgabenliste'"></p>

@@ -6,10 +6,13 @@ use App\Controllers\HealthController;
 use App\Domain\Auth\AuthService;
 use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
+use App\Domain\PageService;
 use App\Domain\SessionService;
 use App\Repositories\InviteRepository;
+use App\Repositories\PageRepository;
 use App\Repositories\SearchRepository;
 use App\Repositories\SessionRepository;
+use App\Repositories\ShareRepository;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\AdminEmails;
@@ -82,6 +85,16 @@ return static function (string $rootPath): DI\Container {
         HealthController::class => static fn (PDO $pdo): HealthController => new HealthController($pdo, $rootPath),
 
         WorkspaceRepository::class => static fn (PDO $pdo): WorkspaceRepository => new WorkspaceRepository($pdo),
+
+        PageRepository::class => static fn (PDO $pdo): PageRepository => new PageRepository($pdo),
+
+        ShareRepository::class => static fn (PDO $pdo): ShareRepository => new ShareRepository($pdo),
+
+        PageService::class => static fn (
+            PageRepository $pages,
+            WorkspaceRepository $workspaces,
+            ShareRepository $shares,
+        ): PageService => new PageService($pages, $workspaces, $shares),
 
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
 

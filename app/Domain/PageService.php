@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use App\Repositories\PageRepository;
+use App\Repositories\ShareRepository;
 use App\Repositories\WorkspaceRepository;
+use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
 
@@ -17,6 +19,7 @@ final class PageService
     public function __construct(
         private readonly PageRepository $pages,
         private readonly WorkspaceRepository $workspaces,
+        private readonly ?ShareRepository $shares = null,
     ) {
     }
 
@@ -46,11 +49,72 @@ final class PageService
     /** @return array<int, array<string, mixed>> */
     public function list(User $user, string $sort, ?string $typeFilter, bool $trashed): array
     {
-        return $this->pages->listForWorkspace($this->workspaceIdFor($user), $sort, $typeFilter, $trashed);
+        $owned = $this->pages->listForWorkspace(
+            $this->workspaceIdFor($user),
+            $sort,
+            $typeFilter,
+            $trashed,
+        );
+        $pages = [];
+
+        foreach ($owned as $page) {
+            $pages[(int) $page['id']] = $this->withAccess($page, false, null);
+        }
+
+        if (!$trashed && $this->shares !== null) {
+            foreach ($this->shares->listForUser($user->id, $typeFilter) as $page) {
+                $pageId = (int) $page['id'];
+                if (!isset($pages[$pageId])) {
+                    $pages[$pageId] = $this->withAccess(
+                        $page,
+                        true,
+                        (string) $page['share_permission'],
+                    );
+                }
+            }
+        }
+
+        $pages = array_values($pages);
+        usort($pages, static function (array $left, array $right) use ($sort): int {
+            $favoriteDifference = (int) $right['is_favorite'] <=> (int) $left['is_favorite'];
+            if ($favoriteDifference !== 0) {
+                return $favoriteDifference;
+            }
+
+            return match ($sort) {
+                'title' => strcasecmp((string) $left['title'], (string) $right['title']),
+                'created' => strcmp((string) $right['created_at'], (string) $left['created_at']),
+                default => strcmp((string) $right['updated_at'], (string) $left['updated_at']),
+            };
+        });
+
+        return $pages;
     }
 
     /** @return array<string, mixed> */
     public function find(User $user, int $pageId): array
+    {
+        $page = $this->pages->findByIdForWorkspace($pageId, $this->workspaceIdFor($user));
+        if ($page !== null) {
+            return $this->withAccess($page, false, null);
+        }
+
+        if ($this->shares !== null) {
+            $sharedPage = $this->shares->findSharedPageForUser($user->id, $pageId);
+            if ($sharedPage !== null) {
+                return $this->withAccess(
+                    $sharedPage,
+                    true,
+                    (string) $sharedPage['share_permission'],
+                );
+            }
+        }
+
+        throw new NotFoundException("Seite #{$pageId} nicht gefunden.");
+    }
+
+    /** @return array<string, mixed> */
+    public function findOwned(User $user, int $pageId): array
     {
         $page = $this->pages->findByIdForWorkspace($pageId, $this->workspaceIdFor($user));
         if ($page === null) {
@@ -60,6 +124,14 @@ final class PageService
         return $page;
     }
 
+    public function assertCanWrite(User $user, int $pageId): void
+    {
+        $page = $this->find($user, $pageId);
+        if (($page['can_edit'] ?? false) !== true) {
+            throw new ForbiddenException('Diese Freigabe ist nur lesend.');
+        }
+    }
+
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -67,6 +139,17 @@ final class PageService
     public function update(User $user, int $pageId, array $input): array
     {
         $page = $this->find($user, $pageId);
+        if (($page['can_edit'] ?? false) !== true) {
+            throw new ForbiddenException('Diese Freigabe ist nur lesend.');
+        }
+
+        if (($page['is_shared'] ?? false) === true) {
+            foreach (['is_favorite', 'sort_order', 'default_view'] as $field) {
+                if (array_key_exists($field, $input)) {
+                    throw new ForbiddenException('Geteilte Seiten können nicht verwaltet werden.');
+                }
+            }
+        }
 
         $fields = [];
 
@@ -96,20 +179,33 @@ final class PageService
 
     public function softDelete(User $user, int $pageId): void
     {
-        $page = $this->find($user, $pageId);
+        $page = $this->findOwned($user, $pageId);
         $this->pages->softDelete((int) $page['id']);
     }
 
     public function restore(User $user, int $pageId): void
     {
-        $page = $this->find($user, $pageId);
+        $page = $this->findOwned($user, $pageId);
         $this->pages->restore((int) $page['id']);
     }
 
     public function purge(User $user, int $pageId): void
     {
-        $page = $this->find($user, $pageId);
+        $page = $this->findOwned($user, $pageId);
         $this->pages->purge((int) $page['id']);
+    }
+
+    /**
+     * @param array<string, mixed> $page
+     * @return array<string, mixed>
+     */
+    private function withAccess(array $page, bool $isShared, ?string $permission): array
+    {
+        $page['is_shared'] = $isShared;
+        $page['share_permission'] = $permission;
+        $page['can_edit'] = !$isShared || $permission === 'write';
+
+        return $page;
     }
 
     private function validateTitle(string $title): string

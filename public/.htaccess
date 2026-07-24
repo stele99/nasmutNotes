@@ -1,0 +1,7 @@
+RewriteEngine On
+
+# Static assets and existing files are served directly. All application routes
+# are forwarded to Slim's front controller.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]

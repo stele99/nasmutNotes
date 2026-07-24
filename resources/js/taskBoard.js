@@ -4,13 +4,19 @@ export function taskBoard() {
   return {
     pageId: null,
     categories: [],
+    collapsedCategories: {},
     loading: true,
     activeTask: null,
     newCategoryName: '',
     creatingCategory: false,
+    importCategory: null,
+    importText: '',
+    importError: '',
+    importing: false,
     newTaskTitles: {},
     savingCategoryId: null,
     pageTitle: '',
+    canEditPage: Boolean(window.__CURRENT_PAGE_CAN_EDIT__),
     savedPageTitle: '',
     editingPageTitle: false,
     savingPageTitle: false,
@@ -19,7 +25,52 @@ export function taskBoard() {
       this.pageId = window.__CURRENT_PAGE_ID__;
       this.pageTitle = window.__CURRENT_PAGE_TITLE__;
       this.savedPageTitle = this.pageTitle;
+      this.loadCollapsedCategories();
       await this.refresh();
+    },
+
+    categoryStateKey() {
+      return `task-board-collapsed-${this.pageId}`;
+    },
+
+    loadCollapsedCategories() {
+      try {
+        const stored = localStorage.getItem(this.categoryStateKey());
+        const parsed = stored ? JSON.parse(stored) : {};
+        this.collapsedCategories = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      } catch (error) {
+        this.collapsedCategories = {};
+      }
+    },
+
+    saveCollapsedCategories() {
+      try {
+        localStorage.setItem(this.categoryStateKey(), JSON.stringify(this.collapsedCategories));
+      } catch (error) {
+        // Lokaler Speicher kann deaktiviert oder voll sein.
+      }
+    },
+
+    isCategoryCollapsed(category) {
+      return Boolean(this.collapsedCategories[category.id]);
+    },
+
+    openTaskCount(category) {
+      return category.tasks.filter((task) => !task.is_done).length;
+    },
+
+    completedTaskCount(category) {
+      return category.tasks.filter((task) => task.is_done).length;
+    },
+
+    toggleCategory(category) {
+      const categoryKey = String(category.id);
+      if (this.isCategoryCollapsed(category)) {
+        delete this.collapsedCategories[categoryKey];
+      } else {
+        this.collapsedCategories[categoryKey] = true;
+      }
+      this.saveCollapsedCategories();
     },
 
     async refresh() {
@@ -33,6 +84,9 @@ export function taskBoard() {
     },
 
     async addCategory() {
+      if (!this.canEditPage) {
+        return;
+      }
       const name = this.newCategoryName.trim();
       if (!name) {
         return;
@@ -56,7 +110,55 @@ export function taskBoard() {
       this.creatingCategory = false;
     },
 
+    openImportDialog(category) {
+      if (!this.canEditPage) {
+        return;
+      }
+      this.importCategory = category;
+      this.importText = '';
+      this.importError = '';
+      this.$nextTick(() => this.$refs.importText?.focus());
+    },
+
+    closeImportDialog() {
+      if (this.importing) {
+        return;
+      }
+      this.importCategory = null;
+      this.importText = '';
+      this.importError = '';
+    },
+
+    async importTasks() {
+      if (!this.canEditPage || !this.importCategory || this.importing) {
+        return;
+      }
+      if (!this.importText.trim()) {
+        this.importError = 'Bitte mindestens eine Aufgabe eingeben.';
+        return;
+      }
+
+      this.importing = true;
+      this.importError = '';
+      try {
+        await apiFetch(`/api/categories/${this.importCategory.id}/tasks/import`, {
+          method: 'POST',
+          body: JSON.stringify({ text: this.importText }),
+        });
+        this.importing = false;
+        this.closeImportDialog();
+        await this.refresh();
+      } catch (error) {
+        this.importError = error.message || 'Die Aufgaben konnten nicht eingefügt werden.';
+      } finally {
+        this.importing = false;
+      }
+    },
+
     async renameCategory(category) {
+      if (!this.canEditPage) {
+        return;
+      }
       const name = prompt('Kapitel umbenennen', category.name);
       if (!name || name === category.name) {
         return;
@@ -69,6 +171,9 @@ export function taskBoard() {
     },
 
     async deleteCategory(category) {
+      if (!this.canEditPage) {
+        return;
+      }
       if (category.tasks.length > 0) {
         const cascade = confirm(
           `"${category.name}" enthält ${category.tasks.length} Aufgabe(n). OK = alle mitlöschen, Abbrechen = nichts tun.`,
@@ -84,6 +189,9 @@ export function taskBoard() {
     },
 
     async addTask(category, event) {
+      if (!this.canEditPage) {
+        return;
+      }
       const form = event.currentTarget;
       const title = (this.newTaskTitles[category.id] || '').trim();
       if (!title) {
@@ -106,6 +214,10 @@ export function taskBoard() {
     },
 
     async savePageTitle() {
+      if (!this.canEditPage) {
+        this.cancelPageTitleEdit();
+        return;
+      }
       if (this.savingPageTitle) {
         return;
       }
@@ -134,6 +246,9 @@ export function taskBoard() {
     },
 
     startEditingPageTitle() {
+      if (!this.canEditPage) {
+        return;
+      }
       this.editingPageTitle = true;
       this.$nextTick(() => this.$refs.titleInput?.focus());
     },
@@ -152,6 +267,9 @@ export function taskBoard() {
     },
 
     async saveTask() {
+      if (!this.canEditPage || !this.activeTask) {
+        return;
+      }
       const t = this.activeTask;
       await apiFetch(`/api/tasks/${t.id}`, {
         method: 'PATCH',
@@ -168,6 +286,9 @@ export function taskBoard() {
     },
 
     async toggleDone(task) {
+      if (!this.canEditPage) {
+        return;
+      }
       await apiFetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ is_done: !task.is_done }),
@@ -176,6 +297,9 @@ export function taskBoard() {
     },
 
     async deleteTask(task) {
+      if (!this.canEditPage) {
+        return;
+      }
       if (!confirm(`Task "${task.title}" löschen?`)) {
         return;
       }

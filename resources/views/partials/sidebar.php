@@ -11,7 +11,7 @@
     </div>
 
     <div class="space-y-0.5 px-3 pb-5 text-sm" style="color: var(--color-text-muted);">
-        <a href="/app" @click="sidebarOpen = false" class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/70">
+        <a href="/app" @click.prevent="navigateTo('/app')" class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/70">
             <span x-icon="home"></span>
             Übersicht
         </a>
@@ -43,10 +43,12 @@
             >
                 <span x-show="page.type === 'note'" class="shrink-0" style="color: var(--color-text-muted);" x-icon="file-text"></span>
                 <span x-show="page.type === 'task'" class="shrink-0" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
-                <a :href="pageUrl(page)" @click="sidebarOpen = false" class="min-w-0 flex-1 truncate" x-text="page.title"></a>
-                <button @click="toggleFavorite(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" :class="page.is_favorite ? 'opacity-100' : ''" aria-label="Favorit umschalten" x-icon="star"></button>
-                <button @click.stop="rename(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" aria-label="Seite umbenennen" x-icon="pencil"></button>
-                <button @click.stop="remove(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" style="color: var(--color-danger);" aria-label="Seite löschen" x-icon="trash"></button>
+                <span x-show="page.is_shared" class="shrink-0" style="color: var(--color-accent);" title="Geteilte Seite" x-icon="share-2"></span>
+                <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="min-w-0 flex-1 truncate" x-text="page.title"></a>
+                <button x-show="!page.is_shared" @click="toggleFavorite(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" :class="page.is_favorite ? 'opacity-100' : ''" aria-label="Favorit umschalten" x-icon="star"></button>
+                <button x-show="!page.is_shared" @click.stop="rename(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" aria-label="Seite umbenennen" x-icon="pencil"></button>
+                <button x-show="!page.is_shared" @click.stop="remove(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" style="color: var(--color-danger);" aria-label="Seite löschen" x-icon="trash"></button>
+                <button x-show="page.is_shared" @click.stop="leave(page)" class="opacity-0 group-hover:opacity-100 focus:opacity-100" style="color: var(--color-danger);" aria-label="Freigabe verlassen" title="Freigabe verlassen" x-icon="log-out"></button>
             </div>
         </template>
         <p x-show="searchLoading" class="px-2 py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>

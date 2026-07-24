@@ -1,6 +1,7 @@
 import {
   Bold,
   Check,
+  ClipboardPaste,
   ChevronRight,
   Code2,
   FileText,
@@ -12,6 +13,7 @@ import {
   Link,
   List,
   ListTodo,
+  LogOut,
   Menu,
   MoreHorizontal,
   Pencil,
@@ -19,15 +21,18 @@ import {
   Quote,
   Redo2,
   Search,
+  Share2,
   Star,
   Trash2,
   Underline,
   Undo2,
+  X,
 } from 'lucide';
 
 const icons = {
   bold: Bold,
   check: Check,
+  'clipboard-paste': ClipboardPaste,
   'chevron-right': ChevronRight,
   code: Code2,
   'file-text': FileText,
@@ -39,6 +44,7 @@ const icons = {
   link: Link,
   list: List,
   'list-todo': ListTodo,
+  'log-out': LogOut,
   menu: Menu,
   'more-horizontal': MoreHorizontal,
   pencil: Pencil,
@@ -46,10 +52,12 @@ const icons = {
   quote: Quote,
   redo: Redo2,
   search: Search,
+  'share-2': Share2,
   star: Star,
   trash: Trash2,
   underline: Underline,
   undo: Undo2,
+  x: X,
 };
 
 function renderNode([tag, attributes, children]) {

@@ -10,12 +10,13 @@ Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
 
 - Google-OAuth-2.0-Login (Authorization Code Flow + PKCE), Invite-Link-Registrierung, Admin-Bootstrap über `ADMIN_EMAILS`
 - Workspace- und Seitenverwaltung (Notiz-/Task-Seiten, Papierkorb, Favoriten, Sortierung/Filter)
+- Freigabe von Notiz- und Task-Seiten per Link mit Lese-/Schreibberechtigung und Empfänger-Seitenliste
 - Notizseiten mit TipTap-Editor, Autosave, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
 - Task-Seiten mit Kategorien und Tasks (Anlegen, Bearbeiten, Verschieben, Duplizieren, Löschen mit Verschieben/Kaskade)
 - Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff
 - Automatisierte Tests (PHPUnit) und PHPStan Level 8 für `app/`, `bin/console.php`, `tests/`
 
-Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche (Kap. 6 — Schema ist vorbereitet), Freigabe per Link (5.7), Bulk-Import (5.6), Export (5.8), vollständiges Admin-Panel (Nutzerliste/Audit-Ansicht), Papierkorb-Retention-Cron, Versionsverlauf-UI, Bild-Upload, Listen-Ansicht für Tasks.
+Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche (Kap. 6 — Schema ist vorbereitet), Bulk-Import (5.6), Export (5.8), vollständiges Admin-Panel (Nutzerliste/Audit-Ansicht), Papierkorb-Retention-Cron, Versionsverlauf-UI, Bild-Upload, Listen-Ansicht für Tasks.
 
 ## Voraussetzungen
 
@@ -72,6 +73,13 @@ dem Upload automatisch `php bin/console.php migrate` ausgeführt.
 Der Hoster benötigt neben SSH auch `scp`, `tar` und einen passenden PHP-CLI-
 Befehl. Der für GitHub Actions verwendete private Schlüssel darf in der
 aktuellen Action keine Passphrase haben.
+
+Für Apache liegt die Rewrite-Konfiguration in `public/.htaccess` und wird mit
+ausgeliefert. Falls `/auth/google` oder andere Slim-Routen weiterhin HTTP 404 liefern,
+muss der Hoster `mod_rewrite` und `AllowOverride FileInfo` für den Webroot
+aktivieren. Bei Nginx muss stattdessen die Domain-Konfiguration alle nicht
+vorhandenen Pfade mit `try_files $uri $uri/ /index.php?$query_string;` an
+`public/index.php` weiterleiten.
 
 Die folgenden Secrets im GitHub-Environment `production` anlegen:
 

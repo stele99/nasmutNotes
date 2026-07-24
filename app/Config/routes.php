@@ -13,6 +13,7 @@ use App\Controllers\InviteController;
 use App\Controllers\NoteController;
 use App\Controllers\PageController;
 use App\Controllers\SearchController;
+use App\Controllers\ShareController;
 use App\Controllers\TaskController;
 use App\Middleware\RequireAdminMiddleware;
 use App\Middleware\RequireAuthMiddleware;
@@ -27,6 +28,7 @@ return static function (App $app): void {
     $app->post('/auth/logout', [AuthController::class, 'logout']);
 
     $app->get('/invite/{token}', [InviteController::class, 'accept']);
+    $app->get('/s/{token}', [ShareController::class, 'open'])->add(new RequireAuthMiddleware(false));
 
     $app->get('/admin', [InviteAdminController::class, 'page'])
         ->add(new RequireAdminMiddleware(false))
@@ -50,6 +52,9 @@ return static function (App $app): void {
         $group->delete('/{id}', [PageController::class, 'destroy']);
         $group->post('/{id}/restore', [PageController::class, 'restore']);
         $group->delete('/{id}/purge', [PageController::class, 'purge']);
+        $group->get('/{id}/shares', [ShareController::class, 'index']);
+        $group->post('/{id}/shares', [ShareController::class, 'store']);
+        $group->delete('/{id}/share-access', [ShareController::class, 'leave']);
         $group->get('/{id}/content', [NoteController::class, 'show']);
         $group->put('/{id}/content', [NoteController::class, 'update']);
         $group->get('/{id}/board', [BoardController::class, 'show']);
@@ -59,6 +64,7 @@ return static function (App $app): void {
     $app->group('/api/categories', function ($group): void {
         $group->patch('/{id}', [CategoryController::class, 'update']);
         $group->delete('/{id}', [CategoryController::class, 'destroy']);
+        $group->post('/{id}/tasks/import', [TaskController::class, 'import']);
         $group->post('/{id}/tasks', [TaskController::class, 'store']);
     })->add(new RequireAuthMiddleware(true));
 
@@ -68,6 +74,9 @@ return static function (App $app): void {
         $group->post('/{id}/move', [TaskController::class, 'move']);
         $group->post('/{id}/duplicate', [TaskController::class, 'duplicate']);
     })->add(new RequireAuthMiddleware(true));
+
+    $app->delete('/api/shares/{id}', [ShareController::class, 'destroy'])
+        ->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));
 };

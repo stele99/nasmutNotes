@@ -5,6 +5,15 @@
         Notiz
         <span style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
         <span class="truncate" x-text="pageTitle"></span>
+        <div class="ml-auto flex shrink-0 items-center gap-2">
+            <span x-show="isShared" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
+                <span x-icon="share-2"></span>
+                Geteilt · <span x-text="permissionLabel()"></span>
+            </span>
+            <button x-show="!isShared" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border px-3 py-1.5 text-sm font-medium" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
+                <span x-icon="share-2"></span>Teilen
+            </button>
+        </div>
     </div>
     <div class="pt-10">
         <div class="mb-10 flex items-start justify-between gap-4">
@@ -12,9 +21,11 @@
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="w-full min-w-0 rounded-md border px-3 py-2 text-3xl font-semibold tracking-tight sm:text-4xl" style="border-color: var(--color-border); background: var(--color-bg);">
             </div>
-            <div class="shrink-0 text-right text-sm" style="color: var(--color-text-muted);">
-                <p x-text="statusLabel()"></p>
-                <p class="mt-1 max-w-64" x-text="lastEditedLabel()"></p>
+            <div class="flex shrink-0 items-start gap-3">
+                <div class="text-right text-sm" style="color: var(--color-text-muted);">
+                    <p x-text="statusLabel()"></p>
+                    <p class="mt-1 max-w-64" x-text="lastEditedLabel()"></p>
+                </div>
             </div>
         </div>
 
@@ -27,7 +38,7 @@
             <button @click="keepMyVersion()" class="underline text-sm font-medium">Trotzdem meine Version speichern</button>
         </div>
 
-        <div class="editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
+        <div x-show="canEditPage" class="editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" class="toolbar-button" title="Fett" aria-label="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" class="toolbar-button" title="Kursiv" aria-label="Kursiv" x-icon="italic"></button>
             <button type="button" data-editor-command="strike" class="toolbar-button toolbar-text" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>

@@ -28,7 +28,7 @@ final class SearchController
         }
 
         $user = CurrentUser::require($request);
-        $results = $this->search->search($this->pages->workspaceIdFor($user), $query);
+        $results = $this->search->search($this->pages->workspaceIdFor($user), $user->id, $query);
 
         return JsonResponse::json($response, ['pages' => $results]);
     }

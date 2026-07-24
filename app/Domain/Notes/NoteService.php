@@ -49,6 +49,7 @@ final class NoteService
     {
         $page = $this->pages->find($user, $pageId);
         $this->assertIsNotePage($page);
+        $this->pages->assertCanWrite($user, $pageId);
 
         $this->validator->validate($content);
 
