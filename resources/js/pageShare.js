@@ -12,6 +12,19 @@ export function pageShare() {
     errorMessage: '',
     generating: false,
 
+    init() {
+      const pageRoot = this.$root;
+      if (pageRoot?.dataset.pageId) {
+        this.pageId = Number(pageRoot.dataset.pageId);
+        this.isShared = pageRoot.dataset.pageIsShared === '1';
+        this.currentPermission = pageRoot.dataset.pagePermission || null;
+        window.__CURRENT_PAGE_ID__ = this.pageId;
+        window.__CURRENT_PAGE_IS_SHARED__ = this.isShared;
+        window.__CURRENT_PAGE_PERMISSION__ = this.currentPermission;
+        window.__CURRENT_PAGE_CAN_EDIT__ = pageRoot.dataset.pageCanEdit === '1';
+      }
+    },
+
     openShareDialog() {
       if (this.isShared) {
         return;

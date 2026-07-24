@@ -13,6 +13,10 @@ export function pageList() {
     navigating: false,
 
     async init() {
+      const currentPageRoot = document.querySelector('main.workspace-main');
+      if (!this.currentPageId && currentPageRoot?.dataset.pageId) {
+        this.currentPageId = Number(currentPageRoot.dataset.pageId);
+      }
       await this.refresh();
 
       if (!window.__workspaceNavigationBound__) {

@@ -22,10 +22,20 @@ export function taskBoard() {
     savingPageTitle: false,
 
     async init() {
-      this.pageId = window.__CURRENT_PAGE_ID__;
-      this.pageTitle = window.__CURRENT_PAGE_TITLE__;
+      const pageRoot = this.$root;
+      this.pageId = Number(pageRoot?.dataset.pageId || window.__CURRENT_PAGE_ID__ || 0);
+      this.pageTitle = pageRoot?.dataset.pageTitle || window.__CURRENT_PAGE_TITLE__ || '';
+      this.canEditPage = pageRoot?.dataset.pageCanEdit
+        ? pageRoot.dataset.pageCanEdit === '1'
+        : Boolean(window.__CURRENT_PAGE_CAN_EDIT__);
       this.savedPageTitle = this.pageTitle;
       this.loadCollapsedCategories();
+
+      if (!this.pageId) {
+        this.loading = false;
+        return;
+      }
+
       await this.refresh();
     },
 

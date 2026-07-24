@@ -1,5 +1,5 @@
 <?= $vite->tags('editor/index.js', $cspNonce ?? null) ?>
-<div class="page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage">
+<div class="page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>">
     <div class="page-toolbar flex items-center gap-2">
         <span style="color: var(--color-text-muted);" x-icon="file-text"></span>
         Notiz

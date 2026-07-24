@@ -1,4 +1,4 @@
-<script nonce="<?= e($cspNonce ?? '') ?>">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>;</script>
+<script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>;</script>
 <div class="flex min-h-screen" x-data="workspaceShell">
     <div
         x-show="sidebarOpen"
@@ -7,7 +7,15 @@
         @click="sidebarOpen = false"
     ></div>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
-    <main class="workspace-main min-w-0 flex-1 h-screen overflow-y-auto" x-data="pageShare">
+    <main
+        class="workspace-main min-w-0 flex-1 h-screen overflow-y-auto"
+        x-data="pageShare"
+        data-page-id="<?= (int) $page['id'] ?>"
+        data-page-title="<?= e((string) $page['title']) ?>"
+        data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>"
+        data-page-permission="<?= e((string) ($page['share_permission'] ?? '')) ?>"
+        data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>"
+    >
         <button @click="sidebarOpen = true" class="fixed left-4 top-4 z-20 rounded-md border p-2 shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Menü öffnen" x-icon="menu">
         </button>
         <?php if ($page['type'] === 'note'): ?>

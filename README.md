@@ -97,6 +97,15 @@ Die folgenden Secrets im GitHub-Environment `production` anlegen:
 abgeglichen werden, zum Beispiel über `ssh-keyscan -p 22 host.example`.
 Private Schlüssel, `.env` und Produktionsdaten gehören nicht ins Repository.
 
+### Cloudflare
+
+Wenn die Domain über Cloudflare proxied wird, sollte **Rocket Loader** für diese
+Anwendung deaktiviert oder für die HTML-Seiten ausgeschlossen werden. Rocket
+Loader verändert `type="module"`- und Inline-Skripte und kann dadurch die CSP
+und die Alpine-Initialisierung stören. Die Anwendung markiert ihre eigenen
+Skripte zusätzlich mit `data-cfasync="false"`; die zuverlässigste Lösung ist
+trotzdem eine Rocket-Loader-Ausnahme in Cloudflare.
+
 ### Entwicklung mit Hot-Module-Reload
 
 Für Frontend-Arbeit mit Live-Reload zwei Prozesse parallel starten:
