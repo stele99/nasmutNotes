@@ -4,9 +4,9 @@
 | Feld | Wert |
 |---|---|
 | Dokument-ID | URS-NOTES-001 |
-| Version | **2.8** |
+| Version | **3.2** |
 | Status | Entwurf |
-| Datum | 2026-07-26 |
+| Datum | 2026-07-27 |
 | Technologie | PHP 8.5, SQLite 3 (WAL + FTS5), Vite 7 + Alpine.js 3 + TipTap 3 |
 
 ---
@@ -222,6 +222,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-NOTE-20 | Ein Klick auf ein Badge **lädt die Datei herunter**; handelt es sich um ein **PDF**, öffnet es stattdessen in einem **überlagerten Betrachter** mit Titelzeile, „in neuem Tab öffnen“ und Schließen (auch via `Escape`). Der Auslieferungsendpunkt setzt entsprechend `Content-Disposition: inline` bzw. `attachment`, immer zusammen mit `X-Content-Type-Options: nosniff`. **Nur für PDF wird der gespeicherte Content-Type gesendet; jeder andere Anhang geht mit `application/octet-stream` heraus.** Da beliebige Dateitypen anhängbar sind (FR-NOTE-18), ist das die tragende Absicherung: Ein HTML- oder SVG-Anhang kann so nicht im Ursprung der Anwendung gerendert werden, auch wenn ein Browser die Disposition ignoriert. Zwei Umsetzungshinweise: (1) `frame-ancestors` gilt für die **eingebettete** Antwort — bei `'none'` verweigert der Browser die Anzeige selbst im gleichnamigen Rahmen, für PDF-Antworten ist deshalb `'self'` zu setzen (siehe NFR-SEC-15). (2) Der Rahmen darf **keine Alpine-Direktive** tragen: Der CSP-Build lehnt das Auswerten von Ausdrücken auf iframes ab und bricht dabei die Initialisierung der gesamten Seite ab; Quelle und Titel werden im JavaScript direkt am Element gesetzt. | M |
 | FR-NOTE-21 | Die **maximale Größe je Anhang** legt der Admin fest (Default 10 MB, Grenzen 1–2048 MB); `MAX_ATTACHMENT_MB` dient nur als Anfangswert. Anhänge und eingebettete Bilder zählen gemeinsam auf das Speicherkontingent des Seiteneigentümers (FR-ADM-06). | M |
 | FR-NOTE-22 | Der Zugriff auf einen Anhang wird immer über die Seite geprüft: Wer die Seite nicht sehen darf, erhält HTTP 404; Löschen setzt Schreibrecht voraus. Dateinamen werden von Pfadanteilen und Steuerzeichen befreit und auf 150 Zeichen gekürzt. | M |
+| FR-NOTE-23 | Der Bild-Betrachter (FR-NOTE-16) unterstützt auf Touchgeräten Pinch-to-Zoom (bis 4×), Verschieben im gezoomten Zustand und Doppeltipp zum Ein-/Auszoomen. | S |
 
 ### 5.5 Task-Seiten
 
@@ -305,6 +306,7 @@ Ergebnis: 5 Tasks; der dritte ohne Listenmarkierung, der vierte direkt als erled
 | FR-SHR-13 | In den Headern von Notiz- und Task-Seiten werden Owner und Nutzer mit angenommener, aktiver Schreibfreigabe als Initialen-Avatare angezeigt — **in beiden Seitentypen identisch**. Ein Klick auf die Avatare öffnet eine Liste der Namen („Geteilt mit …“); derselbe Text steht als `title`/`aria-label` an der Avatargruppe. Der Kopfbereich bricht auf schmalen Displays um, damit der Freigabe-Hinweis sichtbar bleibt. | S |
 | FR-SHR-15 | Dem Eigentümer wird der Hinweis „Geteilt“ bereits angezeigt, sobald ein aktiver Share-Link besteht — also auch, bevor ihn jemand angenommen hat. | S |
 | FR-SHR-14 | Der Owner kann im Teilen-Dialog alle aktiven Freigaben einer Seite gemeinsam widerrufen („Teilen beenden“). | M |
+| FR-SHR-16 | Bei „Lesen und Kopieren" bietet die öffentliche Ansicht angemeldeten Nutzern eine Schaltfläche **„Kopie erstellen"** mit optionaler Auswahl eines Zielnotizbuchs. Die Kopie entsteht serverseitig (Bilder und Dateianhänge werden dupliziert), zählt auf das Speicherkontingent des kopierenden Nutzers (FR-ADM-06) und ist auf 10 Kopien pro Stunde und Konto und Freigabe-Token begrenzt. Die Aktion wird im Audit-Log vermerkt. | M |
 
 ### 5.8 Export *(neu in v2.0)*
 
@@ -443,6 +445,7 @@ LIMIT 20;
 | NFR-UI-21 | „Abmelden“ steht als Tür-Symbol rechts neben dem Einstellungs-Zahnrad in der Statuszeile der Seitenleiste, nicht in einer eigenen Zeile. | S |
 | NFR-UI-18 | Der Menü-Schalter zum Öffnen der Seitenleiste misst 2,4 rem bei 1,4 rem Icon-Größe. Er liegt fixiert links oben und ist **ausschließlich unter 768 px** sichtbar — ebenso der Schließen-Schalter im Kopf der Seitenleiste. Der Kopf der Seitenleiste rückt mobil so weit ein, dass der Schalter keinen Text überlagert. Hinweis für die Umsetzung: Ungeschichtetes CSS gewinnt in Tailwind 4 gegen jede Utility-Klasse — Hilfsklassen dürfen deshalb kein `display` setzen, sonst bleibt `md:hidden` wirkungslos. | M |
 | NFR-UI-19 | Notiz- und Task-Seiten beginnen mobil unmittelbar am oberen Bildschirmrand: Der Kopfbereich trägt dort nur noch geringen Innenabstand, sodass Freigabe-Hinweis und Aktionen ohne vorgelagerten Leerraum sichtbar sind. | S |
+| NFR-UI-22 | Auf einer geöffneten Seite (< 768 px) navigiert eine Wisch-Geste nach links von der Seite zur Notizbuch-/Seitenleiste bzw., wenn diese die Seitenliste zeigt, zurück zur Notizbuchübersicht. Wischgesten auf interaktiven Elementen (Links, Editor, Bilder) lösen nicht aus. | K |
 
 ### 7.2 Barrierefreiheit
 
@@ -485,6 +488,7 @@ LIMIT 20;
 | NFR-SEC-13 | Externe Links in Notizen und Tasks erhalten `rel="noopener noreferrer"` und `target="_blank"`. | M |
 | NFR-SEC-14 | Kein `eval`-basiertes JS; Alpine.js wird im CSP-kompatiblen Build eingesetzt oder per Nonce freigegeben. Dieser Build wertet **keine** Ausdrücke auf `<iframe>`-Elementen aus und wirft dabei einen Fehler, der die Initialisierung der gesamten Seite abbricht — Rahmen dürfen deshalb keine Direktiven tragen. | S |
 | NFR-SEC-15 | Einzige Ausnahme von `frame-ancestors 'none'` sind Antworten mit `Content-Type: application/pdf`: Sie erhalten `frame-ancestors 'self'`, damit der Anhang-Betrachter sie einbetten kann. Fremde Ursprünge bleiben ausgesperrt, und die ausgelieferten Bytes enthalten keine Anwendungsoberfläche. Ein Test in `tests/Unit/Middleware` sichert beide Fälle ab. | M |
+| NFR-SEC-16 | Der Service Worker cacht keine Antworten unter `/s/*`: Freigabe-Tokens sind Bearer-Credentials und dürfen nicht im geräteweiten Shell- oder Attachment-Cache landen, der auch anderen Nutzern desselben Geräts zugänglich ist. | M |
 
 ### 7.5 Datenschutz
 
@@ -563,7 +567,8 @@ users ──1:n── audit_log
 **import_batches** *(neu)* — `id`, `page_id` (FK), `category_id` (FK), `created_by` (nullable bei Share-Zugriff), `line_count`, `created_count`, `skipped_count`, `created_at`
 *Ermöglicht die „Rückgängig"-Funktion (FR-IMP-14) über `tasks.import_batch_id`.*
 
-**share_links** — `id`, `page_id` (FK), `token_hash` (UNIQUE), `permission` (`read`\|`write`), `password_hash`, `requires_login`, `expires_at`, `revoked_at`, `last_accessed_at`, `access_count`, `created_at`
+**share_links** — `id`, `page_id` (FK), `token_hash` (UNIQUE), `permission` (`read`\|`write`), `mode` (`read`\|`write`\|`read_copy`, *neu, Migration 0024*), `password_hash`, `requires_login`, `expires_at`, `revoked_at`, `last_accessed_at`, `access_count`, `created_at`
+*`mode` steuert die Auslieferung (öffentliche Ansicht vs. authentifizierter Workspace-Zugriff); `permission` bleibt für Anzeige-/Kompatibilitätszwecke erhalten.*
 
 **invites** — `id`, `token_hash` (UNIQUE), `email`, `note`, `created_by` (FK), `max_uses`, `used_count`, `expires_at`, `revoked_at`, `created_at`
 
@@ -631,8 +636,11 @@ users ──1:n── audit_log
 | GET | `/app` | Workspace-Oberfläche |
 | GET | `/app/page/{id}` | Seitenansicht |
 | GET | `/app/trash` | Papierkorb |
-| GET | `/s/{token}` | Öffentlich geteilte Seite |
+| GET | `/s/{token}` | Öffentliche Freigabe-Ansicht (Nur-Lesen/Lesen-und-Kopieren) bzw. Login-Aufforderung/Weiterleitung in den Workspace (Lesen-und-Schreiben) |
 | POST | `/s/{token}/unlock` | Passwortgeschützte Freigabe entsperren |
+| GET | `/s/{token}/images/{imageToken}` | Bild einer öffentlichen Freigabe ausliefern |
+| GET | `/s/{token}/files/{attachmentId}` | Dateianhang einer öffentlichen Freigabe ausliefern |
+| POST | `/s/{token}/copy` | Seite aus einer Lesen-und-Kopieren-Freigabe in den eigenen Workspace kopieren (Anmeldung erforderlich, FR-SHR-16) |
 | GET | `/admin` | Admin-Bereich |
 | GET | `/health` | Health-Check |
 
@@ -844,6 +852,7 @@ users ──1:n── audit_log
 | AK-36 | Ein Write-Share-Link erlaubt Inhaltsänderungen und Task-Import, verweigert aber das Löschen der Seite. |
 | AK-37 | Der direkte Aufruf einer fremden Seiten-ID liefert HTTP 404 oder 403, niemals Inhalte. |
 | AK-38 | Ein passwortgeschützter Share-Link ist erst nach korrekter Passworteingabe zugänglich; nach 5 Fehlversuchen greift ein Rate Limit. |
+| AK-53 | Ein Lesen-und-Kopieren-Link zeigt die Seite ohne Anmeldung in einer eigenständigen Ansicht ohne Workspace-Oberfläche; ein angemeldeter Nutzer kann daraus eine unabhängige Kopie mit Bildern und Dateianhängen erstellen, die auf sein eigenes Speicherkontingent angerechnet wird. Nach dem Login über den Freigabe-Link führt der Rückkanal wieder zur Freigabe statt zu `/app`. |
 
 ### 12.6 Qualität und Betrieb
 
@@ -899,11 +908,12 @@ users ──1:n── audit_log
 | OP-7 | Welche Aufbewahrungsfrist gilt für das Audit-Log? | DSGVO-Löschkonzept |
 
 ---
-cl
+
 ## 15. Änderungshistorie
 
 | Version | Datum | Änderung |
 |---|---|---|
+| 3.2 | 2026-07-27 | Neue Freigabeart „Lesen und Kopieren" (`read_copy`, Migration 0024): eigenständige, nicht indexierbare öffentliche Ansicht ohne Workspace-Oberfläche für Nur-Lesen- und Lesen/Kopieren-Links (`PublicShareController`/`PublicShareService`, Notizinhalt als sanitisiertes HTML über `ProseMirrorHtmlRenderer`); angemeldete Nutzer erzeugen daraus eine unabhängige Kopie samt Bildern und Dateianhängen im eigenen Workspace/Notizbuch (`PageCopyService`, `POST /s/{token}/copy`, FR-SHR-16); Lesen/Schreiben-Links verlangen jetzt zwingend eine Anmeldung, der Login-Rückkanal führt danach über einen signierten `return`-Pfad zurück zur Freigabe (FR-SHR-03/06/08, `OAuthFlight`); Sicherheitskorrektur: Task-Board-Änderungen prüfen nun serverseitig das Schreibrecht (`assertCanWrite`); der Service Worker cacht `/s/`-Antworten nicht mehr, da Share-Tokens Bearer-Credentials sind (NFR-SEC-16); zusätzlich Pinch-Zoom/Verschieben/Doppeltipp im Bild-Betrachter (FR-NOTE-23) und eine mobile Wisch-Geste zwischen Notizbuch- und Seitenliste |
 | 1.0 | 2026-07-24 | Erstfassung |
 | 2.0 | 2026-07-24 | Technologie-Stack mit aktuellen Versionen (Kap. 3); Volltextsuche als eigenes Kapitel inkl. FTS5-Schema (Kap. 6); Task-Bulk-Import per Textfeld (Kap. 5.6, API 10.3, AK-14 bis AK-23); ergänzt: Papierkorb, Duplizieren, Export, Versionskonflikte, Sessions-Tabelle, Rate-Limiting, Backup/Restore, Lieferumfang |
 | 2.1 | 2026-07-25 | FR-NOTE-09: Snapshot-Policy auf 30-Minuten-Idle oder Nutzerwechsel präzisiert; API um Versionsdetail ergänzt |

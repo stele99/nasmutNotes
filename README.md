@@ -10,7 +10,7 @@ Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
 
 - Google-OAuth-2.0-Login (Authorization Code Flow + PKCE), Invite-Link-Registrierung, Admin-Bootstrap über `ADMIN_EMAILS`
 - Workspace- und Seitenverwaltung (Notiz-/Task-Seiten, Papierkorb, Favoriten, Sortierung/Filter)
-- Freigabe von Notiz- und Task-Seiten per Link mit Lese-/Schreibberechtigung und Empfänger-Seitenliste
+- Freigabe von Notiz- und Task-Seiten per Link in drei Stufen: Nur lesen, Lesen und Kopieren (öffentliche Ansicht, angemeldete Nutzer erzeugen eine unabhängige Kopie samt Bildern/Anhängen) sowie Lesen und Schreiben (Anmeldung erforderlich, gemeinsame Bearbeitung im Workspace)
 - Notizseiten mit TipTap-Editor, Autosave, Screenshot-Paste/Drag-and-drop, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
 - Task-Seiten mit Kategorien und Tasks (Anlegen, Bearbeiten, Verschieben, Duplizieren, Löschen mit Verschieben/Kaskade)
 - Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff
