@@ -35,6 +35,41 @@ final class ProseMirrorValidatorTest extends TestCase
                     ['type' => 'taskItem', 'attrs' => ['checked' => true], 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'x']]]]],
                 ]],
                 ['type' => 'horizontalRule'],
+                [
+                    'type' => 'table',
+                    'content' => [
+                        [
+                            'type' => 'tableRow',
+                            'content' => [
+                                [
+                                    'type' => 'tableHeader',
+                                    'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                    'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'A']]]],
+                                ],
+                                [
+                                    'type' => 'tableHeader',
+                                    'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                    'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'B']]]],
+                                ],
+                            ],
+                        ],
+                        [
+                            'type' => 'tableRow',
+                            'content' => [
+                                [
+                                    'type' => 'tableCell',
+                                    'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                    'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => '1']]]],
+                                ],
+                                [
+                                    'type' => 'tableCell',
+                                    'attrs' => ['colspan' => 1, 'rowspan' => 1],
+                                    'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => '2']]]],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
             ],
         ];
 

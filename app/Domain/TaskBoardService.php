@@ -114,7 +114,12 @@ final class TaskBoardService
         }
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @return array<string, mixed>
+     *
+     * @throws TaskDuplicateTitleException wenn im Kapitel bereits eine Aufgabe
+     *         mit gleichem Titel steht und $allowDuplicate nicht gesetzt ist
+     */
     public function createTask(
         User $user,
         int $categoryId,
@@ -123,17 +128,46 @@ final class TaskBoardService
         ?string $responsible,
         ?string $link,
         bool $isDone = false,
+        bool $allowDuplicate = false,
     ): array {
         $category = $this->resolveOwnedCategory($user, $categoryId);
+        $title = $this->validateTitle($title);
+
+        if (!$allowDuplicate) {
+            $duplicate = $this->findTaskByTitle((int) $category['id'], $title);
+            if ($duplicate !== null) {
+                throw new TaskDuplicateTitleException($duplicate);
+            }
+        }
 
         return $this->tasks->create(
             (int) $category['id'],
-            $this->validateTitle($title),
+            $title,
             $this->validateDescription($description),
             $this->validateResponsible($responsible),
             $this->validateLink($link),
             $isDone,
         );
+    }
+
+    /**
+     * Titelvergleich ohne Rücksicht auf Groß-/Kleinschreibung und Randleerzeichen.
+     * Bewusst in PHP statt per SQL: SQLites NOCASE und LOWER() arbeiten nur auf
+     * ASCII, „Änderung“ und „änderung“ gälten dort als verschieden.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function findTaskByTitle(int $categoryId, string $title): ?array
+    {
+        $needle = mb_strtolower(trim($title));
+
+        foreach ($this->tasks->listForCategory($categoryId) as $task) {
+            if (mb_strtolower(trim((string) $task['title'])) === $needle) {
+                return $task;
+            }
+        }
+
+        return null;
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -185,8 +219,9 @@ final class TaskBoardService
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
+     * @throws TaskVersionConflictException wenn der Task seit $expectedVersion anderweitig geändert wurde
      */
-    public function updateTask(User $user, int $taskId, array $input): array
+    public function updateTask(User $user, int $taskId, array $input, ?int $expectedVersion = null): array
     {
         $task = $this->resolveOwnedTask($user, $taskId);
 
@@ -211,7 +246,12 @@ final class TaskBoardService
             $fields['is_done'] = ((bool) $input['is_done']) ? 1 : 0;
         }
 
-        $this->tasks->update((int) $task['id'], $fields);
+        if (!$this->tasks->update((int) $task['id'], $fields, $expectedVersion)) {
+            $current = $this->tasks->find((int) $task['id']);
+            assert($current !== null);
+
+            throw new TaskVersionConflictException($current);
+        }
 
         $updated = $this->tasks->find((int) $task['id']);
         assert($updated !== null);

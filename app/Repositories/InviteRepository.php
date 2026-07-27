@@ -47,6 +47,16 @@ final class InviteRepository
         return $row !== false ? $row : null;
     }
 
+    /** @return array<string, mixed>|null */
+    public function findById(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM invites WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row !== false ? $row : null;
+    }
+
     public function incrementUse(int $id): void
     {
         $stmt = $this->pdo->prepare('UPDATE invites SET used_count = used_count + 1 WHERE id = :id');
@@ -70,6 +80,21 @@ final class InviteRepository
         );
 
         return $stmt !== false ? $stmt->fetchAll() : [];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function allForCreator(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT invites.*, users.email AS created_by_email
+             FROM invites
+             JOIN users ON users.id = invites.created_by
+             WHERE invites.created_by = :created_by
+             ORDER BY invites.created_at DESC"
+        );
+        $stmt->execute(['created_by' => $userId]);
+
+        return $stmt->fetchAll();
     }
 
     /** @param array<string, mixed> $invite */

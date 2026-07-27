@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\Admin\AdminDashboardController;
 use App\Controllers\Admin\InviteAdminController;
 use App\Controllers\AppController;
 use App\Controllers\AttachmentController;
@@ -10,12 +11,16 @@ use App\Controllers\BoardController;
 use App\Controllers\CategoryController;
 use App\Controllers\HealthController;
 use App\Controllers\HomeController;
+use App\Controllers\ImportController;
 use App\Controllers\InviteController;
+use App\Controllers\NotebookController;
 use App\Controllers\NoteController;
+use App\Controllers\PageAttachmentController;
 use App\Controllers\PageController;
 use App\Controllers\SearchController;
 use App\Controllers\ShareController;
 use App\Controllers\TaskController;
+use App\Controllers\UserInviteController;
 use App\Middleware\RequireAdminMiddleware;
 use App\Middleware\RequireAuthMiddleware;
 use Slim\App;
@@ -31,7 +36,11 @@ return static function (App $app): void {
     $app->get('/invite/{token}', [InviteController::class, 'accept']);
     $app->get('/s/{token}', [ShareController::class, 'open'])->add(new RequireAuthMiddleware(false));
 
-    $app->get('/admin', [InviteAdminController::class, 'page'])
+    $app->get('/admin', [AdminDashboardController::class, 'page'])
+        ->add(new RequireAdminMiddleware(false))
+        ->add(new RequireAuthMiddleware(false));
+
+    $app->get('/admin/invites', [InviteAdminController::class, 'page'])
         ->add(new RequireAdminMiddleware(false))
         ->add(new RequireAuthMiddleware(false));
 
@@ -39,15 +48,45 @@ return static function (App $app): void {
         $group->get('/invites', [InviteAdminController::class, 'index']);
         $group->post('/invites', [InviteAdminController::class, 'store']);
         $group->delete('/invites/{id}', [InviteAdminController::class, 'destroy']);
+        $group->get('/overview', [AdminDashboardController::class, 'overview']);
+        $group->delete('/users/{id}', [AdminDashboardController::class, 'destroyUser']);
+        $group->patch('/users/{id}/quota', [AdminDashboardController::class, 'updateUserQuota']);
+        $group->post('/users/{id}/compress-images', [AdminDashboardController::class, 'compressUserImages']);
+        $group->patch('/settings/default-quota', [AdminDashboardController::class, 'updateDefaultQuota']);
+        $group->patch('/settings/max-attachment', [AdminDashboardController::class, 'updateMaxAttachment']);
+        $group->patch(
+            '/settings/offline-attachment',
+            [AdminDashboardController::class, 'updateOfflineAttachmentLimit'],
+        );
+        $group->post('/attachments/purge-orphans', [AdminDashboardController::class, 'purgeOrphans']);
     })
         ->add(new RequireAdminMiddleware(true))
         ->add(new RequireAuthMiddleware(true));
 
+    $app->group('/api/invites', function ($group): void {
+        $group->get('', [UserInviteController::class, 'index']);
+        $group->post('', [UserInviteController::class, 'store']);
+        $group->delete('/{id}', [UserInviteController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
+
+    $app->get('/api/session', [AppController::class, 'session'])->add(new RequireAuthMiddleware(true));
+
     $app->get('/app', [AppController::class, 'shell'])->add(new RequireAuthMiddleware(false));
     $app->get('/app/page/{id}', [AppController::class, 'page'])->add(new RequireAuthMiddleware(false));
 
+    $app->group('/api/notebooks', function ($group): void {
+        $group->get('', [NotebookController::class, 'index']);
+        $group->post('', [NotebookController::class, 'store']);
+        $group->patch('/{id}', [NotebookController::class, 'update']);
+        $group->delete('/{id}', [NotebookController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
+
     $app->group('/api/pages', function ($group): void {
         $group->get('', [PageController::class, 'index']);
+        // Vor /{id} registriert, damit "trash" nicht als Seiten-ID gelesen wird.
+        $group->delete('/trash', [PageController::class, 'emptyTrash']);
+        $group->post('/trash', [PageController::class, 'trashMany']);
+        $group->post('/move', [PageController::class, 'moveMany']);
         $group->post('', [PageController::class, 'store']);
         $group->patch('/{id}', [PageController::class, 'update']);
         $group->delete('/{id}', [PageController::class, 'destroy']);
@@ -55,10 +94,19 @@ return static function (App $app): void {
         $group->delete('/{id}/purge', [PageController::class, 'purge']);
         $group->get('/{id}/shares', [ShareController::class, 'index']);
         $group->post('/{id}/shares', [ShareController::class, 'store']);
+        $group->delete('/{id}/shares', [ShareController::class, 'stop']);
+        $group->get('/{id}/writers', [ShareController::class, 'writers']);
+        $group->get('/{id}/collaborators', [ShareController::class, 'collaborators']);
         $group->delete('/{id}/share-access', [ShareController::class, 'leave']);
         $group->get('/{id}/content', [NoteController::class, 'show']);
         $group->put('/{id}/content', [NoteController::class, 'update']);
+        $group->get('/{id}/versions', [NoteController::class, 'versions']);
+        $group->get('/{id}/versions/{vid}', [NoteController::class, 'showVersion']);
+        $group->post('/{id}/versions/{vid}/restore', [NoteController::class, 'restoreVersion']);
+        $group->post('/{id}/attachments/compress', [AttachmentController::class, 'compress']);
         $group->post('/{id}/attachments', [AttachmentController::class, 'store']);
+        $group->get('/{id}/files', [PageAttachmentController::class, 'index']);
+        $group->post('/{id}/files', [PageAttachmentController::class, 'store']);
         $group->get('/{id}/board', [BoardController::class, 'show']);
         $group->post('/{id}/categories', [BoardController::class, 'createCategory']);
     })->add(new RequireAuthMiddleware(true));
@@ -82,6 +130,24 @@ return static function (App $app): void {
 
     $app->get('/api/attachments/{token}', [AttachmentController::class, 'show'])
         ->add(new RequireAuthMiddleware(true));
+
+    $app->post('/api/images/compress', [AttachmentController::class, 'compressAll'])
+        ->add(new RequireAuthMiddleware(true));
+
+    $app->group('/api/page-attachments', function ($group): void {
+        $group->get('/{id}', [PageAttachmentController::class, 'show']);
+        $group->delete('/{id}', [PageAttachmentController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
+
+    $app->group('/api/import', function ($group): void {
+        $group->post('/archive', [ImportController::class, 'store']);
+        // Geteilter Upload: Vor /{id} registriert, damit "parts" nicht als
+        // Upload-Kennung gelesen wird.
+        $group->post('/archive/parts', [ImportController::class, 'begin']);
+        $group->post('/archive/parts/{id}', [ImportController::class, 'append']);
+        $group->post('/archive/parts/{id}/complete', [ImportController::class, 'complete']);
+        $group->delete('/archive/parts/{id}', [ImportController::class, 'abort']);
+    })->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));
 };

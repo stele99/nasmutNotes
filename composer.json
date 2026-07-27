@@ -9,6 +9,8 @@
         "ext-pdo_sqlite": "*",
         "ext-sqlite3": "*",
         "ext-json": "*",
+        "ext-gd": "*",
+        "ext-zip": "*",
         "ext-mbstring": "*",
         "slim/slim": "^4.14",
         "slim/psr7": "^1.7",

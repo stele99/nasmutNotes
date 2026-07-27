@@ -6,6 +6,7 @@ namespace Tests\Integration\Domain;
 
 use App\Domain\PageService;
 use App\Domain\TaskBoardService;
+use App\Domain\TaskDuplicateTitleException;
 use App\Domain\User;
 use App\Repositories\CategoryRepository;
 use App\Repositories\PageRepository;
@@ -40,6 +41,8 @@ final class TaskBoardServiceTest extends TestCase
 
         $page = $this->pages->create($this->userA, 'task', 'Board', null);
         $this->taskPageId = (int) $page['id'];
+        $this->board->createCategory($this->userA, $this->taskPageId, 'Offen', null, null);
+        $this->board->createCategory($this->userA, $this->taskPageId, 'In Arbeit', null, null);
     }
 
     private function makeUser(PDO $pdo, WorkspaceRepository $workspaces, string $email): User
@@ -52,6 +55,73 @@ final class TaskBoardServiceTest extends TestCase
         return new User($id, $email, $email, $email, null, true, false);
     }
 
+    public function testDuplicateTitleInSameCategoryIsRejected(): void
+    {
+        $categoryId = $this->firstCategoryId();
+        $existing = $this->board->createTask($this->userA, $categoryId, 'Rechnung prüfen', null, null, null);
+
+        try {
+            $this->board->createTask($this->userA, $categoryId, 'Rechnung prüfen', null, null, null);
+            self::fail('Doppelter Titel hätte gemeldet werden müssen.');
+        } catch (TaskDuplicateTitleException $e) {
+            self::assertSame((int) $existing['id'], (int) $e->existingTask['id']);
+        }
+
+        self::assertCount(1, $this->tasksIn($categoryId));
+    }
+
+    public function testDuplicateDetectionIgnoresCaseAndSurroundingSpace(): void
+    {
+        $categoryId = $this->firstCategoryId();
+        $this->board->createTask($this->userA, $categoryId, 'Änderung melden', null, null, null);
+
+        $this->expectException(TaskDuplicateTitleException::class);
+        $this->board->createTask($this->userA, $categoryId, '  ÄNDERUNG MELDEN  ', null, null, null);
+    }
+
+    public function testDuplicateIsCreatedWhenExplicitlyAllowed(): void
+    {
+        $categoryId = $this->firstCategoryId();
+        $this->board->createTask($this->userA, $categoryId, 'Rechnung prüfen', null, null, null);
+
+        $second = $this->board->createTask(
+            $this->userA,
+            $categoryId,
+            'Rechnung prüfen',
+            null,
+            null,
+            null,
+            false,
+            true,
+        );
+
+        self::assertSame('Rechnung prüfen', $second['title']);
+        self::assertCount(2, $this->tasksIn($categoryId));
+    }
+
+    public function testSameTitleInDifferentCategoryIsAllowed(): void
+    {
+        $board = $this->board->board($this->userA, $this->taskPageId);
+        self::assertGreaterThan(1, count($board));
+
+        $this->board->createTask($this->userA, (int) $board[0]['id'], 'Doppelt', null, null, null);
+        $second = $this->board->createTask($this->userA, (int) $board[1]['id'], 'Doppelt', null, null, null);
+
+        self::assertSame('Doppelt', $second['title']);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function tasksIn(int $categoryId): array
+    {
+        foreach ($this->board->board($this->userA, $this->taskPageId) as $category) {
+            if ((int) $category['id'] === $categoryId) {
+                return $category['tasks'];
+            }
+        }
+
+        return [];
+    }
+
     private function firstCategoryId(): int
     {
         $board = $this->board->board($this->userA, $this->taskPageId);
@@ -59,15 +129,11 @@ final class TaskBoardServiceTest extends TestCase
         return (int) $board[0]['id'];
     }
 
-    public function testTaskPageGetsThreeDefaultCategories(): void
+    public function testNewTaskPageHasNoDefaultCategories(): void
     {
-        $board = $this->board->board($this->userA, $this->taskPageId);
+        $page = $this->pages->create($this->userA, 'task', 'Leeres Board', null);
 
-        self::assertCount(3, $board);
-        self::assertSame(['Offen', 'In Arbeit', 'Erledigt'], array_column($board, 'name'));
-        foreach ($board as $category) {
-            self::assertSame([], $category['tasks']);
-        }
+        self::assertSame([], $this->board->board($this->userA, (int) $page['id']));
     }
 
     public function testCreateTaskAppearsInCategory(): void
@@ -162,7 +228,7 @@ final class TaskBoardServiceTest extends TestCase
         $this->board->deleteCategory($this->userA, $categoryId, null, true);
 
         $board = $this->board->board($this->userA, $this->taskPageId);
-        self::assertCount(2, $board);
+        self::assertCount(1, $board);
     }
 
     public function testDeleteCategoryWithMoveToTransfersTasks(): void
@@ -175,7 +241,7 @@ final class TaskBoardServiceTest extends TestCase
         $this->board->deleteCategory($this->userA, $openId, $inProgressId, false);
 
         $board = $this->board->board($this->userA, $this->taskPageId);
-        self::assertCount(2, $board);
+        self::assertCount(1, $board);
         $remaining = array_filter($board, static fn (array $c): bool => (int) $c['id'] === $inProgressId);
         $remaining = array_values($remaining)[0];
         self::assertSame([(int) $task['id']], array_column($remaining['tasks'], 'id'));

@@ -49,12 +49,15 @@ final class NoteController
             throw new ValidationException('Feld "version" fehlt oder ist keine Ganzzahl.');
         }
 
+        $forceSnapshot = ($body['force_snapshot'] ?? false) === true;
+
         try {
             $result = $this->notes->save(
                 $user,
                 (int) $args['id'],
                 $body['content'],
                 (int) $body['version'],
+                $forceSnapshot,
             );
         } catch (VersionConflictException $e) {
             return JsonResponse::json($response, [
@@ -65,6 +68,57 @@ final class NoteController
                 'current' => [
                     'content' => $e->currentContent,
                     'version' => $e->currentVersion,
+                    'updated_at' => $e->currentUpdatedAt,
+                    'last_editor_name' => $e->currentEditorName,
+                ],
+            ], 409);
+        }
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function versions(Request $request, Response $response, array $args): Response
+    {
+        $result = $this->notes->listVersions(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function showVersion(Request $request, Response $response, array $args): Response
+    {
+        $result = $this->notes->getVersion(
+            CurrentUser::require($request),
+            (int) $args['id'],
+            (int) $args['vid'],
+        );
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function restoreVersion(Request $request, Response $response, array $args): Response
+    {
+        $user = CurrentUser::require($request);
+
+        try {
+            $result = $this->notes->restoreVersion(
+                $user,
+                (int) $args['id'],
+                (int) $args['vid'],
+            );
+        } catch (VersionConflictException $e) {
+            return JsonResponse::json($response, [
+                'error' => [
+                    'code' => 'VERSION_CONFLICT',
+                    'message' => $e->getMessage(),
+                ],
+                'current' => [
+                    'content' => $e->currentContent,
+                    'version' => $e->currentVersion,
+                    'updated_at' => $e->currentUpdatedAt,
+                    'last_editor_name' => $e->currentEditorName,
                 ],
             ], 409);
         }

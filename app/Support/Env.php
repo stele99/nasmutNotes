@@ -35,7 +35,7 @@ final class Env
 
         $missing = array_filter(self::REQUIRED, static fn (string $key): bool => self::get($key) === null || self::get($key) === '');
         if ($missing !== []) {
-            fwrite(STDERR, 'Fehlende Pflicht-Umgebungsvariablen: ' . implode(', ', $missing) . PHP_EOL);
+            error_log('Fehlende Pflicht-Umgebungsvariablen: ' . implode(', ', $missing));
             exit(1);
         }
     }

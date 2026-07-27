@@ -1,0 +1,145 @@
+<div class="flex min-h-0 flex-1 flex-col" @dragend.window="clearDropTarget">
+    <div class="flex items-center gap-2 px-4 pb-4 pt-5">
+        <a href="/app" class="flex min-w-0 flex-1 items-center gap-2 font-semibold">
+            <span class="flex size-7 items-center justify-center rounded-md" style="background: var(--color-bg);" x-icon="book-open"></span>
+            <span><span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span>
+        </a>
+        <button type="button" @click="closeSidebar" class="icon-action md:hidden" aria-label="Menü schließen" x-icon="x"></button>
+    </div>
+    <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3" aria-label="Notizbücher">
+        <button type="button" @click="navigateHome" class="notebook-item" :class="activeCollection === 'home' ? 'is-active' : ''" :aria-current="activeCollection === 'home' ? 'page' : null"><span x-icon="home"></span>Home</button>
+        <button type="button" @click="selectCollection('favorites')" class="notebook-item" :class="activeCollection === 'favorites' ? 'is-active' : ''" :aria-current="activeCollection === 'favorites' ? 'page' : null"><span x-icon="star"></span>Favoriten</button>
+        <button type="button" @click="selectCollection('unassigned')" @dragenter.prevent="setDropTargetNotebook(null)" @dragover.prevent="setDropTargetNotebook(null)" @drop.prevent="dropPageOnNotebook(null, $event)" class="notebook-item" :class="{ 'is-active': activeCollection === 'unassigned', 'is-drop-target': isUnassignedDropTarget() }" :aria-current="activeCollection === 'unassigned' ? 'page' : null"><span x-icon="inbox"></span><span>Nicht zugewiesen</span><span x-show="isUnassignedDropTarget()" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span></button>
+        <button type="button" @click="selectCollection('shared')" class="notebook-item" :class="activeCollection === 'shared' ? 'is-active' : ''" :aria-current="activeCollection === 'shared' ? 'page' : null"><span x-icon="share-2"></span>Geteilt</button>
+        <div class="mt-5 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-wide" style="color: var(--color-text-muted);">
+            <span>Notizbücher</span>
+            <button type="button" @click="openNotebookDialog" class="icon-action -mr-1" aria-label="Notizbuch anlegen" title="Notizbuch anlegen" x-icon="plus"></button>
+        </div>
+        <template x-for="notebook in notebooks" :key="notebook.id">
+            <div class="group relative flex items-center gap-1 rounded-md" :class="isActiveNotebook(notebook.id) ? 'notebook-item-active' : ''">
+                <button type="button" @click="selectCollection('notebook', notebook.id)" @dragenter.prevent="setDropTargetNotebook(notebook.id)" @dragover.prevent="setDropTargetNotebook(notebook.id)" @drop.prevent="dropPageOnNotebook(notebook.id, $event)" class="notebook-item min-w-0 flex-1" :class="{ 'is-drop-target': isNotebookDropTarget(notebook.id) }"><span class="notebook-appearance shrink-0" :style="notebookIconStyle(notebook)" x-cloak><span x-show="!notebook.icon || notebook.icon === 'book-open'" x-icon="book-open:size-5"></span><span x-show="notebook.icon === 'folder'" x-icon="folder:size-5"></span><span x-show="notebook.icon === 'briefcase'" x-icon="briefcase:size-5"></span><span x-show="notebook.icon === 'house'" x-icon="house:size-5"></span><span x-show="notebook.icon === 'plane'" x-icon="plane:size-5"></span><span x-show="notebook.icon === 'heart'" x-icon="heart:size-5"></span><span x-show="notebook.icon === 'lightbulb'" x-icon="lightbulb:size-5"></span><span x-show="notebook.icon === 'laptop'" x-icon="laptop:size-5"></span><span x-show="notebook.icon === 'wrench'" x-icon="wrench:size-5"></span><span x-show="notebook.icon === 'utensils'" x-icon="utensils:size-5"></span><span x-show="notebook.icon === 'graduation-cap'" x-icon="graduation-cap:size-5"></span><span x-show="notebook.icon === 'star'" x-icon="star:size-5"></span></span><span class="truncate" x-text="notebook.name"></span><span x-show="isNotebookDropTarget(notebook.id)" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span><span x-show="!isNotebookDropTarget(notebook.id)" class="ml-auto text-xs" style="color: var(--color-text-muted);" x-text="notebook.page_count"></span></button>
+                <button type="button" @click.stop="openNotebookMenu(notebook.id)" class="icon-action shrink-0" :aria-expanded="isNotebookMenuOpen(notebook.id)" aria-label="Notizbuchmenü öffnen" x-icon="more-horizontal"></button>
+                <div x-show="isNotebookMenuOpen(notebook.id)" x-cloak @click.outside="closeNotebookMenu" @keydown.escape.window="closeNotebookMenu" class="absolute right-1 top-full z-30 mt-1 min-w-36 rounded-md border p-1" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+                    <button type="button" @click="openRenameNotebookDialog(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="pencil"></span>Umbenennen</button>
+                    <button type="button" @click="deleteNotebook(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-danger);"><span x-icon="trash"></span>Löschen</button>
+                </div>
+            </div>
+        </template>
+    </nav>
+    <div class="p-3">
+        <button type="button" @click="selectCollection('trash')" @dragenter.prevent="setTrashDropTarget" @dragover.prevent="setTrashDropTarget" @drop.prevent="dropPagesOnTrash($event)" class="notebook-item" :class="{ 'is-active': activeCollection === 'trash', 'is-drop-target': isTrashDropTarget() }" :aria-current="activeCollection === 'trash' ? 'page' : null"><span x-icon="trash"></span><span>Papierkorb</span><span x-show="isTrashDropTarget()" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span></button>
+        <?php include __DIR__ . '/invite_panel.php'; ?>
+        <div class="mt-2 flex items-center gap-2" x-data="offlineSettings" @import-dialog.window="trackImportDialog">
+            <button type="button" @click="openDialog" class="icon-action" aria-label="Offline und Einstellungen" title="Offline und Einstellungen" x-icon="settings"></button>
+            <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" x-icon="shield"></a><?php endif; ?>
+            <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" x-icon="log-out"></button>
+            <div x-show="open" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeDialog" @keydown.escape.window="closeDialog">
+                <div class="settings-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+                    <header class="flex items-center justify-between gap-3 border-b px-6 py-4" style="border-color: var(--color-border);">
+                        <div><h2 id="settings-dialog-title" class="font-semibold">Einstellungen</h2><p class="text-sm" style="color: var(--color-text-muted);" x-text="statusOnline ? 'Online' : 'Offline'"></p></div>
+                        <button type="button" @click="closeDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+                    </header>
+                    <div class="grid min-h-0 flex-1 grid-cols-[9rem_minmax(0,1fr)] sm:grid-cols-[13rem_minmax(0,1fr)]">
+                        <nav class="space-y-1 border-r p-3" aria-label="Einstellungen" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                            <button type="button" @click="selectSettingsSection('app')" class="settings-nav-button" :class="isSettingsSection('app') ? 'is-active' : ''"><span x-icon="home"></span><span>App</span></button>
+                            <button type="button" @click="selectSettingsSection('sync')" class="settings-nav-button" :class="isSettingsSection('sync') ? 'is-active' : ''"><span x-icon="wifi"></span><span>Sync</span></button>
+                            <button type="button" @click="selectSettingsSection('transfer')" class="settings-nav-button" :class="isSettingsSection('transfer') ? 'is-active' : ''"><span x-icon="upload"></span><span>Import / Export</span></button>
+                            <button type="button" @click="selectSettingsSection('storage')" class="settings-nav-button" :class="isSettingsSection('storage') ? 'is-active' : ''"><span x-icon="folder"></span><span>Speicher</span></button>
+                        </nav>
+                        <div class="min-h-0 overflow-y-auto p-5 sm:p-6">
+                            <section x-show="isSettingsSection('app')">
+                                <h3 class="text-xl font-semibold">App installieren</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">nasmutNotes als eigenständige App auf diesem Gerät verwenden.</p>
+                                <div class="mt-5 rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                            <div class="flex items-center gap-3">
+                                <img src="/icon/icon-192.png" alt="" class="size-11 rounded-xl">
+                                <div class="min-w-0 flex-1">
+                                    <p class="font-medium">Als App installieren</p>
+                                    <p x-show="appInstalled" x-cloak class="text-xs" style="color: var(--color-text-muted);">Bereits auf dem Home-Bildschirm installiert.</p>
+                                    <p x-show="showIosInstallHint" x-cloak class="text-xs" style="color: var(--color-text-muted);">In Safari: Teilen → „Zum Home-Bildschirm“.</p>
+                                    <p x-show="installMessage" x-cloak class="text-xs" style="color: var(--color-text-muted);" x-text="installMessage"></p>
+                                </div>
+                            </div>
+                            <button x-show="canInstallApp" x-cloak type="button" class="btn btn-primary mt-3 w-full" @click="installApp">App installieren</button>
+                        </div>
+                            </section>
+
+                            <section x-show="isSettingsSection('sync')" x-cloak>
+                                <h3 class="text-xl font-semibold">Synchronisation</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Lokale Änderungen übertragen und Offline-Inhalte aktualisieren.</p>
+                                <h4 class="mt-5 text-sm font-semibold">Lokal synchronisiert</h4>
+                                <dl class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Notizen</dt><dd class="mt-1 text-2xl font-semibold" x-text="localNoteCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Aufgabenlisten</dt><dd class="mt-1 text-2xl font-semibold" x-text="localTaskPageCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Bilder</dt><dd class="mt-1 text-2xl font-semibold" x-text="localImageCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Dateien</dt><dd class="mt-1 text-2xl font-semibold" x-text="localFileCount"></dd></div>
+                                </dl>
+                                <h4 class="mt-5 text-sm font-semibold">Übertragung</h4>
+                                <dl class="mt-3 grid gap-3 sm:grid-cols-3">
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Ausstehend</dt><dd class="mt-1 text-2xl font-semibold" x-text="pendingSync"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Konflikte</dt><dd class="mt-1 text-2xl font-semibold" x-text="conflictCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Blockiert</dt><dd class="mt-1 text-2xl font-semibold" x-text="blockedCount"></dd></div>
+                                </dl>
+                                <div class="mt-5 flex flex-wrap gap-2">
+                                    <button type="button" @click="syncNow" :disabled="busy || !statusOnline" class="btn btn-primary">Jetzt synchronisieren</button>
+                                    <button type="button" x-show="!statusPrefetching" @click="downloadNow" :disabled="busy || !statusOnline" class="btn btn-secondary">Offline-Inhalte aktualisieren</button>
+                                    <button type="button" x-show="statusPrefetching" x-cloak @click="cancelDownload" class="btn btn-secondary" x-text="cancelLabel()"></button>
+                                    <button type="button" @click="clearCache" :disabled="busy" class="btn btn-quiet">Lokalen Cache leeren</button>
+                                </div>
+                                <div class="mt-6 border-t pt-5" style="border-color: var(--color-border);">
+                                    <label class="block text-sm font-medium" for="settings-cache-limit">Offline-Limit</label>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Wie viele zuletzt geänderte Seiten lokal verfügbar sein sollen.</p>
+                                    <div class="mt-2 flex gap-2"><select id="settings-cache-limit" x-model="limit" class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"><template x-for="option in limits" :key="option"><option :value="option" x-text="limitLabel(option)"></option></template></select><button type="button" @click="saveLimit" :disabled="busy" class="btn btn-secondary">Speichern</button></div>
+                                </div>
+                            </section>
+
+                            <section x-show="isSettingsSection('transfer')" x-cloak>
+                                <h3 class="text-xl font-semibold">Import / Export</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Notizen aus anderen Anwendungen übernehmen oder den Workspace sichern.</p>
+                                <?php include __DIR__ . '/import_panel.php'; ?>
+                                <div class="mt-4 rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                                    <div class="flex items-center gap-3"><span class="flex size-11 items-center justify-center rounded-xl" style="background: var(--color-bg);" x-icon="folder"></span><div><p class="font-medium">Workspace exportieren</p><p class="text-xs" style="color: var(--color-text-muted);">Die Exportfunktion ist derzeit noch nicht verfügbar.</p></div></div>
+                                </div>
+                            </section>
+
+                            <section x-show="isSettingsSection('storage')" x-cloak>
+                                <h3 class="text-xl font-semibold">Speicher</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Inhalte im Workspace und lokal belegter Browser-Speicher.</p>
+                                <dl class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Notizbücher</dt><dd class="mt-1 text-2xl font-semibold" x-text="workspaceNotebookCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Seiten</dt><dd class="mt-1 text-2xl font-semibold" x-text="workspacePageCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Tasks</dt><dd class="mt-1 text-2xl font-semibold" x-text="workspaceTaskCount"></dd></div>
+                                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Dateien</dt><dd class="mt-1 text-2xl font-semibold" x-text="workspaceFileCount"></dd></div>
+                                </dl>
+                                <div class="mt-5 rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);"><p class="text-sm" style="color: var(--color-text-muted);">Online belegt</p><p class="mt-1 text-3xl font-semibold" x-text="workspaceStorageLabel"></p><p class="mt-1 text-xs" style="color: var(--color-text-muted);">Notizinhalte, Versionsstände, Bilder und Dateianhänge auf dem Server.</p></div>
+                                <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4" style="border-color: var(--color-border);">
+                                    <div><p class="text-sm font-medium">Bilder optimieren</p><p class="mt-1 text-xs" style="color: var(--color-text-muted);">Alle eigenen Bilder mit 82 % Qualität auf maximal 1960 px Breite komprimieren.</p></div>
+                                    <button type="button" @click="compressOwnImages" :disabled="busy || !statusOnline" class="btn btn-secondary">Bilder komprimieren</button>
+                                </div>
+                                <div class="mt-6">
+                                    <h4 class="text-sm font-semibold">Größte Inhalte</h4>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Top 10 nach Online-Speicherverbrauch.</p>
+                                    <div class="mt-3 divide-y" style="border-color: var(--color-border);">
+                                        <template x-for="item in workspaceTopItems" :key="item.id">
+                                            <div class="flex items-center gap-3 py-3">
+                                                <span x-show="item.type === 'note'" class="shrink-0" style="color: var(--color-text-muted);" x-icon="file-text"></span>
+                                                <span x-show="item.type === 'task'" class="shrink-0" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
+                                                <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium" x-text="item.title"></p><p class="mt-0.5 text-xs" style="color: var(--color-text-muted);"><span x-text="item.type === 'task' ? 'Aufgabenliste' : 'Notiz'"></span><span x-show="item.deleted_at" x-cloak> · Papierkorb</span></p></div>
+                                                <span class="shrink-0 text-sm font-medium tabular-nums" x-text="item.sizeLabel"></span>
+                                            </div>
+                                        </template>
+                                        <p x-show="workspaceTopItems.length === 0" class="py-4 text-sm" style="color: var(--color-text-muted);">Noch keine gespeicherten Inhalte.</p>
+                                    </div>
+                                </div>
+                                <dl class="mt-5 grid grid-cols-2 gap-3 text-sm"><div><dt style="color: var(--color-text-muted);">Lokal verfügbar</dt><dd class="font-medium" x-text="pageCount + ' Seiten'"></dd></div><div><dt style="color: var(--color-text-muted);">Browser-Speicher</dt><dd class="font-medium"><span x-text="usageLabel"></span> / <span x-text="quotaLabel"></span></dd></div></dl>
+                            </section>
+
+                            <p x-show="error" class="mt-5 text-sm" style="color: var(--color-danger);" x-text="error" role="alert"></p>
+                            <p x-show="message" class="mt-5 text-sm" style="color: var(--color-success);" x-text="message"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

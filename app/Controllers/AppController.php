@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Import\ZipImportService;
+use App\Domain\Notes\PageAttachmentService;
 use App\Domain\PageService;
 use App\Support\CurrentUser;
+use App\Support\JsonResponse;
 use App\Support\Renderer;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -15,6 +18,8 @@ final class AppController
     public function __construct(
         private readonly PageService $pages,
         private readonly Renderer $renderer,
+        private readonly PageAttachmentService $attachments,
+        private readonly ZipImportService $import,
     ) {
     }
 
@@ -25,6 +30,33 @@ final class AppController
         $response->getBody()->write($html);
 
         return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+    }
+
+    /**
+     * Liefert ein frisches CSRF-Token. Nötig, weil offline gecachtes HTML ein
+     * abgelaufenes Token im <meta>-Tag transportieren kann und der spätere Sync
+     * sonst dauerhaft an CSRF_FAILED scheitert. Zusätzlich trägt die Antwort die
+     * Offline-Einstellungen, die der Client für den Prefetch braucht.
+     */
+    public function session(Request $request, Response $response): Response
+    {
+        $user = CurrentUser::require($request);
+
+        return JsonResponse::json($response, [
+            'csrf_token' => (string) $request->getAttribute('csrf_token'),
+            'user' => ['id' => $user->id, 'is_admin' => $user->isAdmin],
+            'storage' => $this->pages->workspaceStats($user),
+            'offline' => [
+                'attachment_max_bytes' => $this->attachments->offlineAttachmentMaxBytes(),
+            ],
+            // Der Dialog überträgt in Teilen dieser Größe und kann ein zu großes
+            // Archiv melden, bevor es vergeblich hochgeladen wird.
+            'import' => [
+                'max_archive_bytes' => $this->import->maxArchiveBytes(),
+                'max_request_bytes' => $this->import->maxUploadBytes(),
+                'chunk_size' => $this->import->chunkSize(),
+            ],
+        ])->withHeader('Cache-Control', 'private, no-store');
     }
 
     /** @param array<string, string> $args */

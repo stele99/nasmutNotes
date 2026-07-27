@@ -28,14 +28,24 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
         $viteSource = $viteOrigin !== null ? " {$viteOrigin}" : '';
         $viteConnectSources = $viteOrigin !== null ? " {$viteOrigin} {$viteSocketOrigin}" : '';
 
+        // `frame-ancestors` regelt, wer diese Antwort einbetten darf. Mit 'none'
+        // verweigert der Browser die Anzeige auch im eigenen, gleichnamigen
+        // Rahmen - der PDF-Betrachter bliebe leer. Nur für PDF-Auslieferungen
+        // wird deshalb auf 'self' gelockert; fremde Seiten bleiben ausgesperrt
+        // (FR-NOTE-20).
+        $isPdf = str_starts_with($response->getHeaderLine('Content-Type'), 'application/pdf');
+        $frameAncestors = $isPdf ? "frame-ancestors 'self'" : "frame-ancestors 'none'";
+
         $csp = implode('; ', [
             "default-src 'self'",
             "script-src 'self' 'nonce-{$nonce}'{$viteSource}",
             "style-src 'self' 'unsafe-inline'{$viteSource}",
-            "img-src 'self' data:",
+            "img-src 'self' data: blob:",
             "font-src 'self'{$viteSource}",
             "connect-src 'self'{$viteConnectSources}",
-            "frame-ancestors 'none'",
+            "worker-src 'self'",
+            "manifest-src 'self'",
+            $frameAncestors,
             "base-uri 'self'",
             "form-action 'self'",
         ]);

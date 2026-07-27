@@ -106,8 +106,11 @@ final class TaskRepository
         return $row !== false ? $row : null;
     }
 
-    /** @param array<string, mixed> $fields */
-    public function update(int $id, array $fields): void
+    /**
+     * @param array<string, mixed> $fields
+     * @return bool false, wenn $expectedVersion gesetzt ist und nicht mehr der gespeicherten Version entspricht
+     */
+    public function update(int $id, array $fields, ?int $expectedVersion = null): bool
     {
         $allowed = ['title', 'description', 'responsible', 'link', 'is_done', 'due_date', 'priority'];
         $set = [];
@@ -122,14 +125,24 @@ final class TaskRepository
         }
 
         if ($set === []) {
-            return;
+            return true;
         }
 
         $set[] = 'updated_at = :updated_at';
         $params['updated_at'] = gmdate('Y-m-d\TH:i:s.v\Z');
+        $set[] = 'version = version + 1';
 
-        $sql = 'UPDATE tasks SET ' . implode(', ', $set) . ' WHERE id = :id';
-        $this->pdo->prepare($sql)->execute($params);
+        $where = 'id = :id';
+        if ($expectedVersion !== null) {
+            $where .= ' AND version = :expected_version';
+            $params['expected_version'] = $expectedVersion;
+        }
+
+        $sql = 'UPDATE tasks SET ' . implode(', ', $set) . ' WHERE ' . $where;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->rowCount() === 1;
     }
 
     public function delete(int $id): void

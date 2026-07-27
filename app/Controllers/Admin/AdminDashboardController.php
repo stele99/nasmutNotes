@@ -1,0 +1,137 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers\Admin;
+
+use App\Domain\AdminService;
+use App\Support\CurrentUser;
+use App\Support\JsonResponse;
+use App\Support\RateLimiter;
+use App\Support\Renderer;
+use App\Support\RequestIp;
+use Psr\Http\Message\ResponseInterface as Response;
+use Psr\Http\Message\ServerRequestInterface as Request;
+
+/**
+ * Admin-Dashboard: Nutzer samt Speicherbedarf, Kontingente, Löschen eines
+ * Nutzers mit allen Daten und Aufräumen verwaister Bilder (FR-ADM-01..06).
+ */
+final class AdminDashboardController
+{
+    public function __construct(
+        private readonly AdminService $admin,
+        private readonly Renderer $renderer,
+        private readonly RateLimiter $rateLimiter,
+    ) {
+    }
+
+    public function page(Request $request, Response $response): Response
+    {
+        $html = $this->renderer->page($request, 'admin/dashboard', [], 'Admin · Übersicht');
+        $response->getBody()->write($html);
+
+        return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+    }
+
+    public function overview(Request $request, Response $response): Response
+    {
+        return JsonResponse::json($response, $this->admin->overview());
+    }
+
+    /** @param array<string, string> $args */
+    public function destroyUser(Request $request, Response $response, array $args): Response
+    {
+        $admin = CurrentUser::require($request);
+        $result = $this->admin->deleteUser($admin, (int) ($args['id'] ?? 0), RequestIp::hash($request));
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function updateUserQuota(Request $request, Response $response, array $args): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        $raw = $body['storage_quota_mb'] ?? null;
+
+        $quota = $this->admin->setUserQuotaMb(
+            $admin,
+            (int) ($args['id'] ?? 0),
+            $raw === null || $raw === '' ? null : (int) $raw,
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['storage_quota_mb' => $quota]);
+    }
+
+    public function updateDefaultQuota(Request $request, Response $response): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        $quota = $this->admin->setDefaultQuotaMb(
+            $admin,
+            (int) ($body['default_quota_mb'] ?? 0),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['default_quota_mb' => $quota]);
+    }
+
+    public function updateMaxAttachment(Request $request, Response $response): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        $maxMb = $this->admin->setMaxAttachmentMb(
+            $admin,
+            (int) ($body['max_attachment_mb'] ?? 0),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['max_attachment_mb' => $maxMb]);
+    }
+
+    /** Offline-Limit je Anhang in KB (FR-OFFLINE-06). */
+    public function updateOfflineAttachmentLimit(Request $request, Response $response): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        $maxKb = $this->admin->setOfflineAttachmentMaxKb(
+            $admin,
+            (int) ($body['offline_attachment_max_kb'] ?? 0),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['offline_attachment_max_kb' => $maxKb]);
+    }
+
+    public function purgeOrphans(Request $request, Response $response): Response
+    {
+        $admin = CurrentUser::require($request);
+        $result = $this->admin->purgeOrphanedAttachments($admin, RequestIp::hash($request));
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function compressUserImages(Request $request, Response $response, array $args): Response
+    {
+        $admin = CurrentUser::require($request);
+        if (!$this->rateLimiter->attempt("admin-image-compress:{$admin->id}", 3, 300)) {
+            return JsonResponse::error(
+                $response,
+                'RATE_LIMITED',
+                'Zu viele Kompressionsläufe. Bitte kurz warten.',
+                429,
+            );
+        }
+        set_time_limit(600);
+        $result = $this->admin->compressUserImages(
+            $admin,
+            (int) ($args['id'] ?? 0),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, $result);
+    }
+}

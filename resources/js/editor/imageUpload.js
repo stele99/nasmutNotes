@@ -32,6 +32,31 @@ export const ProtectedImageUpload = Extension.create({
     };
   },
 
+  addStorage() {
+    return { uploadFiles: null };
+  },
+
+  addCommands() {
+    return {
+      /**
+       * Einstieg für Datei- und Kamera-Auswahl aus der Werkzeugleiste. Läuft
+       * über denselben Weg wie Drag & Drop und Einfügen: Platzhalter setzen,
+       * hochladen, Bildknoten einsetzen.
+       */
+      insertImageFiles: (fileList) => ({ view, state }) => {
+        const files = imageFiles(fileList);
+        const upload = this.editor.storage.protectedImageUpload?.uploadFiles;
+        if (files.length === 0 || typeof upload !== 'function') {
+          return false;
+        }
+
+        upload(files, view, state.selection.from);
+
+        return true;
+      },
+    };
+  },
+
   addProseMirrorPlugins() {
     const editor = this.editor;
     const options = this.options;
@@ -88,6 +113,8 @@ export const ProtectedImageUpload = Extension.create({
         })
         .finally(() => setPendingUploads(Math.max(0, pendingUploads - files.length)));
     };
+
+    this.storage.uploadFiles = upload;
 
     return [
       new Plugin({

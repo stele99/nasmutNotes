@@ -11,7 +11,7 @@
 
 - Install backend and frontend dependencies with `composer install` and `npm ci`.
 - Copy `.env.example` to `.env` and replace the placeholder `APP_KEY`; non-testing startup exits if `APP_ENV`, `APP_KEY`, `DB_PATH`, or `SESSION_LIFETIME_DAYS` is missing.
-- Apply the local database migrations with `composer migrate` (`php bin/console.php migrate`); the CLI also provides `php bin/console.php user:list`.
+- Apply the local database migrations with `composer migrate` (`php bin/console.php migrate`); the CLI also provides `php bin/console.php user:list` and `php bin/console.php trash:purge` (removes pages whose trash retention has expired, meant for cron).
 - Build production assets with `npm run build`; use `npm run dev` for Vite on strict port `5173` when `APP_ENV=development` and `VITE_DEV_SERVER` is configured.
 
 ## Verification

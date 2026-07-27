@@ -8,6 +8,7 @@ import { TaskItem } from '@tiptap/extension-task-item';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { createLowlight, common } from 'lowlight';
 import { ProtectedImageUpload } from './imageUpload.js';
+import { HEADING_LEVELS, sanitizePastedHtml } from './sanitize.js';
 
 const lowlight = createLowlight(common);
 
@@ -27,7 +28,9 @@ export function createEditor({
     editable,
     content,
     extensions: [
-      StarterKit.configure({ codeBlock: false, link: false }),
+      // Nur H1-H3: der Server lehnt tiefere Ebenen ab, StarterKit würde von sich
+      // aus H1-H6 anlegen.
+      StarterKit.configure({ codeBlock: false, link: false, heading: { levels: HEADING_LEVELS } }),
       CodeBlockLowlight.configure({ lowlight }),
       Link.configure({
         openOnClick: false,
@@ -57,9 +60,13 @@ export function createEditor({
       }),
       TableKit.configure({ resizable: false }),
       TaskList,
-      TaskItem.configure({ nested: true }),
+      // Die NodeView von TaskItem setzt nur `data-checked` auf das <li>, nicht
+      // `data-type` wie beim reinen HTML-Rendering. Ohne dieses Attribut griffe
+      // das Checklisten-Layout im Editor nicht.
+      TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }),
     ],
     editorProps: {
+      transformPastedHTML: sanitizePastedHtml,
       handleClick(_view, position, event) {
         const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
         if (!(target instanceof HTMLAnchorElement) || typeof onLinkClick !== 'function') {

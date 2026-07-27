@@ -4,7 +4,10 @@
             <p class="text-sm font-medium" style="color: var(--color-accent);">Administration</p>
             <h1 class="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Einladungen</h1>
         </div>
-        <a href="/app" class="rounded-lg border px-4 py-2.5 text-base" style="border-color: var(--color-border); background: var(--color-bg);">Zum Workspace</a>
+        <div class="flex flex-wrap gap-2">
+            <a href="/admin" class="btn btn-secondary">Nutzer &amp; Speicher</a>
+            <a href="/app" class="btn btn-secondary">Zum Workspace</a>
+        </div>
     </div>
 
     <form @submit.prevent="create" class="document-surface mb-8 space-y-5 p-6 sm:p-8">

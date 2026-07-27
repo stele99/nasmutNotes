@@ -7,6 +7,8 @@ namespace App\Domain\Notes;
 use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\NoteAttachmentRepository;
+use App\Repositories\PageAttachmentRepository;
+use App\Repositories\SettingsRepository;
 use App\Support\NotFoundException;
 use App\Support\UploadStorage;
 use App\Support\ValidationException;
@@ -26,7 +28,25 @@ final class AttachmentService
         private readonly NoteAttachmentRepository $attachments,
         private readonly UploadStorage $storage,
         private readonly int $maxUploadMb,
+        private readonly ?SettingsRepository $settings = null,
+        private readonly int $defaultQuotaMb = 0,
+        private readonly ?PageAttachmentRepository $files = null,
     ) {
+    }
+
+    /**
+     * Wirksames Kontingent des Seiteneigentümers in MB. 0 oder kleiner
+     * bedeutet: keine Begrenzung.
+     */
+    private function quotaMbForPage(int $pageId): int
+    {
+        $personal = $this->attachments->quotaMbForPageOwner($pageId);
+        if ($personal !== null) {
+            return $personal;
+        }
+
+        return $this->settings?->getInt(SettingsRepository::DEFAULT_STORAGE_QUOTA_MB, $this->defaultQuotaMb)
+            ?? $this->defaultQuotaMb;
     }
 
     /** @return array{token: string, src: string, mime_type: string, width: int, height: int, byte_size: int} */
@@ -72,6 +92,26 @@ final class AttachmentService
         $detectedMime = $imageInfo['mime'];
         if ($width < 1 || $height < 1 || $width * $height > self::MAX_PIXELS || $detectedMime !== $mimeType) {
             throw new ValidationException('Das Bild hat ungültige oder zu große Abmessungen.');
+        }
+
+        // Kontingentprüfung erst hier: Die tatsächliche Dateigröße steht erst
+        // nach dem Einlesen fest, die gemeldete Größe ist nicht verbindlich.
+        $quotaMb = $this->quotaMbForPage((int) $page['id']);
+        if ($quotaMb > 0) {
+            $quotaBytes = $quotaMb * 1024 * 1024;
+            // Bilder und Dateianhänge teilen sich das Kontingent. Würde hier nur
+            // der Bildspeicher zählen, ließe sich die Grenze über Dateianhänge
+            // umgehen (FR-ADM-06).
+            $usedBytes = $this->attachments->usedBytesForPageOwner((int) $page['id'])
+                + ($this->files?->usedBytesForPageOwner((int) $page['id']) ?? 0);
+            if ($usedBytes + $byteSize > $quotaBytes) {
+                $usedMb = round($usedBytes / (1024 * 1024), 1);
+
+                throw new ValidationException(
+                    "Das Speicherkontingent von {$quotaMb} MB ist erschöpft (belegt: {$usedMb} MB). "
+                    . 'Bitte nicht mehr benötigte Bilder entfernen.'
+                );
+            }
         }
 
         $token = bin2hex(random_bytes(32));

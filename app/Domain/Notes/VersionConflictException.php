@@ -10,6 +10,8 @@ final class VersionConflictException extends \RuntimeException
     public function __construct(
         public readonly array $currentContent,
         public readonly int $currentVersion,
+        public readonly ?string $currentUpdatedAt = null,
+        public readonly ?string $currentEditorName = null,
     ) {
         parent::__construct('Versionskonflikt beim Speichern des Notizinhalts.');
     }

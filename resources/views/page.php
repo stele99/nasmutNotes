@@ -1,14 +1,22 @@
 <script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>;</script>
-<div class="flex min-h-screen" x-data="workspaceShell">
+<div class="flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="closeSidebar" @pages-changed.window="refreshNotebooks">
     <div
         x-show="sidebarOpen"
         x-cloak
         class="fixed inset-0 z-30 bg-black/30 md:hidden"
-        @click="sidebarOpen = false"
+        @click="closeSidebar"
     ></div>
+    <aside class="notebook-rail relative hidden h-dvh shrink-0 flex-col border-r xl:flex" :style="notebookRailStyle()">
+        <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
+        <div class="notebook-resize-handle" role="separator" aria-label="Notizbuchleiste in der Breite ändern" aria-orientation="vertical" tabindex="0" :aria-valuenow="notebookRailWidth" aria-valuemin="220" aria-valuemax="420" @pointerdown="startNotebookResize" @keydown.left.prevent="resizeNotebookRailBy(-16)" @keydown.right.prevent="resizeNotebookRailBy(16)"></div>
+    </aside>
+    <aside x-show="notebookDrawerOpen || (sidebarOpen && mobileLevel === 'books')" x-cloak class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r md:w-80 xl:hidden" :aria-hidden="!(notebookDrawerOpen || (sidebarOpen && mobileLevel === 'books'))" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+        <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
+    </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
+    <?php include __DIR__ . '/partials/notebook_dialog.php'; ?>
     <main
-        class="workspace-main min-w-0 flex-1 h-screen overflow-y-auto"
+        class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto"
         x-data="pageShare"
         data-page-id="<?= (int) $page['id'] ?>"
         data-page-title="<?= e((string) $page['title']) ?>"
@@ -16,7 +24,9 @@
         data-page-permission="<?= e((string) ($page['share_permission'] ?? '')) ?>"
         data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>"
     >
-        <button @click="sidebarOpen = true" class="fixed left-4 top-4 z-20 rounded-md border p-2 shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Menü öffnen" x-icon="menu">
+        <button x-show="!sidebarOpen || mobileLevel === 'pages'" x-cloak @click="sidebarOpen && mobileLevel === 'pages' ? (mobileLevel = 'books') : openNavigationToPages()" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" :aria-label="sidebarOpen && mobileLevel === 'pages' ? 'Zu den Notizbüchern' : 'Zur Seitenauswahl'" :aria-expanded="sidebarOpen">
+            <span x-show="!sidebarOpen || mobileLevel !== 'pages'" x-icon="layers"></span>
+            <span x-show="sidebarOpen && mobileLevel === 'pages'" x-cloak x-icon="menu"></span>
         </button>
         <?php if ($page['type'] === 'note'): ?>
             <?php include __DIR__ . '/page_note.php'; ?>
@@ -58,6 +68,21 @@
                         </span>
                     </label>
                 </fieldset>
+
+                <div x-show="existingShares.length > 0" x-cloak class="mt-5 flex items-center justify-between gap-4 rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium" x-text="activeSharesLabel()"></p>
+                        <p class="mt-0.5 text-xs" style="color: var(--color-text-muted);">Widerruft alle Links und Zugriffe auf diese Seite.</p>
+                    </div>
+                    <button
+                        type="button"
+                        @click="stopSharing"
+                        :disabled="stoppingSharing"
+                        class="shrink-0 rounded-md px-3 py-2 text-sm font-medium"
+                        style="color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent);"
+                        x-text="stoppingSharing ? 'Beende…' : 'Teilen beenden'"
+                    ></button>
+                </div>
 
                 <div x-show="generatedLink" x-cloak class="mt-5 rounded-lg p-3" style="background: var(--color-bg-subtle);">
                     <label for="generated-share-link" class="block text-sm font-medium">Freigabe-Link</label>

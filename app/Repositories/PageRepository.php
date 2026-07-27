@@ -9,9 +9,9 @@ use PDO;
 final class PageRepository
 {
     private const SORTS = [
-        'updated' => 'updated_at DESC',
-        'title' => 'title COLLATE NOCASE ASC',
-        'created' => 'created_at DESC',
+        'updated' => 'pages.updated_at DESC',
+        'title' => 'pages.title COLLATE NOCASE ASC',
+        'created' => 'pages.created_at DESC',
     ];
 
     public function __construct(private readonly PDO $pdo)
@@ -19,18 +19,19 @@ final class PageRepository
     }
 
     /** @return array<string, mixed> */
-    public function create(int $workspaceId, string $type, string $title, ?string $icon): array
+    public function create(int $workspaceId, string $type, string $title, ?string $icon, ?int $notebookId = null): array
     {
         $now = gmdate('Y-m-d\TH:i:s.v\Z');
         $stmt = $this->pdo->prepare(
-            'INSERT INTO pages (workspace_id, type, title, icon, created_at, updated_at)
-             VALUES (:workspace_id, :type, :title, :icon, :now, :now)'
+            'INSERT INTO pages (workspace_id, type, title, icon, notebook_id, created_at, updated_at)
+             VALUES (:workspace_id, :type, :title, :icon, :notebook_id, :now, :now)'
         );
         $stmt->execute([
             'workspace_id' => $workspaceId,
             'type' => $type,
             'title' => $title,
             'icon' => $icon,
+            'notebook_id' => $notebookId,
             'now' => $now,
         ]);
 
@@ -40,8 +41,6 @@ final class PageRepository
             $this->pdo->prepare(
                 'INSERT INTO note_contents (page_id, updated_at) VALUES (:id, :now)'
             )->execute(['id' => $id, 'now' => $now]);
-        } elseif ($type === 'task') {
-            $this->createDefaultCategories($id);
         }
 
         $page = $this->findByIdForWorkspace($id, $workspaceId);
@@ -50,21 +49,15 @@ final class PageRepository
         return $page;
     }
 
-    private function createDefaultCategories(int $pageId): void
-    {
-        $now = gmdate('Y-m-d\TH:i:s.v\Z');
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO categories (page_id, name, position, created_at) VALUES (:page_id, :name, :position, :now)'
-        );
-        foreach (['Offen', 'In Arbeit', 'Erledigt'] as $position => $name) {
-            $stmt->execute(['page_id' => $pageId, 'name' => $name, 'position' => $position, 'now' => $now]);
-        }
-    }
-
     /** @return array<string, mixed>|null */
     public function findByIdForWorkspace(int $id, int $workspaceId): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM pages WHERE id = :id AND workspace_id = :workspace_id');
+        $stmt = $this->pdo->prepare(
+            'SELECT pages.*, notebooks.name AS notebook_name, notebooks.icon AS notebook_icon, notebooks.color AS notebook_color
+               FROM pages
+          LEFT JOIN notebooks ON notebooks.id = pages.notebook_id
+              WHERE pages.id = :id AND pages.workspace_id = :workspace_id'
+        );
         $stmt->execute(['id' => $id, 'workspace_id' => $workspaceId]);
         $row = $stmt->fetch();
 
@@ -79,25 +72,135 @@ final class PageRepository
         string $sort = 'updated',
         ?string $typeFilter = null,
         bool $includeTrashed = false,
+        ?int $notebookId = null,
+        bool $unassigned = false,
     ): array {
         $orderBy = self::SORTS[$sort] ?? self::SORTS['updated'];
 
-        $sql = 'SELECT * FROM pages WHERE workspace_id = :workspace_id';
+        $sql = 'SELECT pages.*, notebooks.name AS notebook_name
+                  FROM pages
+             LEFT JOIN notebooks ON notebooks.id = pages.notebook_id
+                 WHERE pages.workspace_id = :workspace_id';
         $params = ['workspace_id' => $workspaceId];
 
-        $sql .= $includeTrashed ? ' AND deleted_at IS NOT NULL' : ' AND deleted_at IS NULL';
+        $sql .= $includeTrashed ? ' AND pages.deleted_at IS NOT NULL' : ' AND pages.deleted_at IS NULL';
 
         if ($typeFilter !== null) {
-            $sql .= ' AND type = :type';
+            $sql .= ' AND pages.type = :type';
             $params['type'] = $typeFilter;
         }
+        if ($notebookId !== null) {
+            $sql .= ' AND pages.notebook_id = :notebook_id';
+            $params['notebook_id'] = $notebookId;
+        } elseif ($unassigned) {
+            $sql .= ' AND pages.notebook_id IS NULL';
+        }
 
-        $sql .= ' ORDER BY is_favorite DESC, ' . $orderBy;
+        $sql .= ' ORDER BY pages.is_favorite DESC, ' . $orderBy;
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Kurzinfos für die Seitenliste: Textanfang und letzter Bearbeiter einer
+     * Notiz bzw. Aufgabenzahl einer Task-Seite. Bewusst zwei Sammelabfragen
+     * statt einer Abfrage je Seite.
+     *
+     * @param list<int> $pageIds
+     * @return array<int, array{preview: ?string, last_editor_name: ?string, task_count: ?int, open_task_count: ?int, attachment_count: int}>
+     */
+    public function summaries(array $pageIds): array
+    {
+        $summaries = [];
+
+        // SQLite begrenzt die Anzahl gebundener Parameter; große Workspaces
+        // würden ohne Stückelung an dieser Grenze scheitern.
+        foreach (array_chunk($pageIds, 400) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+
+            $stmt = $this->pdo->prepare(
+                "SELECT note_contents.page_id AS page_id,
+                        substr(note_contents.content_text, 1, 400) AS preview,
+                        users.name AS last_editor_name
+                 FROM note_contents
+                 LEFT JOIN users ON users.id = note_contents.updated_by
+                 WHERE note_contents.page_id IN ({$placeholders})"
+            );
+            $stmt->execute($chunk);
+            foreach ($stmt->fetchAll() as $row) {
+                $summaries[(int) $row['page_id']] = [
+                    'preview' => $this->firstLine((string) ($row['preview'] ?? '')),
+                    'last_editor_name' => $row['last_editor_name'] !== null
+                        ? (string) $row['last_editor_name']
+                        : null,
+                    'task_count' => null,
+                    'open_task_count' => null,
+                    'attachment_count' => 0,
+                ];
+            }
+
+            $stmt = $this->pdo->prepare(
+                "SELECT categories.page_id AS page_id,
+                        COUNT(tasks.id) AS task_count,
+                        COALESCE(SUM(CASE WHEN tasks.is_done = 0 THEN 1 ELSE 0 END), 0) AS open_task_count
+                 FROM categories
+                 LEFT JOIN tasks ON tasks.category_id = categories.id
+                 WHERE categories.page_id IN ({$placeholders})
+                 GROUP BY categories.page_id"
+            );
+            $stmt->execute($chunk);
+            foreach ($stmt->fetchAll() as $row) {
+                $summaries[(int) $row['page_id']] = [
+                    'preview' => null,
+                    'last_editor_name' => null,
+                    'task_count' => (int) $row['task_count'],
+                    'open_task_count' => (int) $row['open_task_count'],
+                    'attachment_count' => 0,
+                ];
+            }
+
+            // Zahl der Dateianhänge: Der Offline-Prefetch fragt die Anhangliste
+            // nur für Seiten ab, die überhaupt welche haben.
+            $stmt = $this->pdo->prepare(
+                "SELECT page_id, COUNT(*) AS attachment_count
+                 FROM page_attachments
+                 WHERE page_id IN ({$placeholders})
+                 GROUP BY page_id"
+            );
+            $stmt->execute($chunk);
+            foreach ($stmt->fetchAll() as $row) {
+                $pageId = (int) $row['page_id'];
+                $summary = $summaries[$pageId] ?? [
+                    'preview' => null,
+                    'last_editor_name' => null,
+                    'task_count' => null,
+                    'open_task_count' => null,
+                    'attachment_count' => 0,
+                ];
+                $summary['attachment_count'] = (int) $row['attachment_count'];
+                $summaries[$pageId] = $summary;
+            }
+        }
+
+        return $summaries;
+    }
+
+    /**
+     * Erste nicht leere Zeile des Notiztexts, gekürzt auf Listenlänge.
+     */
+    private function firstLine(string $text): ?string
+    {
+        foreach (preg_split('/\R/', $text) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                return mb_strlen($line) > 140 ? mb_substr($line, 0, 140) . '…' : $line;
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $fields */
@@ -107,7 +210,7 @@ final class PageRepository
             return;
         }
 
-        $allowed = ['title', 'icon', 'is_favorite', 'sort_order', 'default_view'];
+        $allowed = ['title', 'icon', 'is_favorite', 'sort_order', 'default_view', 'notebook_id'];
         $set = [];
         $params = ['id' => $id];
 
@@ -130,10 +233,74 @@ final class PageRepository
         $this->pdo->prepare($sql)->execute($params);
     }
 
+    /** @param list<int> $pageIds */
+    public function moveToNotebook(int $workspaceId, array $pageIds, ?int $notebookId): int
+    {
+        if ($pageIds === []) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($pageIds), '?'));
+        $stmt = $this->pdo->prepare(
+            "UPDATE pages
+                SET notebook_id = ?, updated_at = ?
+              WHERE workspace_id = ? AND deleted_at IS NULL AND id IN ({$placeholders})"
+        );
+        $stmt->execute([
+            $notebookId,
+            gmdate('Y-m-d\TH:i:s.v\Z'),
+            $workspaceId,
+            ...$pageIds,
+        ]);
+
+        return $stmt->rowCount();
+    }
+
+    /** @param list<int> $pageIds */
+    public function softDeleteMany(int $workspaceId, array $pageIds): int
+    {
+        if ($pageIds === []) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($pageIds), '?'));
+        $stmt = $this->pdo->prepare(
+            "UPDATE pages
+                SET deleted_at = ?
+              WHERE workspace_id = ? AND deleted_at IS NULL AND id IN ({$placeholders})"
+        );
+        $stmt->execute([
+            gmdate('Y-m-d\TH:i:s.v\Z'),
+            $workspaceId,
+            ...$pageIds,
+        ]);
+
+        return $stmt->rowCount();
+    }
+
     public function touchUpdatedAt(int $id): void
     {
         $stmt = $this->pdo->prepare('UPDATE pages SET updated_at = :now WHERE id = :id');
         $stmt->execute(['now' => gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
+    }
+
+    /**
+     * Übernimmt die Zeitstempel aus einem Import (FR-IMP-22). Der Notizinhalt
+     * bekommt dasselbe Änderungsdatum, damit die Anzeige „Zuletzt geändert"
+     * nicht den Importzeitpunkt nennt.
+     */
+    public function setTimestamps(int $id, ?string $createdAt, ?string $updatedAt): void
+    {
+        if ($createdAt !== null) {
+            $this->pdo->prepare('UPDATE pages SET created_at = :value WHERE id = :id')
+                ->execute(['value' => $createdAt, 'id' => $id]);
+        }
+        if ($updatedAt !== null) {
+            $this->pdo->prepare('UPDATE pages SET updated_at = :value WHERE id = :id')
+                ->execute(['value' => $updatedAt, 'id' => $id]);
+            $this->pdo->prepare('UPDATE note_contents SET updated_at = :value WHERE page_id = :id')
+                ->execute(['value' => $updatedAt, 'id' => $id]);
+        }
     }
 
     public function softDelete(int $id): void
@@ -152,6 +319,137 @@ final class PageRepository
     {
         $stmt = $this->pdo->prepare('DELETE FROM pages WHERE id = :id');
         $stmt->execute(['id' => $id]);
+    }
+
+    /**
+     * Seiten, deren Aufbewahrungsfrist im Papierkorb abgelaufen ist. Bewusst
+     * nur lesend: Der Aufrufer muss vorher die Bilddateien einsammeln.
+     *
+     * @return list<int>
+     */
+    public function expiredTrashPageIds(int $retentionDays): array
+    {
+        $threshold = gmdate('Y-m-d\TH:i:s.v\Z', time() - ($retentionDays * 86400));
+
+        $stmt = $this->pdo->prepare('SELECT id FROM pages WHERE deleted_at IS NOT NULL AND deleted_at < :threshold');
+        $stmt->execute(['threshold' => $threshold]);
+
+        return array_values(array_map(
+            static fn (array $row): int => (int) $row['id'],
+            $stmt->fetchAll(),
+        ));
+    }
+
+    /**
+     * @return array{
+     *     notebooks: int,
+     *     pages: int,
+     *     tasks: int,
+     *     files: int,
+     *     storage_bytes: int,
+     *     top_items: list<array{id: int, title: string, type: string, deleted_at: ?string, bytes: int}>
+     * }
+     */
+    public function workspaceStats(int $workspaceId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                (SELECT COUNT(*) FROM notebooks WHERE workspace_id = :workspace_id) AS notebooks,
+                (SELECT COUNT(*) FROM pages WHERE workspace_id = :workspace_id AND deleted_at IS NULL) AS pages,
+                (SELECT COUNT(tasks.id)
+                   FROM tasks
+                   JOIN categories ON categories.id = tasks.category_id
+                   JOIN pages ON pages.id = categories.page_id
+                  WHERE pages.workspace_id = :workspace_id AND pages.deleted_at IS NULL) AS tasks,
+                ((SELECT COUNT(note_attachments.id)
+                    FROM note_attachments
+                    JOIN pages ON pages.id = note_attachments.page_id
+                   WHERE pages.workspace_id = :workspace_id AND pages.deleted_at IS NULL)
+                 +
+                 (SELECT COUNT(page_attachments.id)
+                    FROM page_attachments
+                    JOIN pages ON pages.id = page_attachments.page_id
+                   WHERE pages.workspace_id = :workspace_id AND pages.deleted_at IS NULL)) AS files,
+                ((SELECT COALESCE(SUM(note_attachments.byte_size), 0)
+                    FROM note_attachments
+                    JOIN pages ON pages.id = note_attachments.page_id
+                   WHERE pages.workspace_id = :workspace_id)
+                 +
+                 (SELECT COALESCE(SUM(page_attachments.byte_size), 0)
+                    FROM page_attachments
+                    JOIN pages ON pages.id = page_attachments.page_id
+                   WHERE pages.workspace_id = :workspace_id)
+                 +
+                 (SELECT COALESCE(SUM(LENGTH(note_contents.content)), 0)
+                    FROM note_contents
+                    JOIN pages ON pages.id = note_contents.page_id
+                   WHERE pages.workspace_id = :workspace_id)
+                 +
+                 (SELECT COALESCE(SUM(LENGTH(note_versions.content)), 0)
+                    FROM note_versions
+                    JOIN pages ON pages.id = note_versions.page_id
+                   WHERE pages.workspace_id = :workspace_id)) AS storage_bytes'
+        );
+        $stmt->execute(['workspace_id' => $workspaceId]);
+        $row = $stmt->fetch();
+
+        return [
+            'notebooks' => (int) ($row['notebooks'] ?? 0),
+            'pages' => (int) ($row['pages'] ?? 0),
+            'tasks' => (int) ($row['tasks'] ?? 0),
+            'files' => (int) ($row['files'] ?? 0),
+            'storage_bytes' => (int) ($row['storage_bytes'] ?? 0),
+            'top_items' => $this->workspaceStorageTopItems($workspaceId),
+        ];
+    }
+
+    /**
+     * @return list<array{id: int, title: string, type: string, deleted_at: ?string, bytes: int}>
+     */
+    private function workspaceStorageTopItems(int $workspaceId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT pages.id,
+                    pages.title,
+                    pages.type,
+                    pages.deleted_at,
+                    COALESCE(LENGTH(note_contents.content), 0)
+                    + COALESCE(versions.byte_size, 0)
+                    + COALESCE(images.byte_size, 0)
+                    + COALESCE(files.byte_size, 0) AS storage_bytes
+               FROM pages
+          LEFT JOIN note_contents ON note_contents.page_id = pages.id
+          LEFT JOIN (
+                    SELECT page_id, SUM(LENGTH(content)) AS byte_size
+                      FROM note_versions
+                  GROUP BY page_id
+                    ) AS versions ON versions.page_id = pages.id
+          LEFT JOIN (
+                    SELECT page_id, SUM(byte_size) AS byte_size
+                      FROM note_attachments
+                  GROUP BY page_id
+                    ) AS images ON images.page_id = pages.id
+          LEFT JOIN (
+                    SELECT page_id, SUM(byte_size) AS byte_size
+                      FROM page_attachments
+                  GROUP BY page_id
+                    ) AS files ON files.page_id = pages.id
+              WHERE pages.workspace_id = :workspace_id
+           ORDER BY storage_bytes DESC, pages.updated_at DESC, pages.id DESC
+              LIMIT 10'
+        );
+        $stmt->execute(['workspace_id' => $workspaceId]);
+
+        return array_values(array_map(
+            static fn (array $item): array => [
+                'id' => (int) $item['id'],
+                'title' => (string) $item['title'],
+                'type' => (string) $item['type'],
+                'deleted_at' => $item['deleted_at'] !== null ? (string) $item['deleted_at'] : null,
+                'bytes' => (int) $item['storage_bytes'],
+            ],
+            $stmt->fetchAll(),
+        ));
     }
 
     /** @return array<int, array<string, mixed>> */

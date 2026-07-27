@@ -74,6 +74,22 @@ final class ShareService
         return $this->shares->listForPage((int) $page['id']);
     }
 
+    /** @return array<int, array{id: int|string, name: string, is_owner: int|string}> */
+    public function listAcceptedWriters(User $user, int $pageId): array
+    {
+        $page = $this->pages->find($user, $pageId);
+
+        return $this->shares->listAcceptedWritersForPage((int) $page['id']);
+    }
+
+    /** @return array<int, array{id: int|string, name: string, is_owner: int|string}> */
+    public function listCollaborators(User $user, int $pageId): array
+    {
+        $page = $this->pages->find($user, $pageId);
+
+        return $this->shares->listCollaboratorsForPage((int) $page['id']);
+    }
+
     public function revoke(User $user, int $shareId): void
     {
         $share = $this->shares->findById($shareId);
@@ -83,6 +99,12 @@ final class ShareService
 
         $this->pages->findOwned($user, (int) $share['page_id']);
         $this->shares->revoke($shareId);
+    }
+
+    public function revokeAll(User $user, int $pageId): void
+    {
+        $page = $this->pages->findOwned($user, $pageId);
+        $this->shares->revokeAllForPage((int) $page['id']);
     }
 
     public function leave(User $user, int $pageId): void

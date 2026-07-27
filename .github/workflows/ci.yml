@@ -16,7 +16,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: pdo, pdo_sqlite, sqlite3, mbstring, json
+          extensions: pdo, pdo_sqlite, sqlite3, mbstring, json, gd
           coverage: none
 
       - name: Install Composer dependencies
@@ -71,7 +71,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: pdo, pdo_sqlite, sqlite3, mbstring, json
+          extensions: pdo, pdo_sqlite, sqlite3, mbstring, json, gd
           coverage: none
 
       - name: Install production Composer dependencies
@@ -119,7 +119,7 @@ jobs:
 
           port="${DEPLOY_PORT:-22}"
           php_bin="${DEPLOY_PHP_BIN:-php}"
-          archive="/tmp/shareinfo-${GITHUB_SHA}.tar.gz"
+          archive="/tmp/nasmutnotes-${GITHUB_SHA}.tar.gz"
           ssh_options=(-i "$HOME/.ssh/deploy_key" -p "$port" -o BatchMode=yes -o IdentitiesOnly=yes)
           scp_options=(-i "$HOME/.ssh/deploy_key" -P "$port" -o BatchMode=yes -o IdentitiesOnly=yes)
 

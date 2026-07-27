@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Domain\Notes;
 
 use App\Domain\Notes\AttachmentService;
+use App\Domain\Notes\ImageCompressionService;
 use App\Domain\PageService;
 use App\Domain\ShareService;
 use App\Domain\User;
@@ -27,6 +28,7 @@ final class AttachmentServiceTest extends TestCase
     private PDO $pdo;
     private string $storagePath;
     private AttachmentService $attachments;
+    private ImageCompressionService $compression;
     private ShareService $shares;
     private PageService $pages;
     private User $owner;
@@ -43,11 +45,18 @@ final class AttachmentServiceTest extends TestCase
         $shareRepository = new ShareRepository($this->pdo);
         $this->pages = new PageService(new PageRepository($this->pdo), $workspaces, $shareRepository);
         $this->shares = new ShareService($this->pages, $shareRepository);
+        $attachmentRepository = new NoteAttachmentRepository($this->pdo);
+        $storage = new UploadStorage(dirname($this->storagePath), $this->storagePath);
         $this->attachments = new AttachmentService(
             $this->pages,
-            new NoteAttachmentRepository($this->pdo),
-            new UploadStorage(dirname($this->storagePath), $this->storagePath),
+            $attachmentRepository,
+            $storage,
             1,
+        );
+        $this->compression = new ImageCompressionService(
+            $this->pages,
+            $attachmentRepository,
+            $storage,
         );
 
         $this->owner = $this->makeUser($workspaces, 'owner@example.com');
@@ -129,6 +138,55 @@ final class AttachmentServiceTest extends TestCase
             $this->pageId,
             $this->uploadedFile('not an image', 'fake.png'),
         );
+    }
+
+    public function testCompressionValidatesQualityBeforeUsingGd(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->compression->compress($this->owner, $this->pageId, 10, 'screen');
+    }
+
+    public function testCompressionIsRestrictedToTheOwner(): void
+    {
+        $share = $this->shares->create($this->owner, $this->pageId, 'write');
+        $this->shares->open($this->recipient, $share['token']);
+
+        $this->expectException(\App\Support\NotFoundException::class);
+        $this->compression->compress($this->recipient, $this->pageId, 82, 'screen');
+    }
+
+    public function testCompressesAndResizesJpegWithGd(): void
+    {
+        if (!extension_loaded('gd')) {
+            self::markTestSkipped('GD ist in dieser lokalen PHP-Laufzeit nicht installiert.');
+        }
+
+        $image = imagecreatetruecolor(2200, 1100);
+        self::assertInstanceOf(\GdImage::class, $image);
+        $color = imagecolorallocate($image, 28, 110, 180);
+        self::assertIsInt($color);
+        imagefill($image, 0, 0, $color);
+        ob_start();
+        self::assertTrue(imagejpeg($image, null, 100));
+        $bytes = ob_get_clean();
+        imagedestroy($image);
+        self::assertIsString($bytes);
+
+        $uploaded = $this->attachments->upload(
+            $this->owner,
+            $this->pageId,
+            $this->uploadedFile($bytes, 'gross.jpg'),
+        );
+        $result = $this->compression->compress($this->owner, $this->pageId, 75, 'small');
+        $opened = $this->attachments->open($this->owner, $uploaded['token']);
+        $info = getimagesize($opened['path']);
+
+        self::assertSame(1, $result['compressed']);
+        self::assertGreaterThan(0, $result['saved_bytes']);
+        self::assertIsArray($info);
+        self::assertSame(800, $info[0]);
+        self::assertSame(400, $info[1]);
+        self::assertSame(filesize($opened['path']), $opened['byte_size']);
     }
 
     private function uploadedFile(string $bytes, string $name): UploadedFile

@@ -1,0 +1,277 @@
+import { apiFetch } from './api.js';
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = value / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+
+  return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+/**
+ * Admin-Dashboard: Nutzer mit Speicherbedarf, Kontingente, Löschen eines
+ * Nutzers samt Daten und Aufräumen verwaister Bilder (FR-ADM-01..06).
+ */
+export function adminDashboard() {
+  return {
+    users: [],
+    totals: {},
+    orphans: { count: 0, bytes: 0, items: [] },
+    defaultQuota: 0,
+    maxAttachmentMb: 10,
+    offlineAttachmentKb: 250,
+    loading: true,
+    busy: false,
+    error: '',
+    message: '',
+
+    async init() {
+      await this.refresh();
+    },
+
+    async refresh() {
+      this.loading = true;
+      this.error = '';
+      try {
+        const data = await apiFetch('/api/admin/overview');
+        this.users = data.users || [];
+        this.totals = data.totals || {};
+        this.orphans = data.orphans || { count: 0, bytes: 0, items: [] };
+        this.defaultQuota = Number(data.default_quota_mb || 0);
+        this.maxAttachmentMb = Number(data.max_attachment_mb || 10);
+        this.offlineAttachmentKb = Number(data.offline_attachment_max_kb ?? 250);
+      } catch (error) {
+        this.error = error.message || 'Die Übersicht konnte nicht geladen werden.';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    formatBytes(bytes) {
+      return formatBytes(bytes);
+    },
+
+    usageLabel(user) {
+      const used = formatBytes(user.total_bytes);
+
+      return user.effective_quota_mb > 0 ? `${used} / ${user.effective_quota_mb} MB` : used;
+    },
+
+    /** Anteil am Kontingent in Prozent, gedeckelt für die Balkenbreite. */
+    usagePercent(user) {
+      if (!user.effective_quota_mb || user.effective_quota_mb <= 0) {
+        return 0;
+      }
+      const quotaBytes = user.effective_quota_mb * 1024 * 1024;
+
+      return Math.min(100, Math.round((Number(user.total_bytes || 0) / quotaBytes) * 100));
+    },
+
+    usageBarStyle(user) {
+      const percent = this.usagePercent(user);
+      const color = percent >= 90 ? 'var(--color-danger)' : 'var(--color-accent)';
+
+      return `width: ${percent}%; background: ${color};`;
+    },
+
+    quotaLabel(user) {
+      return user.storage_quota_mb === null
+        ? `Standard (${this.defaultQuota > 0 ? `${this.defaultQuota} MB` : 'unbegrenzt'})`
+        : `${user.storage_quota_mb} MB`;
+    },
+
+    async editQuota(user) {
+      const current = user.storage_quota_mb === null ? '' : String(user.storage_quota_mb);
+      const input = window.prompt(
+        `Speicherkontingent für ${user.name || user.email} in MB.\n`
+        + 'Leer lassen für den Standardwert, 0 für unbegrenzt.',
+        current,
+      );
+      if (input === null) {
+        return;
+      }
+
+      const trimmed = input.trim();
+      if (trimmed !== '' && !/^\d+$/.test(trimmed)) {
+        this.error = 'Bitte eine ganze Zahl in MB eingeben.';
+        return;
+      }
+
+      await this.run(async () => {
+        await apiFetch(`/api/admin/users/${user.id}/quota`, {
+          method: 'PATCH',
+          body: JSON.stringify({ storage_quota_mb: trimmed === '' ? null : Number(trimmed) }),
+        });
+        this.message = 'Kontingent gespeichert.';
+      });
+    },
+
+    async editDefaultQuota() {
+      const input = window.prompt(
+        'Standard-Speicherkontingent in MB für alle Nutzer ohne eigenen Wert.\n0 bedeutet unbegrenzt.',
+        String(this.defaultQuota),
+      );
+      if (input === null) {
+        return;
+      }
+      const trimmed = input.trim();
+      if (!/^\d+$/.test(trimmed)) {
+        this.error = 'Bitte eine ganze Zahl in MB eingeben.';
+        return;
+      }
+
+      await this.run(async () => {
+        await apiFetch('/api/admin/settings/default-quota', {
+          method: 'PATCH',
+          body: JSON.stringify({ default_quota_mb: Number(trimmed) }),
+        });
+        this.message = 'Standardkontingent gespeichert.';
+      });
+    },
+
+    async editMaxAttachment() {
+      const input = window.prompt(
+        'Maximale Größe je Dateianhang in MB (1 bis 2048).',
+        String(this.maxAttachmentMb),
+      );
+      if (input === null) {
+        return;
+      }
+      const trimmed = input.trim();
+      if (!/^\d+$/.test(trimmed)) {
+        this.error = 'Bitte eine ganze Zahl in MB eingeben.';
+        return;
+      }
+
+      await this.run(async () => {
+        await apiFetch('/api/admin/settings/max-attachment', {
+          method: 'PATCH',
+          body: JSON.stringify({ max_attachment_mb: Number(trimmed) }),
+        });
+        this.message = 'Obergrenze für Anhänge gespeichert.';
+      });
+    },
+
+    offlineLimitLabel() {
+      if (this.offlineAttachmentKb <= 0) {
+        return 'aus (nichts wird vorgeladen)';
+      }
+
+      return this.offlineAttachmentKb >= 1024
+        ? `${(this.offlineAttachmentKb / 1024).toFixed(1)} MB`
+        : `${this.offlineAttachmentKb} KB`;
+    },
+
+    /**
+     * Grenze, bis zu der Clients Anhänge und Bilder automatisch offline
+     * vorhalten (FR-OFFLINE-06).
+     */
+    async editOfflineAttachmentLimit() {
+      const input = window.prompt(
+        'Bis zu welcher Größe (KB) sollen Anhänge und Bilder automatisch offline '
+        + 'verfügbar sein?\nGrößere Dateien brauchen zum Öffnen eine Internetverbindung.\n'
+        + '0 lädt nichts vor, Höchstwert 102400 (100 MB).',
+        String(this.offlineAttachmentKb),
+      );
+      if (input === null) {
+        return;
+      }
+      const trimmed = input.trim();
+      if (!/^\d+$/.test(trimmed)) {
+        this.error = 'Bitte eine ganze Zahl in KB eingeben.';
+        return;
+      }
+
+      await this.run(async () => {
+        await apiFetch('/api/admin/settings/offline-attachment', {
+          method: 'PATCH',
+          body: JSON.stringify({ offline_attachment_max_kb: Number(trimmed) }),
+        });
+        this.message = 'Offline-Limit gespeichert. Clients übernehmen es beim nächsten Abgleich.';
+      });
+    },
+
+    /**
+     * Zwei Rückfragen: Das Löschen entfernt sämtliche Inhalte des Nutzers und
+     * ist nicht rückgängig zu machen.
+     */
+    async deleteUser(user) {
+      const label = user.name || user.email;
+      if (!window.confirm(
+        `„${label}" endgültig löschen?\n\n`
+        + `Dabei verschwinden ${user.page_count} Seite(n), ${user.task_count} Aufgabe(n) `
+        + `und ${user.attachment_count} Bild(er) unwiderruflich.`,
+      )) {
+        return;
+      }
+      if (window.prompt(`Zur Bestätigung bitte die E-Mail-Adresse eingeben:\n${user.email}`) !== user.email) {
+        this.error = 'Die Eingabe stimmte nicht mit der E-Mail-Adresse überein - es wurde nichts gelöscht.';
+        return;
+      }
+
+      await this.run(async () => {
+        const result = await apiFetch(`/api/admin/users/${user.id}`, { method: 'DELETE' });
+        this.message = `„${label}" wurde gelöscht (${result.deleted_files} Datei(en) entfernt).`;
+      });
+    },
+
+    async compressUserImages(user) {
+      const label = user.name || user.email;
+      if (Number(user.image_count || 0) === 0) {
+        return;
+      }
+      if (!window.confirm(
+        `Alle ${user.image_count} eingebetteten Bilder von „${label}“ komprimieren?\n\n`
+        + 'Einstellung: Qualität 82 %, maximale Breite 1960 px. '
+        + 'Die Originaldateien werden ersetzt und können nicht über Versionen wiederhergestellt werden.',
+      )) {
+        return;
+      }
+
+      await this.run(async () => {
+        const result = await apiFetch(`/api/admin/users/${user.id}/compress-images`, { method: 'POST' });
+        this.message = `${result.compressed} von ${result.images} Bild(ern) komprimiert · `
+          + `${formatBytes(result.saved_bytes)} eingespart.`;
+      });
+    },
+
+    async purgeOrphans() {
+      if (this.orphans.count === 0) {
+        return;
+      }
+      if (!window.confirm(
+        `${this.orphans.count} verwaiste Datei(en) mit ${formatBytes(this.orphans.bytes)} löschen?\n\n`
+        + 'Betroffen sind nur Bilder, die in keiner Notiz und in keiner Notizversion mehr vorkommen.',
+      )) {
+        return;
+      }
+
+      await this.run(async () => {
+        const result = await apiFetch('/api/admin/attachments/purge-orphans', { method: 'POST' });
+        this.message = `${result.count} Datei(en) entfernt, ${formatBytes(result.bytes)} freigegeben.`;
+      });
+    },
+
+    async run(action) {
+      this.busy = true;
+      this.error = '';
+      this.message = '';
+      try {
+        await action();
+        await this.refresh();
+      } catch (error) {
+        this.error = error.message || 'Die Aktion ist fehlgeschlagen.';
+      } finally {
+        this.busy = false;
+      }
+    },
+  };
+}

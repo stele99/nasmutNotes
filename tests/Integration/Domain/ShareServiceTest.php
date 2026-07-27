@@ -85,6 +85,64 @@ final class ShareServiceTest extends TestCase
         self::assertTrue($received['can_edit']);
     }
 
+    public function testAcceptedWritersIncludeOwnerAndDeduplicateActiveWriteRecipients(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Kollaboration', null);
+        $readShare = $this->shares->create($this->userA, (int) $page['id'], 'read');
+        $writeShareA = $this->shares->create($this->userA, (int) $page['id'], 'write');
+        $writeShareB = $this->shares->create($this->userA, (int) $page['id'], 'write');
+
+        $this->shares->open($this->userB, $readShare['token']);
+        $this->shares->open($this->userB, $writeShareA['token']);
+        $this->shares->open($this->userB, $writeShareB['token']);
+
+        $writers = $this->shares->listAcceptedWriters($this->userB, (int) $page['id']);
+
+        self::assertCount(2, $writers);
+        self::assertSame($this->userA->id, (int) $writers[0]['id']);
+        self::assertSame(1, (int) $writers[0]['is_owner']);
+        self::assertSame($this->userB->id, (int) $writers[1]['id']);
+
+        $this->shares->revokeAll($this->userA, (int) $page['id']);
+
+        $writers = $this->shares->listAcceptedWriters($this->userA, (int) $page['id']);
+        self::assertCount(1, $writers);
+        self::assertSame($this->userA->id, (int) $writers[0]['id']);
+    }
+
+    public function testCollaboratorsIncludeReadOnlyRecipients(): void
+    {
+        $page = $this->pages->create($this->userA, 'task', 'Geteilte Liste', null);
+        $readShare = $this->shares->create($this->userA, (int) $page['id'], 'read');
+        $this->shares->open($this->userB, $readShare['token']);
+
+        $collaborators = $this->shares->listCollaborators($this->userA, (int) $page['id']);
+        $writers = $this->shares->listAcceptedWriters($this->userA, (int) $page['id']);
+
+        // Nur-Lesende gehören zur Auswahlliste für Verantwortliche, zählen aber
+        // nicht als Schreibende.
+        self::assertSame(
+            [$this->userA->id, $this->userB->id],
+            array_map('intval', array_column($collaborators, 'id')),
+        );
+        self::assertSame(1, (int) $collaborators[0]['is_owner']);
+        self::assertSame(0, (int) $collaborators[1]['is_owner']);
+        self::assertCount(1, $writers);
+    }
+
+    public function testCollaboratorsDropRevokedShares(): void
+    {
+        $page = $this->pages->create($this->userA, 'task', 'Geteilte Liste', null);
+        $share = $this->shares->create($this->userA, (int) $page['id'], 'read');
+        $this->shares->open($this->userB, $share['token']);
+        $this->shares->revokeAll($this->userA, (int) $page['id']);
+
+        $collaborators = $this->shares->listCollaborators($this->userA, (int) $page['id']);
+
+        self::assertCount(1, $collaborators);
+        self::assertSame($this->userA->id, (int) $collaborators[0]['id']);
+    }
+
     public function testRevokedShareDoesNotGrantAccess(): void
     {
         $page = $this->pages->create($this->userA, 'task', 'Widerrufene Liste', null);

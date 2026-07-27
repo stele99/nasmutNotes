@@ -81,6 +81,43 @@ final class NoteAttachmentRepository
         return (int) $stmt->fetch()['count'] === count($tokenHashes);
     }
 
+    /**
+     * Bereits belegter Bildspeicher des Nutzers, dem die Seite gehört.
+     * Maßgeblich ist der Eigentümer, nicht der Hochladende - eine Freigabe
+     * verbraucht das Kontingent des Eigentümers (FR-ADM-06).
+     */
+    public function usedBytesForPageOwner(int $pageId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(note_attachments.byte_size), 0)
+               FROM note_attachments
+               JOIN pages ON pages.id = note_attachments.page_id
+              WHERE pages.workspace_id = (SELECT workspace_id FROM pages WHERE id = :page_id)'
+        );
+        $stmt->execute(['page_id' => $pageId]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Persönliches Kontingent des Seiteneigentümers in MB; null bedeutet, dass
+     * der Standardwert gilt.
+     */
+    public function quotaMbForPageOwner(int $pageId): ?int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT users.storage_quota_mb
+               FROM pages
+               JOIN workspaces ON workspaces.id = pages.workspace_id
+               JOIN users ON users.id = workspaces.user_id
+              WHERE pages.id = :page_id'
+        );
+        $stmt->execute(['page_id' => $pageId]);
+        $value = $stmt->fetchColumn();
+
+        return $value !== false && $value !== null ? (int) $value : null;
+    }
+
     /** @return string[] */
     public function storageNamesForPage(int $pageId): array
     {
@@ -88,6 +125,46 @@ final class NoteAttachmentRepository
         $stmt->execute(['page_id' => $pageId]);
 
         return array_column($stmt->fetchAll(), 'storage_name');
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function listForPage(int $pageId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM note_attachments WHERE page_id = :page_id ORDER BY id ASC');
+        $stmt->execute(['page_id' => $pageId]);
+
+        return array_values($stmt->fetchAll());
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function listForUser(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT note_attachments.*
+               FROM note_attachments
+               JOIN pages ON pages.id = note_attachments.page_id
+               JOIN workspaces ON workspaces.id = pages.workspace_id
+              WHERE workspaces.user_id = :user_id
+           ORDER BY note_attachments.id ASC'
+        );
+        $stmt->execute(['user_id' => $userId]);
+
+        return array_values($stmt->fetchAll());
+    }
+
+    public function updateImageMetadata(int $id, int $byteSize, int $width, int $height): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE note_attachments
+                SET byte_size = :byte_size, width = :width, height = :height
+              WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $id,
+            'byte_size' => $byteSize,
+            'width' => $width,
+            'height' => $height,
+        ]);
     }
 
     /** @return array<string, mixed>|null */

@@ -162,10 +162,89 @@ final class ShareRepository
         $stmt = $this->pdo->prepare(
             'SELECT id, page_id, permission, expires_at, revoked_at, last_accessed_at, access_count, created_at
              FROM share_links
-             WHERE page_id = :page_id AND revoked_at IS NULL
+             WHERE page_id = :page_id
+               AND revoked_at IS NULL
+               AND (expires_at IS NULL OR expires_at > :now)
              ORDER BY created_at DESC'
         );
-        $stmt->execute(['page_id' => $pageId]);
+        $stmt->execute([
+            'page_id' => $pageId,
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Alle Personen mit Zugriff auf die Seite: Eigentümer plus alle Nutzer, die
+     * eine noch gültige Freigabe angenommen haben - anders als bei den Writers
+     * unabhängig davon, ob sie schreiben dürfen. Grundlage der Auswahlliste für
+     * Verantwortliche (FR-TASK-21).
+     *
+     * @return array<int, array{id: int|string, name: string, is_owner: int|string}>
+     */
+    public function listCollaboratorsForPage(int $pageId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'WITH collaborators AS (
+                SELECT users.id, users.name, 1 AS is_owner
+                  FROM pages
+                  JOIN workspaces ON workspaces.id = pages.workspace_id
+                  JOIN users ON users.id = workspaces.user_id
+                 WHERE pages.id = :owner_page_id
+                UNION ALL
+                SELECT users.id, users.name, 0 AS is_owner
+                  FROM shared_page_access
+                  JOIN share_links ON share_links.id = shared_page_access.share_link_id
+                  JOIN users ON users.id = shared_page_access.user_id
+                 WHERE share_links.page_id = :shared_page_id
+                   AND share_links.revoked_at IS NULL
+                   AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)
+            )
+            SELECT id, name, MAX(is_owner) AS is_owner
+              FROM collaborators
+             GROUP BY id, name
+             ORDER BY is_owner DESC, name COLLATE NOCASE ASC, id ASC'
+        );
+        $stmt->execute([
+            'owner_page_id' => $pageId,
+            'shared_page_id' => $pageId,
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ]);
+
+        return $stmt->fetchAll();
+    }
+
+    /** @return array<int, array{id: int|string, name: string, is_owner: int|string}> */
+    public function listAcceptedWritersForPage(int $pageId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'WITH writers AS (
+                SELECT users.id, users.name, 1 AS is_owner
+                  FROM pages
+                  JOIN workspaces ON workspaces.id = pages.workspace_id
+                  JOIN users ON users.id = workspaces.user_id
+                 WHERE pages.id = :owner_page_id
+                UNION ALL
+                SELECT users.id, users.name, 0 AS is_owner
+                  FROM shared_page_access
+                  JOIN share_links ON share_links.id = shared_page_access.share_link_id
+                  JOIN users ON users.id = shared_page_access.user_id
+                 WHERE share_links.page_id = :shared_page_id
+                   AND share_links.permission = \'write\'
+                   AND share_links.revoked_at IS NULL
+                   AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)
+            )
+            SELECT id, name, MAX(is_owner) AS is_owner
+              FROM writers
+             GROUP BY id, name
+             ORDER BY is_owner DESC, name COLLATE NOCASE ASC, id ASC'
+        );
+        $stmt->execute([
+            'owner_page_id' => $pageId,
+            'shared_page_id' => $pageId,
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ]);
 
         return $stmt->fetchAll();
     }
@@ -178,6 +257,20 @@ final class ShareRepository
         $stmt->execute([
             'revoked_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
             'id' => $id,
+        ]);
+    }
+
+    public function revokeAllForPage(int $pageId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE share_links
+                SET revoked_at = :revoked_at
+              WHERE page_id = :page_id
+                AND revoked_at IS NULL'
+        );
+        $stmt->execute([
+            'revoked_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'page_id' => $pageId,
         ]);
     }
 

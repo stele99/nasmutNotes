@@ -3,17 +3,31 @@
 declare(strict_types=1);
 
 use App\Controllers\HealthController;
+use App\Domain\AdminService;
 use App\Domain\Auth\AuthService;
 use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
+use App\Domain\Import\ArchiveChunkStore;
+use App\Domain\Import\MarkdownConverter;
+use App\Domain\Import\ZipImportService;
+use App\Domain\NotebookService;
 use App\Domain\Notes\AttachmentService;
+use App\Domain\Notes\ImageCompressionService;
+use App\Domain\Notes\NoteService;
+use App\Domain\Notes\PageAttachmentService;
+use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageService;
 use App\Domain\SessionService;
+use App\Repositories\AdminRepository;
+use App\Repositories\AuditLogRepository;
 use App\Repositories\InviteRepository;
 use App\Repositories\NoteAttachmentRepository;
+use App\Repositories\NotebookRepository;
+use App\Repositories\PageAttachmentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\SearchRepository;
 use App\Repositories\SessionRepository;
+use App\Repositories\SettingsRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkspaceRepository;
@@ -93,15 +107,94 @@ return static function (string $rootPath): DI\Container {
             Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads',
         ),
 
+        SettingsRepository::class => static fn (PDO $pdo): SettingsRepository => new SettingsRepository($pdo),
+
+        AdminRepository::class => static fn (PDO $pdo): AdminRepository => new AdminRepository($pdo),
+
         AttachmentService::class => static fn (
             PageService $pages,
             NoteAttachmentRepository $attachments,
             UploadStorage $storage,
+            SettingsRepository $settings,
+            PageAttachmentRepository $files,
         ): AttachmentService => new AttachmentService(
             $pages,
             $attachments,
             $storage,
             Env::int('MAX_UPLOAD_MB', 10),
+            $settings,
+            Env::int('DEFAULT_STORAGE_QUOTA_MB', 0),
+            $files,
+        ),
+
+        PageAttachmentRepository::class => static fn (PDO $pdo): PageAttachmentRepository
+            => new PageAttachmentRepository($pdo),
+
+        PageAttachmentService::class => static fn (
+            PageService $pages,
+            PageAttachmentRepository $attachments,
+            NoteAttachmentRepository $images,
+            UploadStorage $storage,
+            SettingsRepository $settings,
+        ): PageAttachmentService => new PageAttachmentService(
+            $pages,
+            $attachments,
+            $images,
+            $storage,
+            $settings,
+            Env::int('MAX_ATTACHMENT_MB', 10),
+            Env::int('DEFAULT_STORAGE_QUOTA_MB', 0),
+            Env::int('OFFLINE_ATTACHMENT_MAX_KB', PageAttachmentService::DEFAULT_OFFLINE_MAX_KB),
+        ),
+
+        AdminService::class => static fn (
+            PDO $pdo,
+            AdminRepository $admin,
+            AuditLogRepository $auditLog,
+            UploadStorage $storage,
+            ProseMirrorValidator $validator,
+            SettingsRepository $settings,
+            ImageCompressionService $imageCompression,
+        ): AdminService => new AdminService(
+            $pdo,
+            $admin,
+            $auditLog,
+            $storage,
+            $validator,
+            $settings,
+            $imageCompression,
+            Env::int('DEFAULT_STORAGE_QUOTA_MB', 0),
+            Env::int('MAX_ATTACHMENT_MB', 10),
+            Env::int('OFFLINE_ATTACHMENT_MAX_KB', PageAttachmentService::DEFAULT_OFFLINE_MAX_KB),
+        ),
+
+        MarkdownConverter::class => static fn (): MarkdownConverter => new MarkdownConverter(),
+
+        // Teile eines laufenden Uploads liegen außerhalb des Web-Roots und sind
+        // flüchtig; var/ ist dafür der richtige Ort.
+        ArchiveChunkStore::class => static fn (): ArchiveChunkStore => new ArchiveChunkStore(
+            $rootPath . '/' . trim(Env::get('IMPORT_TMP_PATH', 'var/tmp/import') ?? 'var/tmp/import', '/'),
+        ),
+
+        ZipImportService::class => static fn (
+            PageService $pages,
+            NoteService $notes,
+            AttachmentService $images,
+            PageAttachmentService $files,
+            PageRepository $pageRepository,
+            NotebookService $notebooks,
+            MarkdownConverter $converter,
+            AuditLogRepository $auditLog,
+        ): ZipImportService => new ZipImportService(
+            $pages,
+            $notes,
+            $images,
+            $files,
+            $pageRepository,
+            $notebooks,
+            $converter,
+            $auditLog,
+            Env::int('IMPORT_MAX_ARCHIVE_MB', 500),
         ),
 
         HealthController::class => static fn (PDO $pdo, UploadStorage $storage): HealthController
@@ -111,13 +204,22 @@ return static function (string $rootPath): DI\Container {
 
         PageRepository::class => static fn (PDO $pdo): PageRepository => new PageRepository($pdo),
 
+        NotebookRepository::class => static fn (PDO $pdo): NotebookRepository => new NotebookRepository($pdo),
+
         ShareRepository::class => static fn (PDO $pdo): ShareRepository => new ShareRepository($pdo),
 
         PageService::class => static fn (
             PageRepository $pages,
             WorkspaceRepository $workspaces,
             ShareRepository $shares,
-        ): PageService => new PageService($pages, $workspaces, $shares),
+            NotebookService $notebooks,
+        ): PageService => new PageService($pages, $workspaces, $shares, $notebooks),
+
+        NotebookService::class => static fn (
+            PDO $pdo,
+            NotebookRepository $notebooks,
+            WorkspaceRepository $workspaces,
+        ): NotebookService => new NotebookService($pdo, $notebooks, $workspaces),
 
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
 

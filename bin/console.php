@@ -3,9 +3,13 @@
 
 declare(strict_types=1);
 
+use App\Repositories\NoteAttachmentRepository;
+use App\Repositories\PageAttachmentRepository;
+use App\Repositories\PageRepository;
 use App\Support\Database;
 use App\Support\Env;
 use App\Support\Migrator;
+use App\Support\UploadStorage;
 
 require __DIR__ . '/../vendor/autoload.php';
 
@@ -62,8 +66,41 @@ switch ($command) {
         }
         break;
 
+    case 'trash:purge':
+        // Für den Cron-Betrieb: entfernt Seiten, deren Aufbewahrungsfrist im
+        // Papierkorb abgelaufen ist, samt zugehöriger Bilddateien (FR-WS-06).
+        $pdo = Database::connect(resolveDbPath($rootPath));
+        $retentionDays = Env::int('TRASH_RETENTION_DAYS', 90);
+        $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+        $attachments = new NoteAttachmentRepository($pdo);
+        $files = new PageAttachmentRepository($pdo);
+        $pages = new PageRepository($pdo);
+
+        $expired = $pages->expiredTrashPageIds($retentionDays);
+        $removedFiles = 0;
+
+        foreach ($expired as $pageId) {
+            $storageNames = array_merge(
+                $attachments->storageNamesForPage($pageId),
+                $files->storageNamesForPage($pageId),
+            );
+            foreach ($storageNames as $storageName) {
+                $storage->delete($storageName);
+                ++$removedFiles;
+            }
+            $pages->purge($pageId);
+        }
+
+        echo sprintf(
+            "%d Seite(n) nach %d Tagen endgültig gelöscht, %d Datei(en) entfernt.\n",
+            count($expired),
+            $retentionDays,
+            $removedFiles,
+        );
+        break;
+
     default:
         fwrite(STDERR, "Unbekanntes Kommando" . ($command !== null ? ": {$command}" : '') . "\n");
-        fwrite(STDERR, "Verfügbare Kommandos: migrate, user:list\n");
+        fwrite(STDERR, "Verfügbare Kommandos: migrate, user:list, trash:purge\n");
         exit(1);
 }

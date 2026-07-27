@@ -20,7 +20,7 @@ Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche
 
 ## Voraussetzungen
 
-- PHP ≥ 8.4 mit `pdo_sqlite`, `sqlite3`, `mbstring`, `json`, `curl`, `openssl`, `intl`, `fileinfo`
+- PHP ≥ 8.4 mit `pdo_sqlite`, `sqlite3`, `mbstring`, `json`, `curl`, `openssl`, `intl`, `fileinfo`, `gd`
 - Composer 2.x
 - Node.js ≥ 20 mit npm
 - Ein Google-Cloud-Projekt mit OAuth-2.0-Client (siehe unten)
@@ -83,6 +83,41 @@ muss der Hoster `mod_rewrite` und `AllowOverride FileInfo` für den Webroot
 aktivieren. Bei Nginx muss stattdessen die Domain-Konfiguration alle nicht
 vorhandenen Pfade mit `try_files $uri $uri/ /index.php?$query_string;` an
 `public/index.php` weiterleiten.
+
+**Warum das Icon-Verzeichnis `public/icon/` heißt (nicht `icons/`):**
+Apache definiert in `mods-available/alias.conf` standardmäßig
+`Alias /icons/ "/usr/share/apache2/icons/"` für die Symbole von `mod_autoindex`.
+Dieses Alias hat Vorrang vor dem DocumentRoot: Unter `/icons/…` liefert der Server
+dann die Systemsymbole statt der Anwendungsdateien — vorhandene eigene Icons enden
+in HTTP 404, ohne dass `.htaccess` oder Deployment etwas damit zu tun hätten. Der
+Verzeichnisname `icon` umgeht das Alias. Beim Umbenennen sind
+`resources/views/layout.php`, `resources/views/partials/sidebar.php`,
+`public/manifest.webmanifest` und die Precache-Liste in `public/sw.js` mitzuziehen
+(dort zusätzlich `SHELL_CACHE` hochzählen, damit Clients die alte Liste verwerfen).
+
+**Statische Dateien liefern 404, obwohl sie auf dem Server liegen?** Erst die
+antwortende Ebene bestimmen — die Fehlerseite verrät sie:
+
+```bash
+curl -sI https://<domain>/icon/icon-192.png | head -3
+```
+
+- Slim-Fehlerseite (`charset=utf-8`) → die Anfrage wurde an `index.php`
+  weitergereicht; dann greift die Rewrite-Bedingung nicht.
+- Apache-eigene 404 (`charset=iso-8859-1`) → Apache hat selbst gesucht und nichts
+  gefunden. Ob Verzeichnis oder Datei fehlt, zeigt der Vergleich: bei
+  `Options -Indexes` antwortet ein **vorhandenes** Verzeichnis mit 403:
+
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/icon/     # 403 = Verzeichnis da
+  curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/build/    # Gegenprobe
+  ```
+
+  403 für das Verzeichnis und 404 für die Datei darin heißt: Verzeichnis vorhanden,
+  Inhalt fehlt — oder ein `Alias` schiebt sich davor (siehe oben).
+- Bei Nginx greift keine `.htaccess`. Dort muss `try_files` vorhandene Dateien
+  zuerst ausliefern; routet die Konfiguration pauschal auf `index.php`, gibt Slim
+  für jede statische Datei 404 zurück.
 
 Die folgenden Secrets im GitHub-Environment `production` anlegen:
 

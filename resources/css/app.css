@@ -60,6 +60,11 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
+  /* Unterbindet den Doppeltipp-Zoom auf Touchgeräten (NFR-UI-14); der
+     meta-viewport-Eintrag allein reicht auf iOS Safari nicht aus. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 button,
@@ -98,6 +103,14 @@ textarea::placeholder {
   outline: none;
 }
 
+/* WebKit blendet in type="search" ein eigenes Löschsymbol ein - daneben wäre
+   der eigene Zurücksetzen-Schalter doppelt. */
+.sidebar-search::-webkit-search-cancel-button,
+.sidebar-search::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+
 .document-surface {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -105,8 +118,164 @@ textarea::placeholder {
   box-shadow: var(--shadow-sm);
 }
 
+/* iOS als Home-Bildschirm-App: durch `viewport-fit=cover` reicht die Web-App bis
+   unter die Home-Anzeige. Ohne eigenen Innenabstand liegt die letzte Zeile der
+   Seitenleiste (Offline-Status, Papierkorb, Administration, Abmelden) darunter
+   und ist weder sichtbar noch antippbar. `100dvh` statt `100vh`, damit in Safari
+   zusätzlich die ein- und ausfahrende Adressleiste eingerechnet wird. */
+.app-sidebar {
+  height: 100vh;
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.page-sidebar,
+.notebook-rail,
+.notebook-drawer {
+  height: 100vh;
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.notebook-rail {
+  background: var(--color-bg-subtle);
+  border-color: var(--color-border);
+}
+
+.notebook-item {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  display: flex;
+  font-size: 0.875rem;
+  gap: 0.65rem;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  width: 100%;
+}
+
+.notebook-resize-handle {
+  bottom: 0;
+  cursor: col-resize;
+  position: absolute;
+  right: -4px;
+  top: 0;
+  touch-action: none;
+  width: 8px;
+  z-index: 20;
+}
+
+.notebook-resize-handle::after {
+  background: transparent;
+  bottom: 0;
+  content: "";
+  left: 3px;
+  position: absolute;
+  top: 0;
+  transition: background-color 120ms ease;
+  width: 2px;
+}
+
+.notebook-resize-handle:hover::after,
+.notebook-resize-handle:focus-visible::after,
+.is-resizing-sidebar .notebook-resize-handle::after {
+  background: var(--color-accent);
+}
+
+body.is-resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.notebook-item:hover,
+.notebook-item:focus-visible,
+.notebook-item-active .notebook-item,
+.notebook-item.is-active {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-text);
+}
+
+.notebook-item.is-drop-target {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: inset 0 0 0 2px var(--color-accent), 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+  font-weight: 600;
+  outline-offset: -2px;
+}
+
+.notebook-appearance {
+  align-items: center;
+  display: inline-flex;
+  font-size: 1rem;
+  height: 1.65rem;
+  justify-content: center;
+  width: 1.65rem;
+}
+
+.notebook-color-choice {
+  border: 3px solid var(--color-bg);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--color-border);
+  height: 2rem;
+  width: 2rem;
+}
+
+.notebook-color-choice.is-selected {
+  box-shadow: 0 0 0 2px var(--color-text);
+}
+
+.notebook-icon-choice {
+  align-items: center;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  height: 2.75rem;
+  justify-content: center;
+}
+
+.notebook-icon-choice.is-selected {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.settings-nav-button {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  display: flex;
+  font-size: 0.875rem;
+  gap: 0.65rem;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  width: 100%;
+}
+
+.settings-nav-button:hover,
+.settings-nav-button:focus-visible,
+.settings-nav-button.is-active {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.settings-nav-button.is-active {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.settings-dialog {
+  height: min(90vh, 44rem);
+}
+
+@media (max-width: 767px) {
+  .page-sidebar[aria-hidden="true"] {
+    pointer-events: none;
+  }
+}
+
 .workspace-main {
   background: var(--color-bg);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .page-canvas {
@@ -173,9 +342,108 @@ textarea::placeholder {
   border-color: color-mix(in srgb, var(--color-border) 72%, transparent);
 }
 
+button,
+[role="button"],
+select {
+  cursor: pointer;
+}
+
+.offline-banner {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  text-align: center;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.875rem;
+  font-weight: 550;
+  gap: 0.5rem;
+  justify-content: center;
+  line-height: 1.25;
+  padding: 0.625rem 1rem;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 150ms ease;
+  user-select: none;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  box-shadow: 0 1px 2px rgb(37 99 235 / 0.25);
+  color: var(--color-accent-contrast);
+}
+
+.btn-primary:hover,
+.btn-primary:focus-visible {
+  background: color-mix(in srgb, var(--color-accent) 88%, black);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.btn-secondary {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+}
+
+.btn-secondary:hover,
+.btn-secondary:focus-visible {
+  background: var(--color-bg-subtle);
+  border-color: color-mix(in srgb, var(--color-border) 70%, var(--color-text));
+}
+
+.btn-quiet {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  color: var(--color-text);
+  font-weight: 500;
+  padding: 0.5rem 0.625rem;
+}
+
+.btn-quiet:hover,
+.btn-quiet:focus-visible {
+  background: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
+  border-color: color-mix(in srgb, var(--color-border) 65%, var(--color-text));
+  color: var(--color-text);
+}
+
+/* Öffnet die Seitenleiste auf Touchgeräten. Da NFR-UI-14 das Zoomen sperrt,
+   braucht der Schalter eine sichere Trefferfläche von 48 px. */
+/* Kein `display` hier: ungeschichtetes CSS gewinnt in Tailwind 4 gegen jede
+   Utility-Klasse, `md:hidden` würde sonst wirkungslos bleiben. Die Anzeige
+   steuern die Utilities `flex` / `md:hidden` an den Schaltern selbst. */
+.sidebar-toggle {
+  align-items: center;
+  border-radius: var(--radius-md);
+  height: 2.4rem;
+  justify-content: center;
+  width: 2.4rem;
+}
+
+.sidebar-toggle svg {
+  height: 1.4rem;
+  width: 1.4rem;
+}
+
 .icon-action {
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
+  cursor: pointer;
   padding: 0.375rem;
 }
 
@@ -183,6 +451,13 @@ textarea::placeholder {
 .icon-action:focus-visible {
   background: color-mix(in srgb, var(--color-text) 8%, transparent);
   color: var(--color-text);
+}
+
+/* Aktiver Filter im Kapitelkopf - ohne Einfärbung wäre nicht erkennbar, dass
+   die Liste gerade gefiltert ist. */
+.icon-action.is-filter-active {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
 }
 
 .icon-action-danger:hover,
@@ -209,10 +484,144 @@ textarea::placeholder {
   color: var(--color-text);
 }
 
+.toolbar-button.toolbar-button-danger:hover,
+.toolbar-button.toolbar-button-danger:focus-visible {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+
 .toolbar-button.toolbar-text {
   font-family: var(--font-serif, Georgia, serif);
   font-size: 1.125rem;
   text-decoration: line-through;
+}
+
+/* Kapitel-Reiter der Task-Seite (Desktop). Der aktive Reiter sitzt bündig auf
+   der Trennlinie darunter, wie bei Browser-Tabs. */
+.tab-button {
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  margin-bottom: -1px;
+  padding: 0.5rem 0.875rem;
+  white-space: nowrap;
+}
+
+.tab-button:hover,
+.tab-button:focus-visible {
+  color: var(--color-text);
+}
+
+.tab-button.is-active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+/* Die Seitenliste ist bewusst flach und füllt die ganze Breite der Leiste. */
+.page-card.is-current {
+  background-color: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.page-card.is-selected {
+  background-color: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.page-card + .page-card {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+/* Gesetzter Favorit: hellrot und dauerhaft sichtbar, damit er sich auch ohne
+   Hover vom nur eingeblendeten Umschalter unterscheidet. */
+.is-favorite {
+  color: light-dark(#ef6a6a, #f89a9a);
+  opacity: 1;
+}
+
+.is-favorite svg {
+  fill: currentColor;
+}
+
+.page-card:hover {
+  background-color: color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+.page-card.is-current {
+  background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+/* Anhang-Badge unter der Notiz-Überschrift: Öffnen links, Entfernen rechts. */
+.attachment-badge {
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.attachment-badge:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
+.attachment-badge-open {
+  align-items: center;
+  color: var(--color-text);
+  display: inline-flex;
+  font-size: 0.875rem;
+  gap: 0.4rem;
+  max-width: 20rem;
+  padding: 0.35rem 0.7rem;
+}
+
+.attachment-badge-open:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+/* Anhang über dem Offline-Limit: ohne Verbindung sichtbar, aber nicht nutzbar. */
+.attachment-badge-offline {
+  border-style: dashed;
+}
+
+.attachment-badge-offline .attachment-badge-open {
+  color: var(--color-text-muted);
+}
+
+.attachment-badge-remove {
+  align-items: center;
+  border-left: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  display: inline-flex;
+  padding: 0 0.5rem;
+}
+
+.attachment-badge-remove:hover {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+
+.menu-item {
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  display: block;
+  font-size: 0.9375rem;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  width: 100%;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.menu-item-danger {
+  color: var(--color-danger);
+}
+
+.menu-item-danger:hover,
+.menu-item-danger:focus-visible {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 
 .toolbar-divider {
@@ -238,6 +647,17 @@ textarea::placeholder {
 
 .prose-editor .tiptap > * + * {
   margin-top: 1.1em;
+}
+
+/* Enter erzeugt einen neuen Absatz. Zwischen zwei Absätzen ist der volle
+   Blockabstand zu groß - Fließtext soll wie in einem Schreibprogramm eng
+   zusammenstehen (FR-NOTE-12). */
+.prose-editor .tiptap > p + p {
+  margin-top: 0.35em;
+}
+
+.prose-editor .tiptap li > p + p {
+  margin-top: 0.35em;
 }
 
 .prose-editor .tiptap h1,
@@ -294,10 +714,17 @@ textarea::placeholder {
   margin: 2em 0;
 }
 
+/* Die ResizableNodeView schreibt die gespeicherte Bildgröße als Inline-Style
+   auf das <img> (`style="width:2560px;height:1920px"`). `max-width: 100%`
+   deckelt auf schmalen Displays zwar die Breite, die Inline-Höhe bleibt aber
+   stehen - das Bild wird dadurch in die Länge gezogen. Die Höhe muss der
+   gedeckelten Breite folgen, und weil Inline-Styles jede Regel schlagen, geht
+   das nur mit !important. Das Seitenverhältnis bleibt korrekt, da das Skalieren
+   ohnehin proportional konfiguriert ist (alwaysPreserveAspectRatio). */
 .prose-editor .tiptap img {
   border-radius: var(--radius-md);
   display: block;
-  height: auto;
+  height: auto !important;
   margin: 1.5rem auto;
   max-width: 100%;
 }
@@ -311,13 +738,18 @@ textarea::placeholder {
   justify-content: center;
   margin: 1.5rem auto;
   max-width: 100%;
+  min-width: 0;
 }
 
 .prose-editor [data-resize-wrapper] {
+  /* Flex-Element: ohne min-width:0 dehnt es sich auf die Inline-Breite des
+     Bildes aus, und das Deckeln per max-width liefe ins Leere. */
   max-width: 100%;
+  min-width: 0;
 }
 
 .prose-editor [data-resize-wrapper] > img {
+  height: auto !important;
   margin: 0;
   max-width: 100%;
 }
@@ -400,15 +832,26 @@ textarea::placeholder {
   overflow-x: auto;
 }
 
+.prose-editor .tiptap .tableWrapper {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+
 .prose-editor .tiptap table {
   border-collapse: collapse;
+  margin: 0;
+  overflow: hidden;
+  table-layout: fixed;
   width: 100%;
 }
 
 .prose-editor .tiptap th,
 .prose-editor .tiptap td {
   border: 1px solid var(--color-border);
+  box-sizing: border-box;
+  min-width: 6rem;
   padding: 0.6em 0.75em;
+  position: relative;
   text-align: left;
   vertical-align: top;
 }
@@ -418,36 +861,145 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+.prose-editor .tiptap td > *,
+.prose-editor .tiptap th > * {
+  margin-top: 0;
+}
+
+.prose-editor .tiptap .selectedCell::after {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.prose-editor .tiptap .column-resize-handle {
+  background-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  right: -1px;
+  top: 0;
+  width: 2px;
+}
+
 .prose-editor .tiptap ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;
 }
 
-.prose-editor .tiptap li[data-type="taskItem"] {
+/* Über das Kind-von-taskList adressiert statt über [data-type="taskItem"]:
+   Checkbox und Text müssen in einer Zeile stehen wie bei einer Aufzählung,
+   und das <li> der NodeView trägt nur die Attribute, die TipTap ihm gibt. */
+.prose-editor .tiptap ul[data-type="taskList"] > li {
   align-items: flex-start;
   display: flex;
-  gap: 0.5em;
+  gap: 0.6em;
 }
 
-.prose-editor .tiptap li[data-type="taskItem"] > div {
-  flex: 1;
+.prose-editor .tiptap ul[data-type="taskList"] > li + li {
+  margin-top: 0.35em;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] > li > label {
+  /* Die Checkbox sitzt in einer eigenen Zeilenbox; ohne feste Höhe rutscht sie
+     bei größerer Schrift aus der ersten Textzeile heraus. */
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  height: 1.7em;
+  user-select: none;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] > li > label > input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  height: 1.05em;
+  margin: 0;
+  width: 1.05em;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] > li > label > input[type="checkbox"]:disabled {
+  cursor: default;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] > li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Absätze in einem Checklisteneintrag dürfen keinen Blockabstand nach oben
+   bekommen - sonst rutscht der Text unter die Checkbox. */
+.prose-editor .tiptap ul[data-type="taskList"] > li > div > p {
+  margin: 0;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] > li > div > p + p {
+  margin-top: 0.35em;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] > li[data-checked="true"] > div {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+.prose-editor .tiptap ul[data-type="taskList"] ul[data-type="taskList"] {
+  margin-top: 0.35em;
 }
 
 @media (max-width: 767px) {
+  .note-page {
+    --note-sticky-header-height: 3.5rem;
+  }
+
   .note-sticky-header {
     padding-left: 3rem;
   }
 
+  /* Der Kopfbereich trägt Freigabe-Status, Kollaboratoren und Aktionen. Ohne
+     Umbruch würde der Freigabe-Hinweis auf schmalen Displays aus dem sichtbaren
+     Bereich geschoben (FR-SHR-13). */
+  .note-sticky-header,
+  .page-toolbar {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
   .prose-editor .tiptap {
-    font-size: 1rem;
-    line-height: 1.65;
+    font-size: 1.1875rem;
+    line-height: 1.6;
   }
 
   .prose-editor .tiptap h1 {
-    font-size: 1.75rem;
+    font-size: 1.9rem;
   }
 
   .prose-editor .tiptap h2 {
-    font-size: 1.35rem;
+    font-size: 1.5rem;
+  }
+
+  .prose-editor .tiptap h3 {
+    font-size: 1.25rem;
+  }
+
+  /* Aufgabenlisten werden auf dem Handy größer gesetzt, damit Titel und
+     Checkbox mit dem Daumen sicher treffbar bleiben (NFR-UI-15). */
+  .task-list {
+    font-size: 1.0625rem;
+  }
+
+  .task-list .task-title {
+    font-size: 1.125rem;
+    line-height: 1.4;
+  }
+
+  /* iOS Safari zoomt beim Fokussieren jedes Eingabefelds mit weniger als 16 px
+     Schriftgröße - unabhängig vom viewport-Meta-Tag. */
+  input,
+  textarea,
+  select {
+    font-size: max(1rem, 1em);
   }
 }

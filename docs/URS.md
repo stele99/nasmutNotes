@@ -4,9 +4,9 @@
 | Feld | Wert |
 |---|---|
 | Dokument-ID | URS-NOTES-001 |
-| Version | **2.0** |
+| Version | **2.8** |
 | Status | Entwurf |
-| Datum | 2026-07-24 |
+| Datum | 2026-07-26 |
 | Technologie | PHP 8.5, SQLite 3 (WAL + FTS5), Vite 7 + Alpine.js 3 + TipTap 3 |
 
 ---
@@ -18,11 +18,11 @@ Dieses Dokument beschreibt die Anforderungen an eine webbasierte Anwendung zur E
 
 ### 1.2 Geltungsbereich
 Single-Server-Webanwendung auf PHP-Basis mit SQLite als Datenhaltung. Zielgruppe: kleine bis mittlere Teams (Richtwert: bis 200 aktive Nutzer, bis 50.000 Objekte).
-
 ### 1.3 Abgrenzung (Out of Scope, Version 1.0)
+
 - Echtzeit-Kollaboration (gleichzeitiges Editieren, OT/CRDT)
 - Native Mobile Apps
-- Offline-Modus / PWA-Synchronisierung
+- Vollständiger Offline-First-Betrieb ohne vorherigen Online-Prefetch; optionale Offline-Nutzung mit lokalem Cache ist in FR-OFFLINE-* beschrieben
 - Volltextsuche über den Inhalt von Dateianhängen
 - Team-Workspaces mit gemeinsamer Mitgliederverwaltung
 - Kommentarfunktion auf Seiten
@@ -113,7 +113,7 @@ Verbindliche Vorgaben. Versionsstände Stand Juli 2026; bei Projektstart ist jew
 | Rolle | Rechte |
 |---|---|
 | **Gast (anonym)** | Aufruf gültiger Share-Links (lesend, bzw. schreibend falls so konfiguriert) |
-| **Nutzer** | Volle CRUD-Rechte im eigenen Workspace, Share-Links erzeugen/widerrufen, Export |
+| **Nutzer** | Volle CRUD-Rechte im eigenen Workspace, Share-Links erzeugen/widerrufen, Export, eigene Invite-Links erzeugen und widerrufen |
 | **Admin** | Zusätzlich: Invites verwalten, Nutzerliste, Nutzer deaktivieren, Systemstatus, Audit-Log |
 
 **Regel:** Die Admin-Rolle wird ausschließlich über `ADMIN_EMAILS` bestimmt und ist nicht in der Datenbank änderbar. Die Prüfung erfolgt bei jedem Request (Case-insensitiver Vergleich der getrimmten E-Mail).
@@ -140,7 +140,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-AUTH-10 | Optional: Beschränkung auf eine Google-Workspace-Domain über `GOOGLE_HOSTED_DOMAIN` (`hd`-Claim wird serverseitig geprüft). | S |
 | FR-AUTH-11 | Der Nutzer sieht seine aktiven Sessions und kann sie einzeln oder alle beenden. | K |
 
-### 5.2 Invite-Verwaltung (Admin)
+### 5.2 Invite-Verwaltung
 
 | ID | Anforderung | Prio |
 |---|---|---|
@@ -152,6 +152,23 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-INV-06 | Der Admin kann Nutzer auflisten, deaktivieren und reaktivieren. Der eigene Account kann nicht deaktiviert werden. | S |
 | FR-INV-07 | Beim Löschen eines Nutzers wählt der Admin: Inhalte mitlöschen oder auf einen anderen Nutzer übertragen. | S |
 | FR-INV-08 | Der Admin sieht das Audit-Log gefiltert nach Nutzer, Aktion und Zeitraum. | S |
+| FR-INV-09 | **Jeder angemeldete Nutzer** kann Invite-Links erzeugen — mit denselben Feldern wie der Admin (optionale Ziel-E-Mail, Notiz, Nutzungsanzahl, Gültigkeitsdauer). Der Link wird ausschließlich unmittelbar nach dem Anlegen angezeigt; serverseitig liegt nur der Token-Hash. | M |
+| FR-INV-10 | Nutzer sehen und widerrufen ausschließlich die von ihnen selbst erzeugten Invites; der Admin sieht und widerruft alle. Ein Widerruf-Versuch auf einen fremden Invite liefert HTTP 403. | M |
+| FR-INV-11 | Nutzer-Invites sind begrenzt auf höchstens 50 Nutzungen und 365 Tage Gültigkeit sowie 10 neue Invites pro Stunde und Konto (Rate Limit). | M |
+| FR-INV-12 | Der erzeugte Link wird sofort weitergabefertig angeboten: Unterstützt das Gerät die Web-Share-API, steht **„Link teilen“** (systemeigenes Teilen-Menü, z. B. Messenger oder Mail) als Hauptaktion vorn, Kopieren daneben. Andernfalls ist **Kopieren in die Zwischenablage** die Hauptaktion — zusätzlich landet der Link direkt nach dem Anlegen automatisch in der Zwischenablage. | M |
+
+### 5.2a Admin-Dashboard *(neu in v2.5)*
+
+| ID | Anforderung | Prio |
+|---|---|---|
+| FR-ADM-01 | `/admin` zeigt eine Übersicht aller Nutzer mit E-Mail, Anzahl Seiten (inkl. Papierkorb), Aufgaben und Bildern sowie dem belegten Speicher. Der Speicher setzt sich aus der Summe der Bildgrößen und der Größe der gespeicherten Notiz-Dokumente inklusive Versionsschnappschüsse zusammen. Kopfzahlen fassen Nutzer, Seiten, Bilder und Gesamtspeicher zusammen. | M |
+| FR-ADM-02 | Der Admin kann einen Nutzer **mit allen Daten löschen**: Workspace, Seiten, Notizen, Versionen, Aufgaben, Freigaben, Sessions und Einladungen entfallen über `ON DELETE CASCADE`, die zugehörigen Bilddateien werden vom Datenträger entfernt. Das Audit-Log bleibt erhalten (`user_id` wird auf NULL gesetzt). | M |
+| FR-ADM-03 | Das Löschen erfordert zwei Bestätigungen: eine Rückfrage mit Nennung der betroffenen Mengen und die Eingabe der E-Mail-Adresse des Nutzers. Das eigene Konto kann nicht gelöscht werden. | M |
+| FR-ADM-04 | Der Admin kann **verwaiste Bilddateien** löschen — Anhänge, deren Token in keinem Notizinhalt und in keiner Notizversion mehr vorkommt. Die Übersicht nennt Anzahl und Umfang vor dem Aufräumen. | M |
+| FR-ADM-05 | Der Admin legt ein **Standard-Speicherkontingent** (MB) fest, das für alle Nutzer ohne eigenen Wert gilt. Der Wert liegt in `app_settings` und ist zur Laufzeit änderbar; `DEFAULT_STORAGE_QUOTA_MB` dient nur als Anfangswert. 0 bedeutet unbegrenzt. | M |
+| FR-ADM-06 | Der Admin kann je Nutzer ein **persönliches Kontingent** setzen oder auf den Standardwert zurückstellen. Beim Upload wird das wirksame Kontingent des **Seiteneigentümers** geprüft — eine Schreibfreigabe verbraucht dessen Kontingent, nicht das des Hochladenden. Bilder **und** Dateianhänge zählen dabei gemeinsam; beide Upload-Wege müssen dieselbe Summe bilden, sonst ließe sich die Grenze über den jeweils anderen Weg umgehen. Ist das Kontingent erschöpft, wird der Upload mit HTTP 422 und Nennung von Kontingent und Belegung abgelehnt. | M |
+| FR-ADM-08 | **Betriebshinweis:** Der ausgelieferte Standardwert `DEFAULT_STORAGE_QUOTA_MB=0` bedeutet *unbegrenzt*. Da jeder Nutzer Einladungen erzeugen darf (FR-INV-09), ist vor dem Produktivbetrieb ein Kontingent zu setzen — andernfalls kann jedes eingeladene Konto den Datenträger unbegrenzt füllen. | M |
+| FR-ADM-07 | Änderungen an Kontingenten sowie das Löschen von Nutzern und verwaisten Dateien werden im Audit-Log vermerkt. | S |
 
 ### 5.3 Workspace & Seitenverwaltung
 
@@ -162,11 +179,16 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-WS-03 | Beim Anlegen wird der Typ gewählt: **Notizseite** oder **Task-Seite**. Der Typ ist danach nicht änderbar. | M |
 | FR-WS-04 | Seiten haben Titel (Pflicht, max. 200 Zeichen), optionales Emoji-Icon, Erstell- und Änderungsdatum. | M |
 | FR-WS-05 | Seiten können umbenannt, **dupliziert** (inkl. aller Kategorien und Tasks bzw. des Notizinhalts, ohne Share-Links) und gelöscht werden. | M |
-| FR-WS-06 | Löschen erfolgt als Soft-Delete in einen **Papierkorb**. Wiederherstellung innerhalb von `TRASH_RETENTION_DAYS` (Default 30). Endgültiges Löschen manuell oder automatisch nach Ablauf. | M |
+| FR-WS-06 | Löschen erfolgt als Soft-Delete in einen **Papierkorb**. Wiederherstellung innerhalb von `TRASH_RETENTION_DAYS` (**Default 90**). Der Papierkorb ist über ein Symbol am Fuß der Seitenleiste erreichbar und zeigt je Seite Typ und Restfrist; einzelne Seiten lassen sich wiederherstellen oder endgültig löschen, zusätzlich kann der Papierkorb komplett geleert werden. Beim endgültigen Löschen verschwinden auch die zugehörigen Bilder und Dateianhänge vom Datenträger. Abgelaufene Einträge räumt `php bin/console.php trash:purge` (für den Cron-Betrieb). | M |
 | FR-WS-07 | Die Seitenliste ist sortierbar (zuletzt geändert / Titel A-Z / Erstellungsdatum) und filterbar nach Typ. | S |
 | FR-WS-08 | Seiten können als Favorit markiert werden; Favoriten erscheinen oben in der Seitenleiste. | S |
 | FR-WS-09 | Manuelle Sortierung der Seiten per Drag & Drop. | K |
 | FR-WS-10 | Seiten können mit farbigen **Tags/Labels** versehen und danach gefiltert werden. | K |
+| FR-WS-11 | Der Startbildschirm (`/app`) listet **alle** Seiten des Nutzers, die zuletzt bearbeiteten zuerst (rein nach Änderungsdatum, ohne Favoriten-Vorrang). Die Liste wird in Blöcken von 25 Einträgen gerendert und beim Scrollen ans Listenende automatisch nachgeladen; ein Schalter „Weitere Seiten laden“ dient als Rückfallweg. | M |
+| FR-WS-12 | Auf schmalen Displays tritt die Liste unmittelbar in den sichtbaren Bereich: Der einleitende Kopfbereich wird dort auf Titel und die beiden Anlegen-Schaltflächen reduziert. | S |
+| FR-WS-13 | Seitenleiste und Übersicht stellen jede Seite als **Karte** dar: Titel, darunter eine Kurzinfo (Notiz: erste nicht leere Textzeile, max. 140 Zeichen; Task-Seite: „N Aufgaben · M offen“), darunter kleiner der letzte Bearbeiter und das Änderungsdatum. In der Seitenleiste erscheinen Kurzinfo und Metazeile erst ab 768 px; mobil bleibt es beim reinen Titel. | S |
+| FR-WS-14 | Die Kurzinfos werden serverseitig in **zwei Sammelabfragen** je Seitenliste ermittelt (Notizanriss samt letztem Bearbeiter, Aufgabenzahlen), nicht mit einer Abfrage je Seite. Die Parameterlisten werden gestückelt, damit auch große Workspaces die SQLite-Parametergrenze nicht überschreiten. | M |
+| FR-WS-15 | Als Favorit markierte Seiten zeigen den Stern dauerhaft und hellrot gefüllt; ein erneuter Klick entfernt die Markierung. Nicht markierte Seiten blenden den Stern auf dem Desktop erst beim Überfahren ein. | S |
 
 ### 5.4 Notizseiten (WYSIWYG)
 
@@ -177,12 +199,29 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-NOTE-03 | Serverseitige Validierung des JSON gegen das erlaubte Schema (Allowlist von Node- und Mark-Typen). Bei HTML-Rendering erfolgt zusätzlich Sanitisierung. Rohes HTML aus dem Client wird niemals ungeprüft gespeichert oder ausgeliefert. | M |
 | FR-NOTE-04 | Autosave mit Debounce (1–2 s nach letzter Eingabe) sowie bei Verlassen der Seite (`visibilitychange` / `beforeunload`). Sichtbarer Statusindikator: „Speichern…" / „Gespeichert" / „Nicht gespeichert". | M |
 | FR-NOTE-05 | Bei Netzwerkfehler wird der Inhalt lokal zwischengespeichert und der Speichervorgang mit exponentiellem Backoff wiederholt. Der Nutzer wird sichtbar gewarnt. | M |
+| FR-OFFLINE-01 | Nutzer kann wählen, wie viele zuletzt geänderte Seiten lokal vorgehalten werden: 100, 1.000, 5.000, 10.000 oder alle. | S |
+| FR-OFFLINE-02 | Offline-Cache umfasst Seitenmetadaten, Notizinhalt bzw. Task-Board sowie referenzierte Notiz-Bilder und Dateianhänge, soweit sie das Größenlimit aus FR-OFFLINE-06 einhalten. | S |
+| FR-OFFLINE-03 | Offline bearbeitete Notizen werden pro Seite zusammengefasst in einer Outbox gehalten und bei Verbindung automatisch oder manuell synchronisiert. Versionskonflikte (409) bleiben sichtbar und können durch Übernahme der lokalen oder der Serverfassung aufgelöst werden. | S |
+| FR-OFFLINE-04 | Service Worker liefert App-Shell, Build-Assets und gecachte Attachments auch ohne Netz. Logout löscht den lokalen Inhalt-Cache. | S |
+| FR-OFFLINE-05 | Die Anwendung ist als PWA auf iOS und Android zum Home-Bildschirm hinzufügbar und stellt Apple-Touch-, Standard- und Maskable-Icons bereit. | S |
+| FR-OFFLINE-06 | Anhänge und eingebettete Bilder werden bis zu einer **vom Admin gesetzten Größe** (Default 250 KB, Grenzen 0–102.400 KB; `OFFLINE_ATTACHMENT_MAX_KB` als Anfangswert) automatisch zur Notiz mit heruntergeladen. Größere Dateien bleiben sichtbar, sind aber als „nur mit Internetverbindung" gekennzeichnet: Dateianhänge zeigen beim Öffnen einen Hinweis, eingebettete Bilder einen Platzhalter mit derselben Aussage. Ein gesenktes Limit entfernt bereits gespeicherte Dateien beim nächsten Abgleich. | S |
 | FR-NOTE-06 | Tastaturkürzel: Strg/Cmd+B, +I, +U, +K (Link), +S (manuell speichern), +Z/+Shift+Z (Undo/Redo). | S |
 | FR-NOTE-07 | Slash-Befehl (`/`) öffnet ein Blockauswahl-Menü an der Cursorposition. | S |
 | FR-NOTE-08 | Markdown-Eingabekürzel beim Tippen (`# `, `- `, `> `, `` ``` ``). | S |
-| FR-NOTE-09 | Versionsverlauf mit bis zu 20 Snapshots pro Seite, Wiederherstellung möglich. Snapshot bei jeder Sitzung bzw. maximal alle 10 Minuten. | S |
+| FR-NOTE-09 | Versionsverlauf mit bis zu 20 Snapshots pro Seite, Wiederherstellung möglich. Snapshot nur am Sitzungsende: wenn der letzte Speichervorgang mindestens **30 Minuten** zurückliegt **oder** von einem anderen Nutzer stammt (kein Snapshot pro Autosave). Zusätzlich Snapshot bei Konflikt-Überschreiben und vor Wiederherstellen. Wiederherstellen nur durch den Seiteneigentümer (siehe FR-SHR-08). | S |
 | FR-NOTE-10 | Bild-Upload per Drag & Drop / Paste, lokale Ablage außerhalb des Web-Roots, Auslieferung über authentifizierten Endpunkt. Grenze über `MAX_UPLOAD_MB`. | K |
 | FR-NOTE-11 | Import einer Markdown-Datei als neue Notizseite. | K |
+| FR-NOTE-12 | Die Werkzeugleiste enthält eine **Checkliste** als eigene Aufzählungsart. Deren Einträge tragen eine Checkbox, die direkt im Editor an- und abgewählt wird; der Zustand steht als `taskItem.checked` im ProseMirror-JSON und ist Teil der serverseitigen Allowlist. Abgehakte Einträge werden durchgestrichen und gedämpft dargestellt. In nur lesenden Freigaben sind die Checkboxen deaktiviert. | M |
+| FR-NOTE-13 | Ein mit Enter erzeugter neuer Absatz steht eng am vorhergehenden (Abstand ≈ 0,35 em). Der größere Blockabstand bleibt Überschriften, Listen, Tabellen, Zitaten und Codeblöcken vorbehalten. | M |
+| FR-NOTE-14 | Die Werkzeugleiste bietet **Bild einfügen** (Dateiauswahl) und mobil zusätzlich **Foto aufnehmen** (`capture="environment"`, öffnet direkt die Kamera). Beide Wege nutzen denselben Upload-Pfad wie Drag & Drop und Einfügen aus der Zwischenablage inklusive Platzhalter während des Uploads. | M |
+| FR-NOTE-15 | Ausgewählte Bilder werden **vor dem Upload im Browser verkleinert**: längste Kante maximal 2560 px, Neukodierung als JPEG (Qualität 0,85), sofern das Original größer als 2560 px oder 2 MB ist. Kamerabilder überschritten sonst regelmäßig `MAX_UPLOAD_MB` bzw. die 40-Megapixel-Grenze. Kann der Browser das Format nicht dekodieren (z. B. HEIC), geht das Original an den Server, der es mit verständlicher Meldung ablehnt. | M |
+| FR-NOTE-16 | Ein Tipp auf ein Bild öffnet es auf Handy-Breite **formatfüllend** über der Seite; Schließen per Tipp auf die Fläche, über den Schließen-Schalter oder mit `Escape`. Auf dem Desktop bleibt der Klick beim Auswählen des Bildknotens, damit die Größe weiterhin gezogen werden kann. Der Betrachter greift auch in nur lesenden Freigaben. | M |
+| FR-NOTE-17 | Bilder behalten in jeder Viewport-Breite ihr **Seitenverhältnis**. Ist das gespeicherte Bild breiter als der verfügbare Platz, wird die Breite gedeckelt und die Höhe folgt proportional. Hinweis für die Umsetzung: Die TipTap-Resize-NodeView schreibt die gespeicherte Größe als Inline-Style auf das `<img>`; die Höhe muss deshalb mit `height: auto !important` überschrieben werden, und die Resize-Container brauchen `min-width: 0`, damit die Breitendeckelung im Flex-Layout greift. | M |
+| FR-NOTE-18 | Eine Notizseite kann **Dateianhänge** tragen. Sie hängen an der Seite (nicht am Dokumentinhalt) und werden über einen Büroklammer-Schalter in der Werkzeugleiste hochgeladen; Mehrfachauswahl ist möglich. **Jeder Dateityp ist erlaubt**; der tatsächliche MIME-Typ des Inhalts wird ermittelt und gespeichert, dient aber nur der Anzeige und der Entscheidung über den PDF-Betrachter. Dateien liegen außerhalb des Web-Roots unter `files/{page_id}/{hex}.bin` — ohne sprechende Endung, damit der Webserver sie nicht interpretieren kann. Der Schutz liegt vollständig in der Auslieferung (FR-NOTE-20). | M |
+| FR-NOTE-19 | Anhänge erscheinen als **Badges unter der Überschrift**, jeweils mit Symbol und Dateinamen. Jedes Badge trägt ein kleines ×, das den Anhang samt Datei entfernt (nur mit Schreibrecht). | M |
+| FR-NOTE-20 | Ein Klick auf ein Badge **lädt die Datei herunter**; handelt es sich um ein **PDF**, öffnet es stattdessen in einem **überlagerten Betrachter** mit Titelzeile, „in neuem Tab öffnen“ und Schließen (auch via `Escape`). Der Auslieferungsendpunkt setzt entsprechend `Content-Disposition: inline` bzw. `attachment`, immer zusammen mit `X-Content-Type-Options: nosniff`. **Nur für PDF wird der gespeicherte Content-Type gesendet; jeder andere Anhang geht mit `application/octet-stream` heraus.** Da beliebige Dateitypen anhängbar sind (FR-NOTE-18), ist das die tragende Absicherung: Ein HTML- oder SVG-Anhang kann so nicht im Ursprung der Anwendung gerendert werden, auch wenn ein Browser die Disposition ignoriert. Zwei Umsetzungshinweise: (1) `frame-ancestors` gilt für die **eingebettete** Antwort — bei `'none'` verweigert der Browser die Anzeige selbst im gleichnamigen Rahmen, für PDF-Antworten ist deshalb `'self'` zu setzen (siehe NFR-SEC-15). (2) Der Rahmen darf **keine Alpine-Direktive** tragen: Der CSP-Build lehnt das Auswerten von Ausdrücken auf iframes ab und bricht dabei die Initialisierung der gesamten Seite ab; Quelle und Titel werden im JavaScript direkt am Element gesetzt. | M |
+| FR-NOTE-21 | Die **maximale Größe je Anhang** legt der Admin fest (Default 10 MB, Grenzen 1–2048 MB); `MAX_ATTACHMENT_MB` dient nur als Anfangswert. Anhänge und eingebettete Bilder zählen gemeinsam auf das Speicherkontingent des Seiteneigentümers (FR-ADM-06). | M |
+| FR-NOTE-22 | Der Zugriff auf einen Anhang wird immer über die Seite geprüft: Wer die Seite nicht sehen darf, erhält HTTP 404; Löschen setzt Schreibrecht voraus. Dateinamen werden von Pfadanteilen und Steuerzeichen befreit und auf 150 Zeichen gekürzt. | M |
 
 ### 5.5 Task-Seiten
 
@@ -203,6 +242,13 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-TASK-13 | Mehrfachauswahl von Tasks für Sammelaktionen (verschieben, löschen, Responsible setzen). | S |
 | FR-TASK-14 | Optionale Felder: Fälligkeitsdatum und Priorität (niedrig/mittel/hoch), mit visueller Hervorhebung überfälliger Tasks. | K |
 | FR-TASK-15 | Task-Vorlagen: ein Kapitel kann als Vorlage markiert werden, dessen Tasks per Klick in eine andere Seite kopiert werden. | K |
+| FR-TASK-16 | Auf schmalen Displays (< 768 px) zeigt die Task-Seite **ein** Kapitel; die Auswahl erfolgt über ein Dropdown am Seitenkopf. Dessen Beschriftung ist aus Platzgründen nur für Screenreader hinterlegt (`sr-only`). Unter dem Dropdown folgen unmittelbar die Aufgaben — Kapitelname und Aufklapp-Schalter entfallen dort, da das Dropdown sie ersetzt. | M |
+| FR-TASK-17 | Die zuletzt gewählte Kategorie wird **pro Task-Seite** im Browser gespeichert (`localStorage`) und beim erneuten Öffnen wiederhergestellt. Existiert sie nicht mehr, greift das erste Kapitel; ein neu angelegtes Kapitel wird direkt angesteuert. | M |
+| FR-TASK-18 | Rechts neben dem Kapitel-Dropdown steht ein kompakter Menü-Schalter. Er öffnet ein Menü mit: **Kapitel anlegen**, **Kapitel umbenennen**, **Aufgaben einfügen**, **Kapitel löschen**. Die Einträge wirken auf das im Dropdown gewählte Kapitel; „Kapitel anlegen“ ist immer verfügbar, die übrigen nur bei vorhandener Auswahl. Ohne Schreibrecht entfällt das Menü. Auf dem Desktop bleiben diese Aktionen als einzelne Schalter in der Kapitelleiste. | M |
+| FR-TASK-19 | Auf schmalen Displays entfällt der Breadcrumb im Seitenkopf — auf Task-Seiten („Aufgabenliste › Titel“) ebenso wie auf Notizseiten („Notiz › Titel“); der Titel steht dort unmittelbar darunter als Überschrift. Freigabe-Hinweis, Kollaboratoren-Avatare und die Aktionen bleiben im Kopfbereich sichtbar. | S |
+| FR-TASK-20 | Trägt eine neue Aufgabe denselben Titel wie eine bestehende **im selben Kapitel** (Vergleich ohne Rücksicht auf Groß-/Kleinschreibung und Randleerzeichen), meldet der Server HTTP 409 mit `DUPLICATE_TITLE` und dem vorhandenen Datensatz. Der Client fragt zurück, ob trotzdem angelegt werden soll, und wiederholt die Anfrage bei Bestätigung mit `allow_duplicate`. Gleiche Titel in verschiedenen Kapiteln sind zulässig. | M |
+| FR-TASK-21 | Ist die Seite geteilt, wird der **Verantwortliche aus einer Auswahlliste** gewählt: Eigentümer plus alle Nutzer mit angenommener, gültiger Freigabe — lesend wie schreibend. Freitext bleibt über „Andere Person…“ möglich; ein bestehender Wert außerhalb der Liste schaltet automatisch auf Freitext. | S |
+| FR-TASK-22 | Jedes Kapitel trägt neben dem Ein-/Ausblenden erledigter Aufgaben einen Filter **„nur meine Aufgaben"** (Symbol mit Tooltip, aktiver Zustand farblich hervorgehoben). Verglichen wird der Verantwortliche mit dem eigenen Anzeigenamen; der Zustand wird je Seite im Browser gemerkt. Ohne bekannten eigenen Namen entfällt der Schalter. | S |
 
 ### 5.6 Bulk-Import von Tasks *(neu in v2.0)*
 
@@ -256,6 +302,9 @@ Ergebnis: 5 Tasks; der dritte ohne Listenmarkierung, der vierte direkt als erled
 | FR-SHR-10 | „Link kopieren"-Button mit visueller Bestätigung. | M |
 | FR-SHR-11 | Beim ersten Zugriff über einen Write-Link wird ein Anzeigename abgefragt (Session-gebunden), der bei Änderungen im Audit-Log vermerkt wird. | K |
 | FR-SHR-12 | Eine Übersichtsseite listet alle vom Nutzer erzeugten Share-Links workspace-weit auf. | S |
+| FR-SHR-13 | In den Headern von Notiz- und Task-Seiten werden Owner und Nutzer mit angenommener, aktiver Schreibfreigabe als Initialen-Avatare angezeigt — **in beiden Seitentypen identisch**. Ein Klick auf die Avatare öffnet eine Liste der Namen („Geteilt mit …“); derselbe Text steht als `title`/`aria-label` an der Avatargruppe. Der Kopfbereich bricht auf schmalen Displays um, damit der Freigabe-Hinweis sichtbar bleibt. | S |
+| FR-SHR-15 | Dem Eigentümer wird der Hinweis „Geteilt“ bereits angezeigt, sobald ein aktiver Share-Link besteht — also auch, bevor ihn jemand angenommen hat. | S |
+| FR-SHR-14 | Der Owner kann im Teilen-Dialog alle aktiven Freigaben einer Seite gemeinsam widerrufen („Teilen beenden“). | M |
 
 ### 5.8 Export *(neu in v2.0)*
 
@@ -265,6 +314,20 @@ Ergebnis: 5 Tasks; der dritte ohne Listenmarkierung, der vierte direkt als erled
 | FR-EXP-02 | Eine einzelne Task-Seite kann als **CSV** exportiert werden (Spalten: Kategorie, Titel, Beschreibung, Responsible, Link, Erledigt, Position). | S |
 | FR-EXP-03 | Der gesamte Workspace kann als ZIP (Markdown + CSV + JSON-Rohdaten) exportiert werden. | K |
 | FR-EXP-04 | Druckoptimiertes Stylesheet für Notiz- und Task-Seiten (Print-CSS). | K |
+
+---
+
+### 5.9 Import aus anderen Notizprogrammen *(neu in v3.0)*
+
+| ID | Anforderung | Prio |
+|---|---|---|
+| FR-IMP-19 | Über den Einstellungen-Dialog in der Seitenleiste kann ein **ZIP-Archiv** mit Markdown-Notizen hochgeladen werden, wie es UpNote, Obsidian oder Joplin exportieren. Jede `.md`-Datei wird zu einer eigenen Notizseite; der Dateiname ist der Titel, bei unbrauchbarem Dateinamen die erste Überschrift, sonst „Ohne Titel". Wiederholt die erste Überschrift den Titel, entfällt sie im Inhalt. | S |
+| FR-IMP-20 | Das Markdown wird serverseitig in das ProseMirror-JSON des Editors übersetzt: Überschriften (H4+ werden zu H3), Fett, Kursiv, Durchgestrichen, Inline-Code, Codeblöcke mit Sprachangabe, Aufzählungen (auch verschachtelt), nummerierte Listen, Checklisten, Zitate, Trennlinien, Tabellen, Links und Bilder. `<br>` wird zum Zeilenumbruch, sonstiges HTML entfällt; rohes HTML wird nie gespeichert (FR-NOTE-03). | S |
+| FR-IMP-21 | Verweise auf mitgelieferte Dateien werden aufgelöst: PNG/JPEG/WebP werden zu eingebetteten **Bildern** der Seite, alle übrigen zu **Dateianhängen** (FR-NOTE-18). Mehrfach verwendete Dateien werden nur einmal gespeichert. Verweise auf andere Notizen des Archivs bleiben Text. Für Größe und Speicherkontingent gelten dieselben Regeln wie beim Upload über die Oberfläche. | S |
+| FR-IMP-22 | Erstell- und Änderungsdatum aus dem YAML-Frontmatter (`created`, `date`) werden übernommen, damit die Sortierung nach „zuletzt bearbeitet" erhalten bleibt. | S |
+| FR-IMP-23 | Nach dem Import zeigt die Oberfläche einen **Bericht**: Zahl der Notizen, Bilder und Dateianhänge sowie jede übersprungene oder gescheiterte Datei mit Begründung, entfernte Verweise auf nicht mitgelieferte Bilder und Dateien ohne Bezug zu einer Notiz. Eine Notiz, die nicht vollständig angelegt werden kann, wird zurückgerollt statt leer stehen zu lassen; der Import der übrigen läuft weiter. | S |
+| FR-IMP-24 | Das Archiv ist auf `IMPORT_MAX_ARCHIVE_MB` begrenzt (Vorgabe 500 MB), zusätzlich auf 20.000 Einträge, 2 GB entpackten Inhalt und 2 MB je Notiz. Der Import wird im Audit-Log vermerkt. | M |
+| FR-IMP-25 | Die Oberfläche überträgt das Archiv **in Teilen**: Der Server nennt die Teilgröße (höchstens 4 MB, abgeleitet aus `upload_max_filesize`/`post_max_size`), der Client schneidet die Datei und sendet die Teile der Reihe nach; erst danach wird importiert. Damit spielt die PHP-Konfiguration für den Import keine Rolle mehr. Eine Upload-Sitzung gehört genau einem Nutzer, nimmt Teile nur in der geschnittenen Reihenfolge und nicht mehr Daten als angekündigt an, liegt außerhalb des Web-Roots unter `IMPORT_TMP_PATH` und verfällt nach 6 Stunden; abgebrochene Uploads werden sofort verworfen. Der Upload in **einer** Anfrage bleibt als `POST /api/import/archive` bestehen. | S |
 
 ---
 
@@ -362,7 +425,7 @@ LIMIT 20;
 | NFR-UI-01 | Modernes, reduziertes Design (Notion-/Linear-Ästhetik): großzügiger Weißraum, klare Typografie-Hierarchie, dezente Schatten, abgerundete Ecken (8–12 px). | M |
 | NFR-UI-02 | Konsistentes Design-Token-System über CSS Custom Properties bzw. Tailwind-`@theme`: Farben, Abstände (4-px-Raster), Radien, Schatten, Typografie. | M |
 | NFR-UI-03 | **Dark Mode** und Light Mode; manuelle Umschaltung mit Fallback auf `prefers-color-scheme`, Persistenz pro Nutzer. | M |
-| NFR-UI-04 | Layout: fixierte Seitenleiste (Suche, Seitenliste, Favoriten, Papierkorb, Nutzermenü), Hauptbereich rechts. Seitenleiste einklappbar. | M |
+| NFR-UI-04 | Layout: fixierte Seitenleiste (Suche, Seitenliste, Favoriten, Papierkorb, Nutzermenü), Hauptbereich rechts. Seitenleiste einklappbar. Breite auf dem Desktop 20 rem, ab 1024 px 22 rem — die Karten der Seitenliste brauchen mehr Raum als eine reine Titelliste. | M |
 | NFR-UI-05 | Responsives Verhalten ab 360 px Viewport-Breite. Task-Kapitel und ihre Aufgaben bleiben vertikal lesbar. | M |
 | NFR-UI-06 | Schrift: moderne Sans-Serif (Inter oder Geist), selbst gehostet als Variable Font. Monospace für Codeblöcke. | S |
 | NFR-UI-07 | Mikro-Interaktionen: Hover-States, Übergänge 150–250 ms, Skeleton-Loader statt Spinner, Toast-Benachrichtigungen. | S |
@@ -372,6 +435,14 @@ LIMIT 20;
 | NFR-UI-11 | **Command-Palette** (Strg/Cmd+K) für Suche, Seitenwechsel und Schnellaktionen („Neue Notiz", „Neue Task-Seite", „Tasks importieren"). | S |
 | NFR-UI-12 | Globale Tastaturkürzel-Übersicht über `?`. | K |
 | NFR-UI-13 | Kurzes Onboarding beim ersten Login: automatisch angelegte Beispiel-Notiz und Beispiel-Task-Seite. | K |
+| NFR-UI-14 | Auf Touchgeräten ist das Zoomen der Oberfläche unterbunden: `user-scalable=no` und `maximum-scale=1.0` im Viewport-Meta, `touch-action: manipulation` gegen den Doppeltipp-Zoom sowie `text-size-adjust: 100%`. Eingabefelder erhalten mobil mindestens 16 px Schriftgröße, weil iOS Safari sonst beim Fokussieren selbsttätig zoomt. | M |
+| NFR-UI-15 | Mobil (< 768 px) wird größer gesetzt als bisher: Notizinhalt 19 px (statt 16 px), Aufgabentitel 18 px, Aufgabenliste 17 px, H1 1,9 rem, H2 1,5 rem. | M |
+| NFR-UI-16 | Da NFR-UI-14 den Nutzer-Zoom sperrt, sind Schriftgrößen und Trefferflächen so zu wählen, dass die Oberfläche ohne Zoom bedienbar bleibt (Trefferfläche mind. 44 × 44 px bei primären Aktionen). | M |
+| NFR-UI-17 | Mobil nimmt die Seitenleiste die **volle Bildschirmbreite** ein und setzt ihre Einträge größer (Seitenliste 18 px, übrige Einträge 16 px) bei mindestens 44 px hohen Zeilen. Die Typ-Symbole der Seitenliste entfallen dort zugunsten des Titels; das Freigabe-Symbol bleibt. Da die Überlagerung dann verdeckt ist, trägt der Kopf der Leiste einen Schließen-Schalter; zusätzlich schließt sie nach jeder Navigation. Zeilenaktionen (Favorit, Umbenennen, Löschen, Freigabe verlassen) sind mobil dauerhaft sichtbar, weil es dort kein Hover gibt. | M |
+| NFR-UI-20 | Das Suchfeld der Seitenleiste trägt links das Lupensymbol; gesucht wird mit Enter. Rechts erscheint erst nach einer Eingabe ein Zurücksetzen-Schalter (×), der Eingabe und Trefferliste leert. Das native Löschsymbol von `type="search"` ist unterdrückt, damit es nur eine Zurücksetzen-Möglichkeit gibt. | S |
+| NFR-UI-21 | „Abmelden“ steht als Tür-Symbol rechts neben dem Einstellungs-Zahnrad in der Statuszeile der Seitenleiste, nicht in einer eigenen Zeile. | S |
+| NFR-UI-18 | Der Menü-Schalter zum Öffnen der Seitenleiste misst 2,4 rem bei 1,4 rem Icon-Größe. Er liegt fixiert links oben und ist **ausschließlich unter 768 px** sichtbar — ebenso der Schließen-Schalter im Kopf der Seitenleiste. Der Kopf der Seitenleiste rückt mobil so weit ein, dass der Schalter keinen Text überlagert. Hinweis für die Umsetzung: Ungeschichtetes CSS gewinnt in Tailwind 4 gegen jede Utility-Klasse — Hilfsklassen dürfen deshalb kein `display` setzen, sonst bleibt `md:hidden` wirkungslos. | M |
+| NFR-UI-19 | Notiz- und Task-Seiten beginnen mobil unmittelbar am oberen Bildschirmrand: Der Kopfbereich trägt dort nur noch geringen Innenabstand, sodass Freigabe-Hinweis und Aktionen ohne vorgelagerten Leerraum sichtbar sind. | S |
 
 ### 7.2 Barrierefreiheit
 
@@ -412,7 +483,8 @@ LIMIT 20;
 | NFR-SEC-11 | Audit-Log für: Login, Invite-Erstellung/-Einlösung, Share-Erstellung/-Widerruf, Löschungen, Bulk-Imports, Admin-Aktionen. | S |
 | NFR-SEC-12 | Uploads werden per MIME-Sniffing und Extension-Allowlist geprüft; Auslieferung mit `Content-Disposition` und ohne Ausführungsrechte. | M |
 | NFR-SEC-13 | Externe Links in Notizen und Tasks erhalten `rel="noopener noreferrer"` und `target="_blank"`. | M |
-| NFR-SEC-14 | Kein `eval`-basiertes JS; Alpine.js wird im CSP-kompatiblen Build eingesetzt oder per Nonce freigegeben. | S |
+| NFR-SEC-14 | Kein `eval`-basiertes JS; Alpine.js wird im CSP-kompatiblen Build eingesetzt oder per Nonce freigegeben. Dieser Build wertet **keine** Ausdrücke auf `<iframe>`-Elementen aus und wirft dabei einen Fehler, der die Initialisierung der gesamten Seite abbricht — Rahmen dürfen deshalb keine Direktiven tragen. | S |
+| NFR-SEC-15 | Einzige Ausnahme von `frame-ancestors 'none'` sind Antworten mit `Content-Type: application/pdf`: Sie erhalten `frame-ancestors 'self'`, damit der Anhang-Betrachter sie einbetten kann. Fremde Ursprünge bleiben ausgesperrt, und die ausgelieferten Bytes enthalten keine Anwendungsoberfläche. Ein Test in `tests/Unit/Middleware` sichert beide Fälle ab. | M |
 
 ### 7.5 Datenschutz
 
@@ -445,7 +517,7 @@ LIMIT 20;
 | ID | Anforderung | Prio |
 |---|---|---|
 | NFR-COMP-01 | Browser: jeweils aktuelle und vorherige Version von Chrome, Firefox, Safari, Edge (Desktop und Mobil). | M |
-| NFR-COMP-02 | Server: PHP 8.5 (min. 8.4) mit `pdo_sqlite`, `mbstring`, `json`, `curl`, `openssl`, `intl`, `fileinfo`. SQLite-Build mit FTS5-Unterstützung. | M |
+| NFR-COMP-02 | Server: PHP 8.5 (min. 8.4) mit `pdo_sqlite`, `mbstring`, `json`, `curl`, `openssl`, `intl`, `fileinfo`, `gd`. SQLite-Build mit FTS5-Unterstützung. | M |
 | NFR-COMP-03 | Betrieb hinter Apache oder Nginx mit HTTPS; HTTP wird auf HTTPS umgeleitet. | M |
 | NFR-COMP-04 | Keine JavaScript-freie Nutzbarkeit erforderlich; ohne JS erscheint ein verständlicher Hinweis. | S |
 
@@ -531,8 +603,13 @@ users ──1:n── audit_log
 | `INVITE_TTL_DAYS` | `7` | Standard-Gültigkeit von Invites |
 | `SESSION_LIFETIME_DAYS` | `30` | Session-Ablauf bei Inaktivität |
 | `MAX_UPLOAD_MB` | `10` | Obergrenze für Uploads |
-| `TRASH_RETENTION_DAYS` | `30` | Aufbewahrung im Papierkorb |
+| `TRASH_RETENTION_DAYS` | `90` | Aufbewahrung im Papierkorb |
+| `DEFAULT_STORAGE_QUOTA_MB` | `0` | Anfangswert des Standard-Speicherkontingents (0 = unbegrenzt); im Admin-Dashboard änderbar |
+| `MAX_ATTACHMENT_MB` | `10` | Anfangswert der Obergrenze je Dateianhang; im Admin-Dashboard änderbar |
+| `OFFLINE_ATTACHMENT_MAX_KB` | `250` | Anfangswert der Größe, bis zu der Anhänge offline vorgehalten werden (0 = nichts vorladen); im Admin-Dashboard änderbar |
 | `IMPORT_MAX_LINES` | `500` | Maximale Zeilenanzahl pro Bulk-Import |
+| `IMPORT_MAX_ARCHIVE_MB` | `500` | Obergrenze für das ZIP beim Notiz-Import. Die Oberfläche überträgt in Teilen (FR-IMP-25); hohe PHP-Limits sind nur für den Upload in einer Anfrage nötig |
+| `IMPORT_TMP_PATH` | `var/tmp/import` | Ablage der Teile eines laufenden Uploads, außerhalb des Web-Roots |
 | `SEARCH_RESULT_LIMIT` | `20` | Ergebnisse pro Suchanfrage |
 | `RATE_LIMIT_ENABLED` | `true` | Rate Limiting aktivieren |
 | `BACKUP_PATH` | `/var/backups/notes` | Zielverzeichnis für Sicherungen |
@@ -572,8 +649,9 @@ users ──1:n── audit_log
 | POST | `/api/pages/{id}/duplicate` | Seite duplizieren |
 | GET | `/api/pages/{id}/content` | Notizinhalt |
 | PUT | `/api/pages/{id}/content` | Notizinhalt speichern (Autosave, mit `version` für Konflikterkennung) |
-| GET | `/api/pages/{id}/versions` | Versionsliste |
-| POST | `/api/pages/{id}/versions/{vid}/restore` | Version wiederherstellen |
+| GET | `/api/pages/{id}/versions` | Versionsliste (Metadaten + Textvorschau; `can_restore`) |
+| GET | `/api/pages/{id}/versions/{vid}` | Einzelne Version inkl. Inhalt (Vorschau) |
+| POST | `/api/pages/{id}/versions/{vid}/restore` | Version wiederherstellen (nur Eigentümer) |
 | GET | `/api/pages/{id}/board` | Kapitel inkl. Tasks |
 | POST | `/api/pages/{id}/categories` | Kapitel anlegen |
 | PATCH | `/api/categories/{id}` | Name, Farbe, Position, WIP-Limit |
@@ -593,9 +671,31 @@ users ──1:n── audit_log
 | **GET** | **`/api/search?q=&type=&limit=&offset=`** | **Volltextsuche** |
 | GET | `/api/export/pages/{id}?format=md\|csv` | Seiten-Export |
 | GET | `/api/export/workspace` | Workspace-Export (ZIP) |
+| **GET** | **`/api/invites`** | **Eigene Invites auflisten (jeder angemeldete Nutzer)** |
+| **POST** | **`/api/invites`** | **Invite erzeugen (Body: `email`, `note`, `max_uses`, `ttl_days`); Antwort enthält den Klartext-Link genau einmal** |
+| **DELETE** | **`/api/invites/{id}`** | **Eigenen Invite widerrufen; fremde liefern HTTP 403** |
+| **GET** | **`/api/pages/{id}/collaborators`** | **Personen mit Zugriff auf die Seite plus eigenes Konto (Auswahlliste Verantwortliche)** |
+| **GET** | **`/api/admin/overview`** | **Nutzer mit Speicherbedarf, Kontingente, verwaiste Dateien (Admin)** |
+| **DELETE** | **`/api/admin/users/{id}`** | **Nutzer mit allen Daten löschen (Admin)** |
+| **PATCH** | **`/api/admin/users/{id}/quota`** | **Persönliches Kontingent setzen; `null` = Standardwert (Admin)** |
+| **PATCH** | **`/api/admin/settings/default-quota`** | **Standard-Speicherkontingent setzen (Admin)** |
+| **POST** | **`/api/admin/attachments/purge-orphans`** | **Verwaiste Bilddateien löschen (Admin)** |
 | GET | `/api/admin/invites` | Invites auflisten (Admin) |
 | POST | `/api/admin/invites` | Invite erzeugen (Admin) |
 | DELETE | `/api/admin/invites/{id}` | Invite widerrufen (Admin) |
+| **GET** | **`/api/pages/{id}/files`** | **Dateianhänge der Seite + Obergrenze** |
+| **POST** | **`/api/pages/{id}/files`** | **Anhang hochladen (multipart, Feld `file`)** |
+| **GET** | **`/api/page-attachments/{id}`** | **Anhang ausliefern (PDF inline, sonst Download)** |
+| **DELETE** | **`/api/page-attachments/{id}`** | **Anhang löschen** |
+| **DELETE** | **`/api/pages/trash`** | **Papierkorb vollständig leeren** |
+| **PATCH** | **`/api/admin/settings/max-attachment`** | **Obergrenze je Anhang setzen (Admin)** |
+| **PATCH** | **`/api/admin/settings/offline-attachment`** | **Offline-Limit je Anhang in KB setzen (Admin, FR-OFFLINE-06)** |
+| **GET** | **`/api/session`** | **Frisches CSRF-Token und Offline-Einstellungen (u. a. `attachment_max_bytes`)** |
+| **POST** | **`/api/import/archive`** | **ZIP mit Markdown-Notizen in einer Anfrage importieren (multipart, Feld `file`); liefert den Bericht aus FR-IMP-23** |
+| **POST** | **`/api/import/archive/parts`** | **Geteilten Upload beginnen (`file_name`, `size`); liefert `upload_id` und `chunk_size`** |
+| **POST** | **`/api/import/archive/parts/{id}`** | **Nächsten Teil anhängen (multipart, Felder `chunk` und `index`)** |
+| **POST** | **`/api/import/archive/parts/{id}/complete`** | **Teile zusammensetzen und importieren; liefert den Bericht** |
+| **DELETE** | **`/api/import/archive/parts/{id}`** | **Geteilten Upload abbrechen und Teile verwerfen** |
 | GET | `/api/admin/users` | Nutzer auflisten (Admin) |
 | PATCH | `/api/admin/users/{id}` | Aktivieren/Deaktivieren (Admin) |
 | GET | `/api/admin/audit` | Audit-Log (Admin) |
@@ -686,6 +786,9 @@ users ──1:n── audit_log
 | AK-03 | Eine E-Mail aus `ADMIN_EMAILS` erhält Zugriff auf `/admin`; alle anderen erhalten HTTP 403. |
 | AK-04 | Wird eine E-Mail aus `ADMIN_EMAILS` entfernt, verliert der Nutzer beim nächsten Request die Adminrechte. |
 | AK-05 | Ein widerrufener oder abgelaufener Invite-Link führt zu einer verständlichen Fehlerseite, nicht zu einem Serverfehler. |
+| **AK-45** | **Ein Nutzer ohne Adminrechte erzeugt über die Seitenleiste einen Invite-Link; der eingeladene Empfänger kann sich damit registrieren.** |
+| **AK-46** | **Die eigene Invite-Liste enthält ausschließlich selbst erzeugte Einladungen; der Widerruf eines fremden Invites liefert HTTP 403.** |
+| **AK-47** | **In der Datenbank steht nur der SHA-256-Hash des Invite-Tokens, nie der Klartext.** |
 
 ### 12.2 Notizen
 
@@ -695,6 +798,8 @@ users ──1:n── audit_log
 | AK-07 | Der Autosave speichert innerhalb von 2 s nach der letzten Eingabe; der Statusindikator wechselt sichtbar auf „Gespeichert". |
 | AK-08 | Bei unterbrochener Verbindung erscheint eine Warnung; nach Wiederherstellung wird der Inhalt automatisch gespeichert, ohne Datenverlust. |
 | AK-09 | Ein `<script>`-Tag im Notizinhalt wird weder gespeichert noch ausgeführt. |
+| **AK-48** | **Eine über die Werkzeugleiste eingefügte Checkliste lässt sich im Editor abhaken; der Haken bleibt nach Neuladen der Seite erhalten.** |
+| **AK-49** | **Zwei mit Enter getrennte Absätze stehen sichtbar enger beieinander als ein Absatz und eine nachfolgende Überschrift oder Liste.** |
 
 ### 12.3 Tasks und Import
 
@@ -745,6 +850,9 @@ users ──1:n── audit_log
 | ID | Kriterium |
 |---|---|
 | AK-39 | Die Anwendung ist auf einem Viewport von 375 px Breite vollständig bedienbar, inklusive Task-Erfassung und Import. |
+| **AK-50** | **Auf einem Viewport von 375 px lässt sich die Oberfläche weder per Doppeltipp noch per Aufziehgeste zoomen; das Fokussieren eines Eingabefelds löst in iOS Safari keinen automatischen Zoom aus.** |
+| **AK-51** | **Der Startbildschirm zeigt auf 375 px Breite ohne Scrollen bereits Einträge der Seitenliste; beim Scrollen ans Listenende werden weitere Seiten nachgeladen, bis alle Seiten gelistet sind.** |
+| **AK-52** | **Auf 375 px Breite zeigt eine Task-Seite genau ein Kapitel; nach Auswahl im Dropdown, Neuladen der Seite und erneutem Öffnen ist dasselbe Kapitel wieder vorausgewählt.** |
 | AK-40 | Dark und Light Mode erfüllen in allen Ansichten die Kontrastanforderung 4,5:1. |
 | AK-41 | Eine gelöschte Seite ist im Papierkorb sichtbar und innerhalb der Aufbewahrungsfrist wiederherstellbar. |
 | AK-42 | Eine Task-Seite mit 500 Tasks über 5 Kategorien lädt in unter 2 Sekunden. |
@@ -798,3 +906,14 @@ cl
 |---|---|---|
 | 1.0 | 2026-07-24 | Erstfassung |
 | 2.0 | 2026-07-24 | Technologie-Stack mit aktuellen Versionen (Kap. 3); Volltextsuche als eigenes Kapitel inkl. FTS5-Schema (Kap. 6); Task-Bulk-Import per Textfeld (Kap. 5.6, API 10.3, AK-14 bis AK-23); ergänzt: Papierkorb, Duplizieren, Export, Versionskonflikte, Sessions-Tabelle, Rate-Limiting, Backup/Restore, Lieferumfang |
+| 2.1 | 2026-07-25 | FR-NOTE-09: Snapshot-Policy auf 30-Minuten-Idle oder Nutzerwechsel präzisiert; API um Versionsdetail ergänzt |
+| 2.2 | 2026-07-25 | Optionale Offline-Nutzung (FR-OFFLINE-01–04): selektiver Cache, Outbox-Sync, Attachments, Service Worker |
+| 2.3 | 2026-07-25 | PWA-Installation und Notizbuch-Icons; Kollaboratoren-Initialen; Owner kann alle Freigaben einer Seite beenden |
+| 3.1 | 2026-07-27 | Geteilter Upload für den Notiz-Import (FR-IMP-25): Archive gehen in Teilen zum Server, `upload_max_filesize`/`post_max_size` begrenzen den Import nicht mehr |
+| 3.0 | 2026-07-27 | Import von Markdown-Archiven aus anderen Notizprogrammen über den Einstellungen-Dialog: Notizen, eingebettete Bilder, Dateianhänge, Zeitstempel und Ergebnisbericht (FR-IMP-19–24, API 10.2, `ext-zip`); Dateianhänge ohne Typbeschränkung, dafür strikt neutrale Auslieferung außer bei PDF (FR-NOTE-18/20) |
+| 2.9 | 2026-07-27 | Offline-Anhänge: automatischer Download bis zu einer im Admin einstellbaren Größe (Default 250 KB), Kennzeichnung und Hinweis für größere Dateien, Anhangliste offline verfügbar (FR-OFFLINE-02/06); Anhänge werden im Service Worker cache-first ausgeliefert |
+| 2.8 | 2026-07-26 | Sicherheitsprüfung der offenen Änderungen: Kontingentumgehung geschlossen — der Bild-Upload zählte Dateianhänge nicht mit (FR-ADM-06); Betriebshinweis zum unbegrenzten Standardkontingent ergänzt (FR-ADM-08) |
+| 2.7 | 2026-07-26 | PDF-Betrachter zeigte nichts an: `frame-ancestors 'none'` verbot das Einbetten der eigenen Antwort (NFR-SEC-15), und Alpines CSP-Build brach an den Bindungen des iframes ab (NFR-SEC-14); neue Seiten erscheinen ohne Neuladen in Seitenleiste und Übersicht |
+| 2.6 | 2026-07-26 | Dateianhänge für Notizseiten als Badges mit Download und PDF-Betrachter, Obergrenze durch den Admin (FR-NOTE-18–22, Migration 0020); Papierkorb mit 90 Tagen Frist, Wiederherstellen, Leeren und CLI-Aufräumkommando (FR-WS-06); Admin-Symbol in der Seitenleiste |
+| 2.5 | 2026-07-26 | Admin-Dashboard mit Nutzerübersicht, Speicherbedarf, Löschen eines Nutzers samt Daten, Aufräumen verwaister Dateien und Speicherkontingenten (FR-ADM-01–07, API 10.2, Migration 0019); Rückfrage bei doppeltem Task-Titel, Auswahlliste für Verantwortliche und Filter „nur meine Aufgaben" (FR-TASK-20–22); Bilder in Notizen seitenverhältnistreu (FR-NOTE-17) |
+| 2.4 | 2026-07-26 | Checklisten im Notiz-Editor und engerer Absatzabstand (FR-NOTE-12/13); Freigabe-Anzeige in Notizen und Task-Seiten vereinheitlicht inkl. Namensliste (FR-SHR-13/15); Invites durch jeden Nutzer (FR-INV-09–12, API `/api/invites`, AK-45–47); Startbildschirm listet alle Seiten mit Nachladen beim Scrollen (FR-WS-11/12); Mobil: Kapitel-Dropdown mit Aktionsmenü und gemerkter Auswahl und ohne Breadcrumb (FR-TASK-16–19), Zoom-Sperre, größere Schrift, bildschirmbreite Seitenleiste und randnaher Seitenkopf (NFR-UI-14–21); Bilder in Notizen per Dateiauswahl und Kamera inkl. Verkleinerung vor dem Upload sowie Vollbild-Betrachter und seitenverhältnistreue Darstellung (FR-NOTE-14–17); Seitenliste als Karte mit Anriss, Aufgabenzahl und Bearbeiter/Datum, breitere Seitenleiste, hervorgehobene Favoriten (FR-WS-13–15, NFR-UI-04) |

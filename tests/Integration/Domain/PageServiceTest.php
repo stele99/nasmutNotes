@@ -8,6 +8,7 @@ use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\PageRepository;
 use App\Repositories\WorkspaceRepository;
+use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +18,7 @@ final class PageServiceTest extends TestCase
 {
     use InMemoryDatabaseTrait;
 
+    private \PDO $pdo;
     private PageService $pages;
     private User $userA;
     private User $userB;
@@ -24,6 +26,7 @@ final class PageServiceTest extends TestCase
     protected function setUp(): void
     {
         $pdo = $this->makeDatabase();
+        $this->pdo = $pdo;
         $workspaces = new WorkspaceRepository($pdo);
         $pages = new PageRepository($pdo);
         $this->pages = new PageService($pages, $workspaces);
@@ -42,6 +45,65 @@ final class PageServiceTest extends TestCase
         return new User($id, $email, $email, $email, null, true, false);
     }
 
+    public function testListAddsNotePreviewAndLastEditor(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Meine Notiz', null);
+        $statement = $this->pdo->prepare(
+            'UPDATE note_contents SET content_text = :text, updated_by = :user WHERE page_id = :page'
+        );
+        $statement->execute([
+            'text' => "   \n\nErste sichtbare Zeile\nZweite Zeile",
+            'user' => $this->userB->id,
+            'page' => (int) $page['id'],
+        ]);
+
+        $listed = $this->pages->list($this->userA, 'updated', null, false)[0];
+
+        self::assertSame('Erste sichtbare Zeile', $listed['preview']);
+        self::assertSame($this->userB->name, $listed['last_editor_name']);
+        self::assertNull($listed['task_count']);
+    }
+
+    public function testNotePreviewIsShortenedForLongLines(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Lange Notiz', null);
+        $statement = $this->pdo->prepare('UPDATE note_contents SET content_text = :text WHERE page_id = :page');
+        $statement->execute(['text' => str_repeat('a', 300), 'page' => (int) $page['id']]);
+
+        $listed = $this->pages->list($this->userA, 'updated', null, false)[0];
+
+        self::assertSame(141, mb_strlen((string) $listed['preview']));
+        self::assertStringEndsWith('…', (string) $listed['preview']);
+    }
+
+    public function testListCountsTasksForTaskPages(): void
+    {
+        $page = $this->pages->create($this->userA, 'task', 'Mein Board', null);
+        $categoryStatement = $this->pdo->prepare(
+            'INSERT INTO categories (page_id, name, position, created_at) VALUES (:page, :name, 0, :now)'
+        );
+        $categoryStatement->execute(['page' => (int) $page['id'], 'name' => 'Offen', 'now' => gmdate('Y-m-d\TH:i:s.v\Z')]);
+        $categoryId = (int) $this->pdo->lastInsertId();
+
+        $statement = $this->pdo->prepare(
+            'INSERT INTO tasks (category_id, title, is_done, position) VALUES (:category, :title, :done, :position)'
+        );
+        foreach ([['Offen A', 0], ['Offen B', 0], ['Erledigt', 1]] as $position => [$title, $done]) {
+            $statement->execute([
+                'category' => (int) $categoryId,
+                'title' => $title,
+                'done' => $done,
+                'position' => $position,
+            ]);
+        }
+
+        $listed = $this->pages->list($this->userA, 'updated', null, false)[0];
+
+        self::assertSame(3, $listed['task_count']);
+        self::assertSame(2, $listed['open_task_count']);
+        self::assertNull($listed['preview']);
+    }
+
     public function testCreateNotePageAutoCreatesNoteContentRow(): void
     {
         $page = $this->pages->create($this->userA, 'note', 'Meine Notiz', null);
@@ -50,11 +112,14 @@ final class PageServiceTest extends TestCase
         self::assertSame('Meine Notiz', $page['title']);
     }
 
-    public function testCreateTaskPageGetsDefaultCategoriesViaRepository(): void
+    public function testCreateTaskPageStartsWithoutCategories(): void
     {
         $page = $this->pages->create($this->userA, 'task', 'Mein Board', null);
 
         self::assertSame('task', $page['type']);
+        $categoryQuery = $this->pdo->prepare('SELECT COUNT(*) FROM categories WHERE page_id = :page');
+        $categoryQuery->execute(['page' => (int) $page['id']]);
+        self::assertSame(0, (int) $categoryQuery->fetchColumn());
     }
 
     public function testTitleValidationRejectsEmptyAndTooLong(): void
@@ -105,6 +170,32 @@ final class PageServiceTest extends TestCase
 
         $this->expectException(NotFoundException::class);
         $this->pages->find($this->userA, (int) $page['id']);
+    }
+
+    public function testTrashedPageRemainsReadableButCannotBeEdited(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Nur lesen', null);
+        $this->pages->softDelete($this->userA, (int) $page['id']);
+
+        self::assertFalse($this->pages->find($this->userA, (int) $page['id'])['can_edit']);
+
+        $this->expectException(ForbiddenException::class);
+        $this->pages->update($this->userA, (int) $page['id'], ['title' => 'Nicht erlaubt']);
+    }
+
+    public function testMovesMultiplePagesToTrash(): void
+    {
+        $first = $this->pages->create($this->userA, 'note', 'Erste', null);
+        $second = $this->pages->create($this->userA, 'task', 'Zweite', null);
+
+        $trashed = $this->pages->softDeleteMany(
+            $this->userA,
+            [(int) $first['id'], (int) $second['id']],
+        );
+
+        self::assertSame(2, $trashed);
+        self::assertCount(0, $this->pages->list($this->userA, 'updated', null, false));
+        self::assertCount(2, $this->pages->list($this->userA, 'updated', null, true));
     }
 
     public function testUpdateFavoriteAndTitle(): void
