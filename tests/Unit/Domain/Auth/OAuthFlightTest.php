@@ -13,7 +13,7 @@ final class OAuthFlightTest extends TestCase
 
     public function testEncodeDecodeRoundTrip(): void
     {
-        $flight = new OAuthFlight('state123', 'verifier456', 'nonce789', 'invite-token');
+        $flight = new OAuthFlight('state123', 'verifier456', 'nonce789', 'invite-token', '/s/' . str_repeat('a', 64));
 
         $encoded = OAuthFlight::encode($flight, self::KEY);
         $decoded = OAuthFlight::decode($encoded, self::KEY);
@@ -23,6 +23,7 @@ final class OAuthFlightTest extends TestCase
         self::assertSame('verifier456', $decoded->codeVerifier);
         self::assertSame('nonce789', $decoded->nonce);
         self::assertSame('invite-token', $decoded->inviteToken);
+        self::assertSame('/s/' . str_repeat('a', 64), $decoded->returnPath);
     }
 
     public function testNullInviteTokenRoundTrips(): void

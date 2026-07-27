@@ -64,6 +64,16 @@ final class PageRepository
         return $row !== false ? $row : null;
     }
 
+    /** @return array<string, mixed>|null */
+    public function findById(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM pages WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row !== false ? $row : null;
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */

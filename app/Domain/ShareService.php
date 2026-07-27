@@ -10,7 +10,7 @@ use App\Support\ValidationException;
 
 final class ShareService
 {
-    private const PERMISSIONS = ['read', 'write'];
+    private const PERMISSIONS = ['read', 'write', 'read_copy'];
 
     public function __construct(
         private readonly PageService $pages,
@@ -27,13 +27,14 @@ final class ShareService
         }
 
         if (!in_array($permission, self::PERMISSIONS, true)) {
-            throw new ValidationException('Die Freigabe muss "read" oder "write" sein.');
+            throw new ValidationException('Ungültige Freigabeart.');
         }
 
         $token = bin2hex(random_bytes(32));
         $shareId = $this->shares->create(
             (int) $page['id'],
             hash('sha256', $token),
+            $permission === 'write' ? 'write' : 'read',
             $permission,
         );
 
@@ -57,6 +58,10 @@ final class ShareService
         $share = $this->shares->findActiveByTokenHash(hash('sha256', $token));
         if ($share === null) {
             throw new NotFoundException('Freigabe nicht gefunden oder abgelaufen.');
+        }
+
+        if (($share['mode'] ?? null) !== 'write') {
+            throw new ValidationException('Diese Freigabe ist nicht zum gemeinsamen Bearbeiten vorgesehen.');
         }
 
         if ((int) $share['owner_id'] !== $user->id) {

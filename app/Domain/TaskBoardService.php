@@ -27,6 +27,7 @@ final class TaskBoardService
     {
         $page = $this->pages->find($user, $pageId);
         $this->assertIsTaskPage($page);
+        $this->pages->assertCanWrite($user, $pageId);
 
         $categories = $this->categories->listForPage((int) $page['id']);
         $allTasks = $this->tasks->listForPage((int) $page['id']);

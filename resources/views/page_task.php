@@ -1,4 +1,4 @@
-<div class="page-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-10 md:pt-14" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>">
+<div class="page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>">
     <div class="page-toolbar flex items-center gap-2">
         <?php /* Der Seitentitel steht mobil ohnehin direkt darunter als Überschrift -
                  der Breadcrumb kostet dort nur Höhe und entfällt deshalb. Die

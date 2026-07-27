@@ -64,6 +64,11 @@ export function noteEditorPage() {
     linkMenuStyle: '',
     imageViewerSrc: '',
     imageViewerAlt: '',
+    imageViewerScale: 1,
+    imageViewerPanX: 0,
+    imageViewerPanY: 0,
+    imageViewerTouch: null,
+    imageViewerLastTap: 0,
     imageViewerHandlers: null,
     attachments: [],
     attachmentError: '',
@@ -744,11 +749,93 @@ export function noteEditorPage() {
       }
       this.imageViewerSrc = src;
       this.imageViewerAlt = alt || '';
+      this.resetImageZoom();
     },
 
     closeImageViewer() {
       this.imageViewerSrc = '';
       this.imageViewerAlt = '';
+      this.resetImageZoom();
+    },
+
+    resetImageZoom() {
+      this.imageViewerScale = 1;
+      this.imageViewerPanX = 0;
+      this.imageViewerPanY = 0;
+      this.imageViewerTouch = null;
+    },
+
+    imageViewerStyle() {
+      return `transform: translate(${this.imageViewerPanX}px, ${this.imageViewerPanY}px) scale(${this.imageViewerScale});`;
+    },
+
+    toggleImageZoom() {
+      if (this.imageViewerScale > 1) {
+        this.resetImageZoom();
+      } else {
+        this.imageViewerScale = 2;
+      }
+    },
+
+    imageViewerTouchStart(event) {
+      event.stopPropagation();
+      const touches = event.touches;
+      if (touches.length === 2) {
+        const [first, second] = touches;
+        this.imageViewerTouch = {
+          kind: 'pinch',
+          distance: Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY),
+          scale: this.imageViewerScale,
+        };
+        return;
+      }
+      if (touches.length === 1) {
+        const touch = touches[0];
+        this.imageViewerTouch = {
+          kind: 'pan',
+          x: touch.clientX,
+          y: touch.clientY,
+          panX: this.imageViewerPanX,
+          panY: this.imageViewerPanY,
+        };
+      }
+    },
+
+    imageViewerTouchMove(event) {
+      const state = this.imageViewerTouch;
+      if (!state) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const touches = event.touches;
+      if (state.kind === 'pinch' && touches.length === 2) {
+        const [first, second] = touches;
+        const distance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+        this.imageViewerScale = Math.min(4, Math.max(1, state.scale * (distance / state.distance)));
+      } else if (state.kind === 'pan' && touches.length === 1 && this.imageViewerScale > 1) {
+        this.imageViewerPanX = state.panX + touches[0].clientX - state.x;
+        this.imageViewerPanY = state.panY + touches[0].clientY - state.y;
+      }
+    },
+
+    imageViewerTouchEnd(event) {
+      event.stopPropagation();
+      if (event.touches.length > 0) {
+        return;
+      }
+      const now = Date.now();
+      if (this.imageViewerTouch?.kind === 'pan' && now - this.imageViewerLastTap < 280) {
+        this.toggleImageZoom();
+        this.imageViewerLastTap = 0;
+      } else if (this.imageViewerTouch?.kind === 'pan') {
+        this.imageViewerLastTap = now;
+      }
+      this.imageViewerTouch = null;
+      if (this.imageViewerScale <= 1) {
+        this.imageViewerPanX = 0;
+        this.imageViewerPanY = 0;
+      }
     },
 
     /**

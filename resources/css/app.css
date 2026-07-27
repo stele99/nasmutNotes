@@ -188,6 +188,30 @@ body.is-resizing-sidebar {
   user-select: none;
 }
 
+.public-note-content {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.public-note-content > * + * { margin-top: 1rem; }
+.public-note-content h1,
+.public-note-content h2,
+.public-note-content h3 { font-weight: 600; line-height: 1.25; margin-top: 1.75rem; }
+.public-note-content h1 { font-size: 1.75rem; }
+.public-note-content h2 { font-size: 1.4rem; }
+.public-note-content h3 { font-size: 1.15rem; }
+.public-note-content ul { list-style: disc; padding-left: 1.5rem; }
+.public-note-content ol { list-style: decimal; padding-left: 1.5rem; }
+.public-note-content blockquote { border-left: 3px solid var(--color-border); padding-left: 1rem; }
+.public-note-content pre { background: var(--color-bg-subtle); border-radius: var(--radius-sm); overflow-x: auto; padding: 1rem; }
+.public-note-content img { height: auto; max-width: 100%; }
+.public-note-content table { border-collapse: collapse; min-width: 100%; }
+.public-note-content td,
+.public-note-content th { border: 1px solid var(--color-border); padding: 0.5rem; text-align: left; }
+.public-table-wrap { overflow-x: auto; }
+.public-task-list { list-style: none; padding-left: 0; }
+.public-task-item { display: flex; gap: 0.65rem; }
+
 .notebook-item:hover,
 .notebook-item:focus-visible,
 .notebook-item-active .notebook-item,
@@ -280,6 +304,10 @@ body.is-resizing-sidebar {
 
 .page-canvas {
   max-width: 960px;
+}
+
+.page-content-canvas {
+  max-width: 1200px;
 }
 
 .page-toolbar {

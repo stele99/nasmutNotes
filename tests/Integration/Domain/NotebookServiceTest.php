@@ -104,7 +104,7 @@ final class NotebookServiceTest extends TestCase
         $notebook = $this->notebooks->create($this->userA, ['name' => 'Privat']);
         $page = $this->pages->create($this->userA, 'note', 'Freigabe', null, (int) $notebook['id']);
         $this->pages->update($this->userA, (int) $page['id'], ['is_favorite' => true]);
-        $share = $this->shares->create($this->userA, (int) $page['id'], 'read');
+        $share = $this->shares->create($this->userA, (int) $page['id'], 'write');
         $this->shares->open($this->userB, $share['token']);
 
         $shared = $this->pages->list($this->userB, 'updated', null, false, null, 'shared');

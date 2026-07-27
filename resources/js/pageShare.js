@@ -161,8 +161,12 @@ export function pageShare() {
         });
         this.generatedLink = data.url;
         await this.loadShares();
-        await this.copyLink();
-        this.successMessage = 'Der Link wurde erzeugt und in die Zwischenablage kopiert.';
+        try {
+          await this.copyLink();
+          this.successMessage = 'Der Link wurde erzeugt und in die Zwischenablage kopiert.';
+        } catch {
+          this.successMessage = 'Der Link wurde erzeugt. Kopiere ihn bitte manuell.';
+        }
       } catch (error) {
         this.errorMessage = error.message || 'Der Freigabe-Link konnte nicht erzeugt werden.';
       } finally {

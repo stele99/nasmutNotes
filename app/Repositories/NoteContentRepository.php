@@ -54,4 +54,21 @@ final class NoteContentRepository
 
         return $stmt->rowCount() === 1;
     }
+
+    public function replaceForCopy(int $pageId, string $content, string $contentText, int $updatedBy): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE note_contents
+                SET content = :content, content_text = :content_text, version = 1,
+                    updated_at = :now, updated_by = :updated_by
+              WHERE page_id = :page_id'
+        );
+        $stmt->execute([
+            'page_id' => $pageId,
+            'content' => $content,
+            'content_text' => $contentText,
+            'updated_by' => $updatedBy,
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ]);
+    }
 }

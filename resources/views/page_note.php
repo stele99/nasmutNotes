@@ -1,4 +1,4 @@
-<div class="note-page page-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
+<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
     <div class="note-sticky-header page-toolbar flex items-center gap-2">
         <?php /* Der Seitentitel steht mobil ohnehin direkt darunter als Überschrift -
                  der Breadcrumb kostet dort nur Höhe und entfällt deshalb. Die
@@ -161,12 +161,12 @@
         x-cloak
         class="fixed inset-0 z-[120] flex items-center justify-center p-3"
         style="background-color: rgb(0 0 0 / 0.92);"
-        @click="closeImageViewer"
+        @click.self="closeImageViewer"
         @keydown.escape.window="closeImageViewer"
         role="dialog"
         aria-modal="true"
     >
-        <img :src="imageViewerSrc" :alt="imageViewerAlt" class="max-h-full max-w-full object-contain">
+        <img :src="imageViewerSrc" :alt="imageViewerAlt" class="max-h-full max-w-full origin-center object-contain transition-transform duration-150" :style="imageViewerStyle()" @dblclick.prevent.stop="toggleImageZoom" @touchstart.stop="imageViewerTouchStart($event)" @touchmove.prevent.stop="imageViewerTouchMove($event)" @touchend.stop="imageViewerTouchEnd($event)" @touchcancel.stop="imageViewerTouchEnd($event)">
         <button
             type="button"
             @click.stop="closeImageViewer"

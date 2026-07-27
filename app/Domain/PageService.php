@@ -84,7 +84,11 @@ final class PageService
         }
         $pages = [];
 
-        if (!$shared) {
+        if ($shared && $this->shares !== null) {
+            foreach ($this->shares->listOwnedSharedPagesForUser($user->id, $typeFilter) as $page) {
+                $pages[(int) $page['id']] = $this->withAccess($page, false, null);
+            }
+        } elseif (!$shared) {
             $owned = $this->pages->listForWorkspace(
                 $this->workspaceIdFor($user),
                 $sort,

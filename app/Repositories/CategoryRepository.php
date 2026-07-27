@@ -65,6 +65,33 @@ final class CategoryRepository
         return $category;
     }
 
+    /** @return array<string, mixed> */
+    public function createCopy(
+        int $pageId,
+        string $name,
+        ?string $color,
+        int $position,
+        ?int $wipLimit,
+    ): array {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO categories (page_id, name, color, position, wip_limit, created_at)
+             VALUES (:page_id, :name, :color, :position, :wip_limit, :now)'
+        );
+        $stmt->execute([
+            'page_id' => $pageId,
+            'name' => $name,
+            'color' => $color,
+            'position' => $position,
+            'wip_limit' => $wipLimit,
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ]);
+
+        $category = $this->findByIdForPage((int) $this->pdo->lastInsertId(), $pageId);
+        assert($category !== null);
+
+        return $category;
+    }
+
     /** @param array<string, mixed> $fields */
     public function update(int $id, array $fields): void
     {

@@ -20,6 +20,7 @@ final class OAuthFlight
         public readonly string $codeVerifier,
         public readonly string $nonce,
         public readonly ?string $inviteToken,
+        public readonly ?string $returnPath = null,
     ) {
     }
 
@@ -30,6 +31,7 @@ final class OAuthFlight
             'code_verifier' => $flight->codeVerifier,
             'nonce' => $flight->nonce,
             'invite_token' => $flight->inviteToken,
+            'return_path' => $flight->returnPath,
             'exp' => time() + self::TTL_SECONDS,
         ], JSON_THROW_ON_ERROR);
 
@@ -67,6 +69,7 @@ final class OAuthFlight
             codeVerifier: (string) $data['code_verifier'],
             nonce: (string) $data['nonce'],
             inviteToken: isset($data['invite_token']) ? (string) $data['invite_token'] : null,
+            returnPath: isset($data['return_path']) ? (string) $data['return_path'] : null,
         );
     }
 

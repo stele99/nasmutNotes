@@ -70,6 +70,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Share-Tokens sind Bearer-Credentials. Öffentliche Freigaben dürfen nie in
+  // den nutzerspezifischen Shell- oder Attachment-Cache gelangen.
+  if (url.pathname.startsWith('/s/')) {
+    return;
+  }
+
   if (url.pathname.startsWith('/offline-attachments/')) {
     event.respondWith(offlineAttachmentStrategy(url.pathname));
     return;

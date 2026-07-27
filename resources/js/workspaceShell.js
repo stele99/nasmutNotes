@@ -17,6 +17,7 @@ export function workspaceShell() {
     notebookRailResizing: false,
     notebookRailMoveHandler: null,
     notebookRailEndHandler: null,
+    mobileSwipeStart: null,
     mobileLevel: 'books',
     notebooks: [],
     activeCollection: 'home',
@@ -232,6 +233,42 @@ export function workspaceShell() {
     openNavigationToPages() {
       this.sidebarOpen = true;
       this.mobileLevel = 'pages';
+    },
+
+    startMobileSwipe(event) {
+      if (!window.matchMedia('(max-width: 767px)').matches
+        || !window.location.pathname.startsWith('/app/page/')
+        || event.touches?.length !== 1) {
+        this.mobileSwipeStart = null;
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('a, button, input, textarea, select, [contenteditable="true"], .ProseMirror, img')) {
+        this.mobileSwipeStart = null;
+        return;
+      }
+      const touch = event.touches[0];
+      this.mobileSwipeStart = { x: touch.clientX, y: touch.clientY };
+    },
+
+    endMobileSwipe(event) {
+      if (!this.mobileSwipeStart || event.changedTouches?.length !== 1) {
+        this.mobileSwipeStart = null;
+        return;
+      }
+      const touch = event.changedTouches[0];
+      const deltaX = touch.clientX - this.mobileSwipeStart.x;
+      const deltaY = touch.clientY - this.mobileSwipeStart.y;
+      this.mobileSwipeStart = null;
+      if (deltaX > -80 || Math.abs(deltaY) > Math.abs(deltaX) * 0.6) {
+        return;
+      }
+
+      if (!this.sidebarOpen) {
+        this.openNavigationToPages();
+      } else if (this.mobileLevel === 'pages') {
+        this.mobileLevel = 'books';
+      }
     },
 
     openNotebookDialog() {

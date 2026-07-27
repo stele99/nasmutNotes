@@ -17,6 +17,7 @@ use App\Controllers\NotebookController;
 use App\Controllers\NoteController;
 use App\Controllers\PageAttachmentController;
 use App\Controllers\PageController;
+use App\Controllers\PublicShareController;
 use App\Controllers\SearchController;
 use App\Controllers\ShareController;
 use App\Controllers\TaskController;
@@ -34,7 +35,10 @@ return static function (App $app): void {
     $app->post('/auth/logout', [AuthController::class, 'logout']);
 
     $app->get('/invite/{token}', [InviteController::class, 'accept']);
-    $app->get('/s/{token}', [ShareController::class, 'open'])->add(new RequireAuthMiddleware(false));
+    $app->get('/s/{token}', [PublicShareController::class, 'open']);
+    $app->get('/s/{token}/images/{imageToken}', [PublicShareController::class, 'image']);
+    $app->get('/s/{token}/files/{attachmentId}', [PublicShareController::class, 'file']);
+    $app->post('/s/{token}/copy', [PublicShareController::class, 'copy'])->add(new RequireAuthMiddleware(true));
 
     $app->get('/admin', [AdminDashboardController::class, 'page'])
         ->add(new RequireAdminMiddleware(false))

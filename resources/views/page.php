@@ -1,5 +1,5 @@
 <script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>;</script>
-<div class="flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="closeSidebar" @pages-changed.window="refreshNotebooks">
+<div class="flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="closeSidebar" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchend="endMobileSwipe($event)">
     <div
         x-show="sidebarOpen"
         x-cloak
@@ -57,14 +57,21 @@
                         <input x-model="permission" type="radio" value="read" class="mt-1">
                         <span>
                             <span class="block font-medium">Nur lesen</span>
-                            <span class="block text-sm" style="color: var(--color-text-muted);">Die Seite kann angesehen, aber nicht geändert werden.</span>
+                            <span class="block text-sm" style="color: var(--color-text-muted);">Jeder mit dem Link kann die Seite ohne Anmeldung lesen.</span>
+                        </span>
+                    </label>
+                    <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                        <input x-model="permission" type="radio" value="read_copy" class="mt-1">
+                        <span>
+                            <span class="block font-medium">Lesen und kopieren</span>
+                            <span class="block text-sm" style="color: var(--color-text-muted);">Ohne Anmeldung lesen; angemeldete Nutzer können eine unabhängige Kopie mit Bildern und Anhängen erstellen.</span>
                         </span>
                     </label>
                     <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
                         <input x-model="permission" type="radio" value="write" class="mt-1">
                         <span>
                             <span class="block font-medium">Lesen und schreiben</span>
-                            <span class="block text-sm" style="color: var(--color-text-muted);">Der Link berechtigt zum Bearbeiten der Inhalte.</span>
+                            <span class="block text-sm" style="color: var(--color-text-muted);">Anmeldung erforderlich. Die Seite wird gemeinsam im Workspace bearbeitet.</span>
                         </span>
                     </label>
                 </fieldset>
@@ -92,8 +99,8 @@
                     </div>
                 </div>
 
-                <p x-show="errorMessage" x-text="errorMessage" class="mt-4 text-sm" style="color: var(--color-danger);"></p>
-                <p x-show="successMessage" x-text="successMessage" class="mt-4 text-sm" style="color: var(--color-success);"></p>
+                <p x-show="errorMessage" x-text="errorMessage" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                <p x-show="successMessage" x-text="successMessage" class="mt-4 text-sm" style="color: var(--color-success);" role="status"></p>
 
                 <div class="mt-6 flex justify-end gap-2">
                     <button type="button" @click="closeShareDialog" class="px-3 py-2 text-sm" style="color: var(--color-text-muted);">Schließen</button>

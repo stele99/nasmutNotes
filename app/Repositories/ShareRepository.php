@@ -12,16 +12,17 @@ final class ShareRepository
     {
     }
 
-    public function create(int $pageId, string $tokenHash, string $permission): int
+    public function create(int $pageId, string $tokenHash, string $permission, string $mode): int
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO share_links (page_id, token_hash, permission, created_at)
-             VALUES (:page_id, :token_hash, :permission, :created_at)'
+            'INSERT INTO share_links (page_id, token_hash, permission, mode, created_at)
+             VALUES (:page_id, :token_hash, :permission, :mode, :created_at)'
         );
         $stmt->execute([
             'page_id' => $pageId,
             'token_hash' => $tokenHash,
             'permission' => $permission,
+            'mode' => $mode,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
         ]);
 
@@ -35,6 +36,7 @@ final class ShareRepository
             'SELECT share_links.id AS share_id,
                     share_links.page_id,
                     share_links.permission,
+                    share_links.mode,
                     share_links.expires_at,
                     share_links.created_at,
                     pages.title,
@@ -56,6 +58,16 @@ final class ShareRepository
         $row = $stmt->fetch();
 
         return $row !== false ? $row : null;
+    }
+
+    public function recordPublicView(int $shareLinkId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE share_links
+                SET last_accessed_at = :now, access_count = access_count + 1
+              WHERE id = :id'
+        );
+        $stmt->execute(['now' => gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $shareLinkId]);
     }
 
     public function recordAccess(int $userId, int $shareLinkId): void
@@ -98,6 +110,7 @@ final class ShareRepository
              WHERE shared_page_access.user_id = :user_id
                AND pages.id = :page_id
                AND pages.deleted_at IS NULL
+               AND share_links.mode = \'write\'
                AND share_links.revoked_at IS NULL
                AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)
              ORDER BY CASE WHEN share_links.permission = \'write\' THEN 0 ELSE 1 END,
@@ -126,6 +139,7 @@ final class ShareRepository
              JOIN pages ON pages.id = share_links.page_id
              WHERE shared_page_access.user_id = :user_id
                AND pages.deleted_at IS NULL
+               AND share_links.mode = \'write\'
                AND share_links.revoked_at IS NULL
                AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)';
         $params = [
@@ -146,6 +160,39 @@ final class ShareRepository
         return $stmt->fetchAll();
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function listOwnedSharedPagesForUser(int $userId, ?string $typeFilter = null): array
+    {
+        $sql =
+            'SELECT pages.*,
+                    notebooks.name AS notebook_name,
+                    notebooks.icon AS notebook_icon,
+                    notebooks.color AS notebook_color
+               FROM pages
+               JOIN workspaces ON workspaces.id = pages.workspace_id
+               JOIN share_links ON share_links.page_id = pages.id
+          LEFT JOIN notebooks ON notebooks.id = pages.notebook_id
+              WHERE workspaces.user_id = :user_id
+                AND pages.deleted_at IS NULL
+                AND share_links.revoked_at IS NULL
+                AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)';
+        $params = [
+            'user_id' => $userId,
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ];
+
+        if ($typeFilter !== null) {
+            $sql .= ' AND pages.type = :type';
+            $params['type'] = $typeFilter;
+        }
+
+        $sql .= ' GROUP BY pages.id ORDER BY pages.updated_at DESC';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll();
+    }
+
     /** @return array<string, mixed>|null */
     public function findById(int $id): ?array
     {
@@ -160,7 +207,7 @@ final class ShareRepository
     public function listForPage(int $pageId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, page_id, permission, expires_at, revoked_at, last_accessed_at, access_count, created_at
+            'SELECT id, page_id, mode, mode AS permission, expires_at, revoked_at, last_accessed_at, access_count, created_at
              FROM share_links
              WHERE page_id = :page_id
                AND revoked_at IS NULL
@@ -199,6 +246,7 @@ final class ShareRepository
                   JOIN users ON users.id = shared_page_access.user_id
                  WHERE share_links.page_id = :shared_page_id
                    AND share_links.revoked_at IS NULL
+                   AND share_links.mode = \'write\'
                    AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)
             )
             SELECT id, name, MAX(is_owner) AS is_owner
@@ -232,6 +280,7 @@ final class ShareRepository
                   JOIN users ON users.id = shared_page_access.user_id
                  WHERE share_links.page_id = :shared_page_id
                    AND share_links.permission = \'write\'
+                   AND share_links.mode = \'write\'
                    AND share_links.revoked_at IS NULL
                    AND (share_links.expires_at IS NULL OR share_links.expires_at > :now)
             )

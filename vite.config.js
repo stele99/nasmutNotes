@@ -14,6 +14,7 @@ export default defineConfig({
       input: {
         app: 'resources/js/app.js',
         editor: 'resources/js/editor/index.js',
+        publicShare: 'resources/js/public-share.js',
       },
     },
   },

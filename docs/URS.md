@@ -292,12 +292,12 @@ Ergebnis: 5 Tasks; der dritte ohne Listenmarkierung, der vierte direkt als erled
 |---|---|---|
 | FR-SHR-01 | Notiz- und Task-Seiten können per Link freigegeben werden. | M |
 | FR-SHR-02 | Ein Share-Link enthält ein zufälliges, URL-sicheres Token (≥ 32 Byte Entropie), nicht die interne Seiten-ID. Format: `/s/{token}`. | M |
-| FR-SHR-03 | Berechtigungsstufen: **Nur Lesen** oder **Bearbeiten**. | M |
+| FR-SHR-03 | Berechtigungsstufen: **Nur Lesen** (öffentlich), **Lesen und Kopieren** (öffentlich lesen, Kopie nur mit Account) oder **Lesen und Schreiben** (Account erforderlich). | M |
 | FR-SHR-04 | Share-Links können widerrufen und neu erzeugt werden (Rotation). Nach Widerruf liefert der Link HTTP 404. | M |
 | FR-SHR-05 | Optionale Einschränkungen: Ablaufdatum, Passwortschutz, „nur angemeldete Nutzer". | S |
-| FR-SHR-06 | Geteilte Seiten sind ohne Anmeldung aufrufbar, sofern nicht auf angemeldete Nutzer beschränkt. | M |
+| FR-SHR-06 | Nur-Lesen- und Lesen/Kopieren-Seiten sind ohne Anmeldung in einer eigenständigen Ansicht ohne Workspace-Sidebars aufrufbar. Schreibfreigaben verlangen eine Anmeldung. | M |
 | FR-SHR-07 | Geteilte Seiten werden mit `X-Robots-Tag: noindex, nofollow` und `<meta name="robots">` ausgeliefert. | M |
-| FR-SHR-08 | Mit Bearbeiten-Freigabe kann der Gast Inhalte ändern und Tasks importieren, aber **nicht**: Seite löschen, Freigaben verwalten, Seitentyp ändern, Seite duplizieren, Versionsverlauf wiederherstellen. | M |
+| FR-SHR-08 | Mit Schreibfreigabe kann ein angemeldeter Nutzer Inhalte ändern und Tasks importieren, aber **nicht**: Seite löschen, Freigaben verwalten, Seitentyp ändern, Seite duplizieren, Versionsverlauf wiederherstellen. Eine Kopierfreigabe erzeugt eine unabhängige Seite samt Bildern und Dateianhängen im Workspace des Empfängers. | M |
 | FR-SHR-09 | Der Besitzer sieht pro Seite alle aktiven Links mit Berechtigungsstufe, Erstellungsdatum, Ablauf und letztem Zugriff. | S |
 | FR-SHR-10 | „Link kopieren"-Button mit visueller Bestätigung. | M |
 | FR-SHR-11 | Beim ersten Zugriff über einen Write-Link wird ein Anzeigename abgefragt (Session-gebunden), der bei Änderungen im Audit-Log vermerkt wird. | K |

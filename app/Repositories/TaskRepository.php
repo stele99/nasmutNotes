@@ -96,6 +96,34 @@ final class TaskRepository
         return $task;
     }
 
+    /** @param array<string, mixed> $source */
+    public function createCopy(int $categoryId, array $source): void
+    {
+        $now = gmdate('Y-m-d\TH:i:s.v\Z');
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO tasks (
+                category_id, title, description, responsible, link, position, is_done,
+                due_date, priority, import_batch_id, version, created_at, updated_at
+             ) VALUES (
+                :category_id, :title, :description, :responsible, :link, :position, :is_done,
+                :due_date, :priority, NULL, 1, :created_at, :updated_at
+             )'
+        );
+        $stmt->execute([
+            'category_id' => $categoryId,
+            'title' => (string) $source['title'],
+            'description' => $source['description'],
+            'responsible' => $source['responsible'],
+            'link' => $source['link'],
+            'position' => (int) $source['position'],
+            'is_done' => (int) $source['is_done'],
+            'due_date' => $source['due_date'],
+            'priority' => $source['priority'],
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    }
+
     /** @return array<string, mixed>|null */
     public function find(int $id): ?array
     {

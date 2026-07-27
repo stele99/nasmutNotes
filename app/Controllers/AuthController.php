@@ -44,6 +44,10 @@ final class AuthController
 
         $params = $request->getQueryParams();
         $inviteToken = isset($params['invite']) && is_string($params['invite']) ? $params['invite'] : null;
+        $returnPath = isset($params['return']) && is_string($params['return'])
+            && preg_match('#^/s/[a-f0-9]{64}$#', $params['return']) === 1
+            ? $params['return']
+            : null;
 
         $provider = $this->buildProvider();
         $nonce = bin2hex(random_bytes(16));
@@ -53,7 +57,7 @@ final class AuthController
             'prompt' => 'select_account',
         ]);
 
-        $flight = new OAuthFlight($provider->getState(), (string) $provider->getPkceCode(), $nonce, $inviteToken);
+        $flight = new OAuthFlight($provider->getState(), (string) $provider->getPkceCode(), $nonce, $inviteToken, $returnPath);
         $encoded = OAuthFlight::encode($flight, $this->appKey());
 
         return $response
@@ -139,7 +143,7 @@ final class AuthController
 
         return $response
             ->withStatus(302)
-            ->withHeader('Location', '/app')
+            ->withHeader('Location', $flight->returnPath ?? '/app')
             ->withAddedHeader('Set-Cookie', Cookie::expire(OAuthFlight::COOKIE_NAME, $this->isProduction()))
             ->withAddedHeader('Set-Cookie', Cookie::build(
                 SessionService::COOKIE_NAME,

@@ -13,7 +13,6 @@ use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\WorkspaceRepository;
-use App\Support\ForbiddenException;
 use App\Support\UploadStorage;
 use App\Support\ValidationException;
 use PDO;
@@ -117,17 +116,11 @@ final class AttachmentServiceTest extends TestCase
         self::assertSame('image/png', $uploaded['mime_type']);
     }
 
-    public function testReadShareCannotUploadImage(): void
+    public function testPublicReadShareCannotBecomeAuthenticatedWriteAccess(): void
     {
         $share = $this->shares->create($this->owner, $this->pageId, 'read');
+        $this->expectException(ValidationException::class);
         $this->shares->open($this->recipient, $share['token']);
-
-        $this->expectException(ForbiddenException::class);
-        $this->attachments->upload(
-            $this->recipient,
-            $this->pageId,
-            $this->uploadedFile($this->pngBytes(), 'read-only.png'),
-        );
     }
 
     public function testRejectsNonImageUpload(): void

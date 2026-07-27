@@ -13,7 +13,6 @@ use App\Repositories\PageRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\WorkspaceRepository;
-use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
 use PDO;
@@ -219,19 +218,19 @@ final class PageAttachmentServiceTest extends TestCase
         $this->attachments->delete($this->other, $attachment['id']);
     }
 
-    public function testReadOnlyShareMayViewButNotDelete(): void
+    public function testWriteShareMayViewAndDelete(): void
     {
         $attachment = $this->upload('%PDF-1.4 x', 'geteilt.pdf');
 
         $token = bin2hex(random_bytes(32));
-        $shareId = $this->shares->create($this->notePageId, hash('sha256', $token), 'read');
+        $shareId = $this->shares->create($this->notePageId, hash('sha256', $token), 'write', 'write');
         $this->shares->recordAccess($this->other->id, $shareId);
 
         $file = $this->attachments->open($this->other, $attachment['id']);
         self::assertSame('geteilt.pdf', $file['original_name']);
 
-        $this->expectException(ForbiddenException::class);
         $this->attachments->delete($this->other, $attachment['id']);
+        self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM page_attachments'));
     }
 
     public function testDeleteRemovesRowAndFile(): void

@@ -16,19 +16,23 @@ use App\Domain\Notes\ImageCompressionService;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\Notes\ProseMirrorValidator;
+use App\Domain\PageCopyService;
 use App\Domain\PageService;
 use App\Domain\SessionService;
 use App\Repositories\AdminRepository;
 use App\Repositories\AuditLogRepository;
+use App\Repositories\CategoryRepository;
 use App\Repositories\InviteRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
+use App\Repositories\NoteContentRepository;
 use App\Repositories\PageAttachmentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\SearchRepository;
 use App\Repositories\SessionRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\ShareRepository;
+use App\Repositories\TaskRepository;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\AdminEmails;
@@ -214,6 +218,33 @@ return static function (string $rootPath): DI\Container {
             ShareRepository $shares,
             NotebookService $notebooks,
         ): PageService => new PageService($pages, $workspaces, $shares, $notebooks),
+
+        PageCopyService::class => static fn (
+            PDO $pdo,
+            PageRepository $pages,
+            WorkspaceRepository $workspaces,
+            NotebookRepository $notebooks,
+            NoteContentRepository $noteContents,
+            NoteAttachmentRepository $images,
+            PageAttachmentRepository $files,
+            CategoryRepository $categories,
+            TaskRepository $tasks,
+            SettingsRepository $settings,
+            UploadStorage $storage,
+        ): PageCopyService => new PageCopyService(
+            $pdo,
+            $pages,
+            $workspaces,
+            $notebooks,
+            $noteContents,
+            $images,
+            $files,
+            $categories,
+            $tasks,
+            $settings,
+            $storage,
+            Env::int('DEFAULT_STORAGE_QUOTA_MB', 0),
+        ),
 
         NotebookService::class => static fn (
             PDO $pdo,
