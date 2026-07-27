@@ -4,7 +4,11 @@
             <span class="flex size-7 items-center justify-center rounded-md" style="background: var(--color-bg);" x-icon="book-open"></span>
             <span><span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span>
         </a>
-        <button type="button" @click="closeSidebar" class="icon-action md:hidden" aria-label="Menü schließen" x-icon="x"></button>
+        <?php /* Mobil verlässt man die Notizbücher über „Home“ zur Übersicht
+                 oder über ein Notizbuch zur Seitenauswahl - ein eigener
+                 Schließen-Schalter hätte kein drittes Ziel. Zwischen `md` und
+                 `xl` schließt er dagegen die überlagernde Schublade. */ ?>
+        <button type="button" @click="showPages()" class="icon-action hidden md:inline-flex xl:hidden" aria-label="Notizbücher schließen" x-icon="x"></button>
     </div>
     <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3" aria-label="Notizbücher">
         <button type="button" @click="navigateHome" class="notebook-item" :class="activeCollection === 'home' ? 'is-active' : ''" :aria-current="activeCollection === 'home' ? 'page' : null"><span x-icon="home"></span>Home</button>
@@ -29,10 +33,19 @@
     <div class="p-3">
         <button type="button" @click="selectCollection('trash')" @dragenter.prevent="setTrashDropTarget" @dragover.prevent="setTrashDropTarget" @drop.prevent="dropPagesOnTrash($event)" class="notebook-item" :class="{ 'is-active': activeCollection === 'trash', 'is-drop-target': isTrashDropTarget() }" :aria-current="activeCollection === 'trash' ? 'page' : null"><span x-icon="trash"></span><span>Papierkorb</span><span x-show="isTrashDropTarget()" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span></button>
         <?php include __DIR__ . '/invite_panel.php'; ?>
-        <div class="mt-2 flex items-center gap-2" x-data="offlineSettings" @import-dialog.window="trackImportDialog">
-            <button type="button" @click="openDialog" class="icon-action" aria-label="Offline und Einstellungen" title="Offline und Einstellungen" x-icon="settings"></button>
-            <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" x-icon="shield"></a><?php endif; ?>
-            <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" x-icon="log-out"></button>
+        <div class="mt-2" x-data="offlineSettings" @import-dialog.window="trackImportDialog">
+            <?php /* Der Prefetch läuft im Hintergrund weiter, auch wenn der Dialog
+                     zu ist - ohne diese Zeile bliebe er unsichtbar. Ein Klick
+                     führt direkt in den Sync-Bereich der Einstellungen. */ ?>
+            <button type="button" @click="openSyncSettings" class="offline-status" :class="statusTone()" :title="statusText()">
+                <span class="offline-status-dot"></span>
+                <span class="min-w-0 flex-1 truncate" x-text="statusText()"></span>
+            </button>
+            <div class="mt-2 flex items-center gap-2">
+                <button type="button" @click="openDialog" class="icon-action" aria-label="Offline und Einstellungen" title="Offline und Einstellungen" x-icon="settings"></button>
+                <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" x-icon="shield"></a><?php endif; ?>
+                <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" x-icon="log-out"></button>
+            </div>
             <div x-show="open" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeDialog" @keydown.escape.window="closeDialog">
                 <div class="settings-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                     <header class="flex items-center justify-between gap-3 border-b px-6 py-4" style="border-color: var(--color-border);">

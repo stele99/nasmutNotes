@@ -1,15 +1,19 @@
 <div class="page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>">
     <div class="page-toolbar flex items-center gap-2">
+        <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
+                 Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
+        <button type="button" @click="goBack()" class="icon-action flex shrink-0 items-center border p-2 md:hidden" style="border-color: var(--color-border);" title="Zurück zur Seitenauswahl" aria-label="Zurück zur Seitenauswahl" x-icon="chevron-left"></button>
         <?php /* Der Seitentitel steht mobil ohnehin direkt darunter als Überschrift -
                  der Breadcrumb kostet dort nur Höhe und entfällt deshalb. Die
-                 Freigabe-Anzeige und die Aktionen bleiben sichtbar. */ ?>
-        <span class="hidden min-w-0 items-center gap-2 md:flex">
+                 Freigabe-Anzeige und die Aktionen bleiben sichtbar. Darüber kürzt
+                 er mit Auslassungspunkten, statt umzubrechen (siehe page_note.php). */ ?>
+        <span class="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             <?php $nbIcon = !empty($page['is_shared']) ? 'share-2' : ($page['notebook_icon'] ?? 'book-open'); ?>
             <?php $nbColor = !empty($page['is_shared']) ? 'var(--color-text-muted)' : ($page['notebook_color'] ?? 'var(--color-text-muted)'); ?>
-            <span style="color: <?= e($nbColor) ?>;" x-icon="<?= e($nbIcon) ?>"></span>
-            <span><?= e(!empty($page['is_shared']) ? 'Geteilt' : (string) ($page['notebook_name'] ?? 'Nicht zugewiesen')) ?></span>
-            <span style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
-            <span class="truncate" x-text="pageTitle"></span>
+            <span class="shrink-0" style="color: <?= e($nbColor) ?>;" x-icon="<?= e($nbIcon) ?>"></span>
+            <span class="min-w-0 truncate"><?= e(!empty($page['is_shared']) ? 'Geteilt' : (string) ($page['notebook_name'] ?? 'Nicht zugewiesen')) ?></span>
+            <span class="shrink-0" style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
+            <span class="min-w-0 truncate" x-text="pageTitle"></span>
         </span>
         <div class="ml-auto flex shrink-0 items-center gap-2">
             <span x-show="isShared" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
@@ -20,8 +24,8 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
-            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
-                <span x-icon="share-2"></span><span class="hidden md:inline">Teilen</span>
+            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
+                <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>
         </div>
     </div>

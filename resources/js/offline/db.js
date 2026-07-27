@@ -169,6 +169,29 @@ export async function getAllNotebooks() {
   return req(s.getAll());
 }
 
+/**
+ * Nur die Schlüssel, nicht die Werte: Der Prefetch muss vor jedem Durchgang
+ * wissen, was bereits lokal liegt. Über `getAll()` kämen dabei sämtliche
+ * Notizinhalte in den Arbeitsspeicher - bei Limit „Alle" zehntausende Dokumente.
+ *
+ * @returns {Promise<{ notes: Set<number>, boards: Set<number>, documents: Set<string> }>}
+ */
+export async function getCachedKeys() {
+  const database = await openDb();
+  const tx = database.transaction(['note_contents', 'boards', 'documents']);
+  const [notes, boards, documents] = await Promise.all([
+    req(tx.objectStore('note_contents').getAllKeys()),
+    req(tx.objectStore('boards').getAllKeys()),
+    req(tx.objectStore('documents').getAllKeys()),
+  ]);
+
+  return {
+    notes: new Set(notes.map(Number)),
+    boards: new Set(boards.map(Number)),
+    documents: new Set(documents.map(String)),
+  };
+}
+
 /** @param {number[]} keepIds */
 export async function prunePages(keepIds) {
   const keep = new Set(keepIds.map(Number));

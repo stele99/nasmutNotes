@@ -1,24 +1,30 @@
-<div class="flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="closeSidebar" @pages-changed.window="refreshNotebooks">
+<div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
+    <?php /* Mobil decken beide Leisten den Bildschirm vollständig ab; eine
+             Überlagerung braucht nur die schmale Notizbuch-Schublade, die
+             zwischen `md` und `xl` über der Seitenliste liegt. */ ?>
     <div
-        x-show="sidebarOpen"
+        x-show="notebookDrawerOpen"
         x-cloak
-        class="fixed inset-0 z-30 bg-black/30 md:hidden"
-        @click="closeSidebar"
+        class="fixed inset-0 z-[45] hidden bg-black/30 md:block xl:hidden"
+        @click="notebookDrawerOpen = false"
     ></div>
     <aside class="notebook-rail relative hidden h-dvh shrink-0 flex-col border-r xl:flex" :style="notebookRailStyle()">
         <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
         <div class="notebook-resize-handle" role="separator" aria-label="Notizbuchleiste in der Breite ändern" aria-orientation="vertical" tabindex="0" :aria-valuenow="notebookRailWidth" aria-valuemin="220" aria-valuemax="420" @pointerdown="startNotebookResize" @keydown.left.prevent="resizeNotebookRailBy(-16)" @keydown.right.prevent="resizeNotebookRailBy(16)"></div>
     </aside>
-    <aside x-show="notebookDrawerOpen || (sidebarOpen && mobileLevel === 'books')" x-cloak class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r md:w-80 xl:hidden" :aria-hidden="!(notebookDrawerOpen || (sidebarOpen && mobileLevel === 'books'))" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+    <aside x-show="isNotebookDrawerVisible()" x-cloak class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r md:w-80 xl:hidden" :aria-hidden="isNotebookDrawerVisible() ? 'false' : 'true'" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
         <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
     </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
     <?php include __DIR__ . '/partials/notebook_dialog.php'; ?>
     <main class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto">
-        <button x-show="!sidebarOpen" x-cloak @click="openNavigation" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Menü öffnen" :aria-expanded="sidebarOpen" x-icon="menu">
+        <?php /* Die Übersicht ist mobil der Einstieg und hat keine eigene
+                 Kopfzeile; der Weg zu den Notizbüchern liegt deshalb hier als
+                 fixierter Schalter. */ ?>
+        <button x-show="isMobileView('content')" x-cloak @click="showBooks()" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Notizbücher öffnen" x-icon="menu">
         </button>
         <section class="page-canvas mx-auto px-6 py-10 sm:px-10 sm:py-20 lg:py-28" x-data="pageList" @pages-changed.window="refresh">
-            <?php /* Abstand bleibt so groß, dass der fixierte Menü-Schalter die
+            <?php /* Abstand bleibt so groß, dass der fixierte Schalter die
                      Überschrift nicht überlagert. */ ?>
             <div class="pt-6 sm:pt-12">
                 <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">Mein Workspace <span class="text-[0.5em]">by <span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span></h1>

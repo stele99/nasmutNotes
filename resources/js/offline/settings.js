@@ -81,9 +81,15 @@ export function offlineSettings() {
       await this.refreshStats();
       this.unsubscribe = onStatusChange((status) => {
         const previousConflictCount = this.conflictCount;
+        const wasPrefetching = this.statusPrefetching;
         this.statusOnline = status.online;
         this.statusSyncing = status.syncing;
         this.statusPrefetching = status.prefetching;
+        // Der Download läuft im Hintergrund; die Zahlen im Dialog stimmen sonst
+        // erst wieder, wenn er von Hand neu geöffnet wird.
+        if (wasPrefetching && !status.prefetching) {
+          void this.refreshStats();
+        }
         this.pendingSync = status.pendingCount + status.conflictCount + status.blockedCount;
         this.conflictCount = status.conflictCount;
         this.blockedCount = status.blockedCount;
@@ -117,8 +123,17 @@ export function offlineSettings() {
     },
 
     async openDialog() {
+      await this.showSettings('app');
+    },
+
+    /** Einstieg aus der Statuszeile - dort interessiert nur der Sync. */
+    openSyncSettings() {
+      void this.showSettings('sync');
+    },
+
+    async showSettings(section) {
       this.open = true;
-      this.settingsSection = 'app';
+      this.settingsSection = section;
       this.message = '';
       this.error = '';
       await this.refreshStats();
@@ -361,7 +376,7 @@ export function offlineSettings() {
           return;
         }
         await setCacheLimit(chosen);
-        this.message = 'Offline-Limit gespeichert. Inhalte werden geladen…';
+        this.message = 'Offline-Limit gespeichert. Fehlende Inhalte werden im Hintergrund geladen.';
         await this.refreshStats();
       } catch (error) {
         this.error = error.message || 'Limit konnte nicht gespeichert werden.';
@@ -370,19 +385,16 @@ export function offlineSettings() {
       }
     },
 
-    async downloadNow() {
-      this.busy = true;
+    /**
+     * Bewusst ohne `await` und ohne `busy`: Der Dialog soll sich während des
+     * Downloads schließen lassen, den Fortschritt zeigt die Statuszeile.
+     */
+    downloadNow() {
       this.error = '';
-      this.message = '';
-      try {
-        await prefetchSelected({ force: true });
-        await this.refreshStats();
-        this.message = 'Lokale Inhalte wurden aktualisiert.';
-      } catch (error) {
+      this.message = 'Aktualisierung läuft im Hintergrund.';
+      void prefetchSelected({ force: true }).catch((error) => {
         this.error = error.message || 'Download fehlgeschlagen.';
-      } finally {
-        this.busy = false;
-      }
+      });
     },
 
     cancelDownload() {
@@ -462,6 +474,25 @@ export function offlineSettings() {
         return `${this.pendingSync} zum Sync`;
       }
       return 'Online';
+    },
+
+    /**
+     * Farbgebung der Statuszeile. Konflikte und Sync-Fehler wiegen schwerer als
+     * fehlende Verbindung: Sie bleiben auch online bestehen und brauchen eine
+     * Entscheidung.
+     */
+    statusTone() {
+      if (this.conflictCount > 0 || this.blockedCount > 0) {
+        return 'is-warning';
+      }
+      if (!this.statusOnline) {
+        return 'is-offline';
+      }
+      if (this.statusSyncing || this.statusPrefetching) {
+        return 'is-busy';
+      }
+
+      return this.pendingSync > 0 ? 'is-pending' : 'is-idle';
     },
   };
 }

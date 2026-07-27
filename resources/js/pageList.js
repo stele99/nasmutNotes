@@ -76,7 +76,7 @@ function offlinePageHtml(page) {
 <main class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto" x-data="pageShare"
   data-page-id="${id}" data-page-title="${title}" data-page-is-shared="${isShared}"
   data-page-permission="${permission}" data-page-can-edit="${canEdit}">
-  <button @click="sidebarOpen = true; mobileLevel = 'pages'" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Zur Seitenauswahl" x-icon="layers"></button>
+  <button @click="goBack()" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Zurück zur Seitenauswahl" x-icon="chevron-left"></button>
   ${body}
 </main></body></html>`;
 }
@@ -522,10 +522,13 @@ export function pageList() {
           window.history.pushState({}, '', url);
         }
         this.currentPageId = page ? page.id : (url === '/app' ? null : this.currentPageId);
-        // Die Seitenleiste liegt in einer eigenen Alpine-Komponente; ein
-        // direktes `this.sidebarOpen = false` würde nur eine lokale Eigenschaft
-        // setzen, statt die Leiste der Hülle zu schließen.
-        this.$dispatch('close-sidebar');
+        // Eine geöffnete Seite rückt mobil in den Vordergrund, der Sprung zur
+        // Übersicht dagegen nicht - dort bleibt die Seitenauswahl stehen. Die
+        // Leiste gehört einer eigenen Alpine-Komponente, deshalb das Ereignis
+        // statt einer direkten Zuweisung.
+        if (page) {
+          this.$dispatch('close-sidebar');
+        }
         window.Alpine?.initTree(nextMain);
         window.scrollTo(0, 0);
       } catch (error) {

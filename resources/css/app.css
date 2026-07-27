@@ -155,6 +155,70 @@ textarea::placeholder {
   width: 100%;
 }
 
+/* Statuszeile am Fuß der Notizbuchleiste: Der Punkt trägt die Aussage, der Text
+   erklärt sie. Ein fester Punktdurchmesser hält die Zeile ruhig, während sich
+   der Text zwischen „Online" und „Lade offline… 12 / 340" ändert. */
+.offline-status {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: 0.75rem;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  width: 100%;
+}
+
+.offline-status:hover,
+.offline-status:focus-visible {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.offline-status-dot {
+  border-radius: 9999px;
+  flex-shrink: 0;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.offline-status.is-idle .offline-status-dot {
+  background: var(--color-success);
+}
+
+.offline-status.is-offline .offline-status-dot {
+  background: var(--color-text-muted);
+}
+
+.offline-status.is-pending .offline-status-dot {
+  background: var(--color-accent);
+}
+
+.offline-status.is-warning .offline-status-dot {
+  background: var(--color-danger);
+}
+
+.offline-status.is-warning {
+  color: var(--color-danger);
+}
+
+.offline-status.is-busy .offline-status-dot {
+  animation: offline-status-pulse 1.4s ease-in-out infinite;
+  background: var(--color-accent);
+}
+
+@keyframes offline-status-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offline-status.is-busy .offline-status-dot {
+    animation: none;
+  }
+}
+
 .notebook-resize-handle {
   bottom: 0;
   cursor: col-resize;
@@ -988,10 +1052,6 @@ button:disabled,
 
   .note-page {
     --note-sticky-header-height: 3.5rem;
-  }
-
-  .note-sticky-header {
-    padding-left: 3rem;
   }
 
   /* Der Kopfbereich trägt Freigabe-Status, Kollaboratoren und Aktionen. Ohne

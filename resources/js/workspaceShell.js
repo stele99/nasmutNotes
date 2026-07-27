@@ -9,17 +9,52 @@ const NOTEBOOK_RAIL_WIDTH_KEY = 'nasmut-notes-notebook-rail-width';
 const NOTEBOOK_RAIL_MIN_WIDTH = 220;
 const NOTEBOOK_RAIL_MAX_WIDTH = 420;
 
+/* Mobil bilden Notizbücher, Seitenliste und Seiteninhalt drei aufeinander
+   folgende Ebenen, von denen immer nur die oberste sichtbar ist. Ab `md` liegen
+   dieselben Bereiche nebeneinander, deshalb gilt der Stapel nur darunter. */
+const MOBILE_BREAKPOINT = '(max-width: 767px)';
+const MOBILE_VIEWS = ['books', 'pages', 'content'];
+/** Strecke, ab der eine Wischgeste als Ebenenwechsel zählt. */
+const SWIPE_MIN_DISTANCE = 60;
+/** Ab hier steht fest, ob waagerecht oder senkrecht gewischt wird. */
+const SWIPE_LOCK_DISTANCE = 12;
+/** Aus diesem Randstreifen heraus wischt der Nutzer die Systemgeste von iOS. */
+const SWIPE_EDGE_ZONE = 24;
+
+/** Die drei Ebenen selbst liegen fest im Ansichtsfenster - Dialoge ebenso. */
+const MOBILE_PANEL_SELECTOR = '.page-sidebar, .notebook-drawer';
+
+/**
+ * Zwei Fälle behalten ihre Wischgeste: Dialoge und Vollbild-Betrachter, die als
+ * eigene Ebene über dem Stapel liegen, sowie waagerecht scrollbare Bereiche wie
+ * Kapitelreiter, Tabellen und Codeblöcke - deren Inhalt ließe sich sonst mobil
+ * nicht mehr verschieben.
+ */
+function blocksSwipe(element, root) {
+  for (let node = element; node && node !== root; node = node.parentElement) {
+    const style = window.getComputedStyle(node);
+    if (style.position === 'fixed' && !node.matches(MOBILE_PANEL_SELECTOR)) {
+      return true;
+    }
+    if (node.scrollWidth - node.clientWidth > 4
+      && (style.overflowX === 'auto' || style.overflowX === 'scroll')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function workspaceShell() {
   return {
-    sidebarOpen: false,
     notebookDrawerOpen: false,
     notebookRailWidth: 256,
     notebookRailResizing: false,
     notebookRailMoveHandler: null,
     notebookRailEndHandler: null,
-    mobileSwipeStart: null,
-    mobileSwipeHorizontal: false,
-    mobileLevel: 'books',
+    isMobile: false,
+    mobileView: 'content',
+    mobileSwipe: null,
     notebooks: [],
     activeCollection: 'home',
     activeNotebookId: null,
@@ -48,7 +83,24 @@ export function workspaceShell() {
 
     async init() {
       this.restoreNotebookRailWidth();
+      this.watchViewport();
       await this.refreshNotebooks();
+    },
+
+    watchViewport() {
+      const query = window.matchMedia(MOBILE_BREAKPOINT);
+      this.applyViewport(query.matches);
+      query.addEventListener('change', (event) => this.applyViewport(event.matches));
+    },
+
+    /**
+     * Einstieg ist mobil immer der Inhalt - auf `/app` also die Übersicht. Die
+     * Notizbücher erreicht man von dort über den Hamburger-Schalter.
+     */
+    applyViewport(isMobile) {
+      this.isMobile = isMobile;
+      this.notebookDrawerOpen = false;
+      this.mobileView = 'content';
     },
 
     restoreNotebookRailWidth() {
@@ -159,15 +211,20 @@ export function workspaceShell() {
       this.activeCollection = collection;
       this.activeNotebookId = notebookId;
       this.notebookDrawerOpen = false;
-      this.mobileLevel = 'pages';
+      this.mobileView = 'pages';
       this.openNotebookMenuId = null;
       window.dispatchEvent(new CustomEvent('collection-changed', {
         detail: { collection, notebookId },
       }));
     },
 
+    /**
+     * Der einzige Weg aus der Notizbuchliste zurück zur Übersicht - anders als
+     * die übrigen Einträge führt „Home“ deshalb nicht zur Seitenauswahl.
+     */
     navigateHome() {
       this.selectCollection('home');
+      this.mobileView = 'content';
       window.dispatchEvent(new Event('navigate-home'));
     },
 
@@ -226,80 +283,128 @@ export function workspaceShell() {
       }
     },
 
-    openNavigation() {
-      this.sidebarOpen = true;
-      this.mobileLevel = 'books';
-    },
-
-    openNavigationToPages() {
-      this.sidebarOpen = true;
-      this.mobileLevel = 'pages';
-    },
-
-    startMobileSwipe(event) {
-      if (!window.matchMedia('(max-width: 767px)').matches
-        || !window.location.pathname.startsWith('/app/page/')
-        || event.touches?.length !== 1) {
-        this.mobileSwipeStart = null;
-        return;
-      }
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('a, button, input, textarea, select, [contenteditable="true"], .ProseMirror, img')) {
-        this.mobileSwipeStart = null;
-        return;
-      }
-      const touch = event.touches[0];
-      this.mobileSwipeStart = { x: touch.clientX, y: touch.clientY };
-      this.mobileSwipeHorizontal = false;
+    isMobileView(view) {
+      return this.isMobile && this.mobileView === view;
     },
 
     /**
-     * Ohne dies erkennt der Browser dieselbe Fingerbewegung parallel als eigene
-     * Zurück-Geste (Edge-Swipe). Der dadurch ausgelöste `popstate` reißt die App
-     * dann zur zuvor besuchten Seite (meist die Startseite), noch während die
-     * eigene Sidebar-Animation läuft. preventDefault() auf einer eindeutig
-     * horizontalen Bewegung unterbindet die native Geste zuverlässig.
+     * Die Seitenliste bleibt auch auf der Notizbuchebene eingeblendet: Sie liegt
+     * unter dem Notizbuch-Panel und kommt beim Zurückwischen darunter hervor.
      */
-    moveMobileSwipe(event) {
-      if (!this.mobileSwipeStart || event.touches?.length !== 1) {
+    isPageSidebarVisible() {
+      return this.isMobile && this.mobileView !== 'content';
+    },
+
+    isNotebookDrawerVisible() {
+      return this.notebookDrawerOpen || this.isMobileView('books');
+    },
+
+    showBooks() {
+      this.mobileView = 'books';
+    },
+
+    showPages() {
+      this.notebookDrawerOpen = false;
+      this.mobileView = 'pages';
+    },
+
+    showContent() {
+      this.notebookDrawerOpen = false;
+      this.mobileView = 'content';
+    },
+
+    /** Eine Ebene zurück: Inhalt → Seitenliste → Notizbücher. */
+    goBack() {
+      this.notebookDrawerOpen = false;
+      const index = MOBILE_VIEWS.indexOf(this.mobileView);
+      this.mobileView = MOBILE_VIEWS[Math.max(0, index - 1)];
+    },
+
+    /** Eine Ebene vor: Notizbücher → Seitenliste → Inhalt. */
+    goForward() {
+      this.notebookDrawerOpen = false;
+      const index = MOBILE_VIEWS.indexOf(this.mobileView);
+      this.mobileView = MOBILE_VIEWS[Math.min(MOBILE_VIEWS.length - 1, index + 1)];
+    },
+
+    startMobileSwipe(event) {
+      this.mobileSwipe = null;
+      if (!this.isMobile || event.touches?.length !== 1) {
         return;
       }
+
       const touch = event.touches[0];
-      const deltaX = touch.clientX - this.mobileSwipeStart.x;
-      const deltaY = touch.clientY - this.mobileSwipeStart.y;
-      if (!this.mobileSwipeHorizontal) {
-        if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
-          return;
-        }
-        if (Math.abs(deltaY) > Math.abs(deltaX) * 0.6) {
-          this.mobileSwipeStart = null;
-          return;
-        }
-        this.mobileSwipeHorizontal = true;
+      // Aus dem linken Randstreifen heraus gehört die Geste dem Browser bzw.
+      // iOS; eine eigene Auswertung liefe dort gegen die Systemnavigation.
+      if (touch.clientX <= SWIPE_EDGE_ZONE) {
+        return;
       }
-      event.preventDefault();
+
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && blocksSwipe(target, this.$el)) {
+        return;
+      }
+
+      // Bei markiertem Text zieht der Nutzer an den Auswahlgriffen.
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) {
+        return;
+      }
+
+      this.mobileSwipe = { x: touch.clientX, y: touch.clientY, horizontal: false };
+    },
+
+    /**
+     * Ohne preventDefault() erkennt der Browser dieselbe Fingerbewegung parallel
+     * als eigene Zurück-Geste. Der dadurch ausgelöste `popstate` reißt die App
+     * zur zuvor besuchten Seite, noch während die eigene Animation läuft. Erst
+     * wird die Richtung festgestellt, damit senkrechtes Scrollen frei bleibt.
+     */
+    moveMobileSwipe(event) {
+      if (!this.mobileSwipe || event.touches?.length !== 1) {
+        return;
+      }
+
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - this.mobileSwipe.x;
+      const deltaY = touch.clientY - this.mobileSwipe.y;
+      if (!this.mobileSwipe.horizontal) {
+        if (Math.abs(deltaX) < SWIPE_LOCK_DISTANCE && Math.abs(deltaY) < SWIPE_LOCK_DISTANCE) {
+          return;
+        }
+        if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+          this.mobileSwipe = null;
+          return;
+        }
+        this.mobileSwipe.horizontal = true;
+      }
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
     },
 
     endMobileSwipe(event) {
-      if (!this.mobileSwipeStart || event.changedTouches?.length !== 1) {
-        this.mobileSwipeStart = null;
-        this.mobileSwipeHorizontal = false;
-        return;
-      }
-      const touch = event.changedTouches[0];
-      const deltaX = touch.clientX - this.mobileSwipeStart.x;
-      const deltaY = touch.clientY - this.mobileSwipeStart.y;
-      this.mobileSwipeStart = null;
-      this.mobileSwipeHorizontal = false;
-      if (deltaX > -80 || Math.abs(deltaY) > Math.abs(deltaX) * 0.6) {
+      const swipe = this.mobileSwipe;
+      this.mobileSwipe = null;
+      if (!swipe?.horizontal || event.changedTouches?.length !== 1) {
         return;
       }
 
-      if (!this.sidebarOpen) {
-        this.openNavigationToPages();
-      } else if (this.mobileLevel === 'pages') {
-        this.mobileLevel = 'books';
+      const deltaX = event.changedTouches[0].clientX - swipe.x;
+      if (Math.abs(deltaX) < SWIPE_MIN_DISTANCE) {
+        return;
       }
+
+      if (deltaX > 0) {
+        this.goBack();
+      } else {
+        this.goForward();
+      }
+    },
+
+    cancelMobileSwipe() {
+      this.mobileSwipe = null;
     },
 
     openNotebookDialog() {
@@ -451,17 +556,6 @@ export function workspaceShell() {
       }
       await apiFetch('/auth/logout', { method: 'POST' });
       window.location.href = '/';
-    },
-
-    /**
-     * Mobil deckt die Seitenleiste den ganzen Bildschirm ab - der Klick auf die
-     * Überlagerung greift dort nicht mehr. Geschlossen wird deshalb über den
-     * Schalter im Kopf der Leiste und nach jeder Navigation (Event aus
-     * `pageList`, das bis hier hochblubbert).
-     */
-    closeSidebar() {
-      this.sidebarOpen = false;
-      this.notebookDrawerOpen = false;
     },
   };
 }

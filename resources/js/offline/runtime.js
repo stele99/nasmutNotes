@@ -267,13 +267,19 @@ export function normalizeCacheLimit(limit) {
   return DEFAULT_LIMIT;
 }
 
+/**
+ * Der Nachlauf bleibt bewusst unerwartet: Ein erhöhtes Limit zieht einen
+ * Download nach sich, der je nach Bestand Minuten dauert. Würde er hier
+ * abgewartet, bliebe der Einstellungsdialog so lange blockiert - den Fortschritt
+ * zeigt stattdessen die Statuszeile.
+ */
 export async function setCacheLimit(limit) {
   const normalized = normalizeCacheLimit(limit);
   await db.metaSet(SETTINGS_KEY, normalized);
-  if (online) {
-    await prefetchSelected({ force: true });
-  }
   emit();
+  if (online) {
+    void prefetchSelected({ force: true });
+  }
 }
 
 export async function getOfflineStats() {
@@ -727,6 +733,45 @@ export function cancelPrefetch() {
   prefetchAbort?.abort();
 }
 
+/**
+ * Kennung des ausgelieferten Frontend-Builds. Der Dateiname des Einstiegsskripts
+ * trägt einen Inhalts-Hash, ändert sich also mit jedem Deploy - im Dev-Betrieb
+ * zeigt die Quelle auf den Vite-Server und bleibt konstant.
+ */
+function buildSignature() {
+  const script = document.querySelector('script[type="module"][src*="/build/"]');
+
+  return script ? new URL(script.src).pathname : 'dev';
+}
+
+/**
+ * Entscheidet, ob eine Seite überhaupt geladen werden muss. Ohne diese Prüfung
+ * holt jeder Durchgang - auch der nach einer Limit-Änderung - den kompletten
+ * Bestand erneut, obwohl sich meist nur einzelne Seiten geändert haben.
+ *
+ * Neben dem Zeitstempel zählt die Zahl der Anhänge: Ein hinzugefügter oder
+ * entfernter Anhang berührt den Änderungsstand der Seite selbst nicht.
+ *
+ * @param {Record<string, unknown>} page Serverstand aus der Seitenliste
+ * @param {Map<number, Record<string, unknown>>} known Stand des letzten Durchgangs
+ * @param {{ notes: Set<number>, boards: Set<number>, documents: Set<string> }} cached
+ * @param {boolean} staleDocuments Gespeichertes Seiten-HTML stammt aus einem älteren Build
+ */
+function needsPrefetch(page, known, cached, staleDocuments) {
+  const pageId = Number(page.id);
+  const previous = known.get(pageId);
+  if (!previous
+    || String(previous.updated_at || '') !== String(page.updated_at || '')
+    || Number(previous.attachment_count || 0) !== Number(page.attachment_count || 0)) {
+    return true;
+  }
+  if (staleDocuments || !cached.documents.has(`/app/page/${pageId}`)) {
+    return true;
+  }
+
+  return page.type === 'task' ? !cached.boards.has(pageId) : !cached.notes.has(pageId);
+}
+
 export async function prefetchSelected(options = {}) {
   if (!online || prefetching) {
     return;
@@ -756,6 +801,11 @@ export async function prefetchSelected(options = {}) {
     } catch {
       /* Keep an existing notebook cache when the endpoint is unavailable. */
     }
+    // Der bisherige Stand muss vor dem Überschreiben der Liste feststehen - er
+    // ist der Vergleichswert, an dem das Delta hängt.
+    const [knownPages, cachedKeys] = await Promise.all([db.getAllPages(), db.getCachedKeys()]);
+    const known = new Map(knownPages.map((page) => [Number(page.id), page]));
+
     const data = await apiFetch('/api/pages?sort=updated');
     const pages = Array.isArray(data.pages) ? data.pages : [];
     await cachePageList(pages);
@@ -769,10 +819,18 @@ export async function prefetchSelected(options = {}) {
     }
     await db.prunePages([...new Set(keepIds)]);
 
-    prefetchProgress = { done: 0, total: selected.length };
+    // Nach einem Deploy ist das gespeicherte Seiten-HTML überholt. Ohne diesen
+    // Abgleich bliebe es hängen, bis sich der Inhalt der Seite selbst ändert.
+    const build = buildSignature();
+    const staleDocuments = String(await db.metaGet('documents_build', '')) !== build;
+
+    const outstanding = selected.filter(
+      (page) => needsPrefetch(page, known, cachedKeys, staleDocuments),
+    );
+    prefetchProgress = { done: 0, total: outstanding.length };
     emit();
 
-    await runPool(selected, async (page) => {
+    await runPool(outstanding, async (page) => {
       try {
         if (!dirtyPageIds.has(Number(page.id))) {
           if (page.type === 'note') {
@@ -819,6 +877,7 @@ export async function prefetchSelected(options = {}) {
     if (!signal.aborted) {
       await pruneAttachmentCache();
       await db.metaSet('last_prefetch_at', Date.now());
+      await db.metaSet('documents_build', build);
     }
     if (navigator.storage?.persist) {
       try {

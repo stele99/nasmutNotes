@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use App\Repositories\CategoryRepository;
+use App\Repositories\PageRepository;
 use App\Repositories\TaskRepository;
 use App\Support\Env;
 use App\Support\NotFoundException;
@@ -19,7 +20,19 @@ final class TaskBoardService
         private readonly PageService $pages,
         private readonly CategoryRepository $categories,
         private readonly TaskRepository $tasks,
+        private readonly PageRepository $pageRepository,
     ) {
+    }
+
+    /**
+     * Kapitel und Aufgaben führen ihre eigenen Zeitstempel; die Seite darüber
+     * blieb davon bisher unberührt. Damit galt eine Aufgabenliste nach außen als
+     * unverändert - sie rutschte weder in „Zuletzt bearbeitet" nach oben, noch
+     * erkannte der Offline-Prefetch, dass er sie neu laden muss.
+     */
+    private function touchPage(int $pageId): void
+    {
+        $this->pageRepository->touchUpdatedAt($pageId);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -51,7 +64,15 @@ final class TaskBoardService
         $page = $this->pages->find($user, $pageId);
         $this->assertIsTaskPage($page);
 
-        return $this->categories->create((int) $page['id'], $this->validateCategoryName($name), $color, $wipLimit);
+        $category = $this->categories->create(
+            (int) $page['id'],
+            $this->validateCategoryName($name),
+            $color,
+            $wipLimit,
+        );
+        $this->touchPage((int) $page['id']);
+
+        return $category;
     }
 
     /**
@@ -77,6 +98,7 @@ final class TaskBoardService
         }
 
         $this->categories->update((int) $category['id'], $fields);
+        $this->touchPage((int) $category['page_id']);
 
         $updated = $this->categories->findById((int) $category['id']);
         assert($updated !== null);
@@ -113,6 +135,8 @@ final class TaskBoardService
             $this->pdo->rollBack();
             throw $e;
         }
+
+        $this->touchPage((int) $category['page_id']);
     }
 
     /**
@@ -141,7 +165,7 @@ final class TaskBoardService
             }
         }
 
-        return $this->tasks->create(
+        $task = $this->tasks->create(
             (int) $category['id'],
             $title,
             $this->validateDescription($description),
@@ -149,6 +173,9 @@ final class TaskBoardService
             $this->validateLink($link),
             $isDone,
         );
+        $this->touchPage((int) $category['page_id']);
+
+        return $task;
     }
 
     /**
@@ -214,6 +241,8 @@ final class TaskBoardService
             throw $e;
         }
 
+        $this->touchPage((int) $category['page_id']);
+
         return $tasks;
     }
 
@@ -254,6 +283,8 @@ final class TaskBoardService
             throw new TaskVersionConflictException($current);
         }
 
+        $this->touchPage($this->categoryPageId((int) $task['category_id']));
+
         $updated = $this->tasks->find((int) $task['id']);
         assert($updated !== null);
 
@@ -264,6 +295,7 @@ final class TaskBoardService
     {
         $task = $this->resolveOwnedTask($user, $taskId);
         $this->tasks->delete((int) $task['id']);
+        $this->touchPage($this->categoryPageId((int) $task['category_id']));
     }
 
     /** @return array<string, mixed> */
@@ -271,7 +303,7 @@ final class TaskBoardService
     {
         $task = $this->resolveOwnedTask($user, $taskId);
 
-        return $this->tasks->create(
+        $copy = $this->tasks->create(
             (int) $task['category_id'],
             (string) $task['title'],
             $task['description'],
@@ -279,6 +311,9 @@ final class TaskBoardService
             $task['link'],
             false,
         );
+        $this->touchPage($this->categoryPageId((int) $task['category_id']));
+
+        return $copy;
     }
 
     /** @return array<string, mixed> */
@@ -319,6 +354,8 @@ final class TaskBoardService
             $this->pdo->rollBack();
             throw $e;
         }
+
+        $this->touchPage((int) $targetCategory['page_id']);
 
         $updated = $this->tasks->find($taskId);
         assert($updated !== null);

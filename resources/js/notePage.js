@@ -397,6 +397,15 @@ export function noteEditorPage() {
         + `${this.compressionBytes(this.compressionResult.saved_bytes)} eingespart`;
     },
 
+    /**
+     * Alpine wertet auch die Direktiven innerhalb eines ausgeblendeten `x-show`
+     * aus - ein direkter Zugriff auf `compressionResult` schlüge dort fehl,
+     * solange noch kein Ergebnis vorliegt.
+     */
+    compressionSkippedCount() {
+      return this.compressionResult?.skipped || 0;
+    },
+
     finishCompression() {
       window.location.reload();
     },

@@ -1,16 +1,19 @@
 <script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>;</script>
-<div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="closeSidebar" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)">
+<div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
+    <?php /* Mobil decken beide Leisten den Bildschirm vollständig ab; eine
+             Überlagerung braucht nur die schmale Notizbuch-Schublade, die
+             zwischen `md` und `xl` über der Seitenliste liegt. */ ?>
     <div
-        x-show="sidebarOpen"
+        x-show="notebookDrawerOpen"
         x-cloak
-        class="fixed inset-0 z-30 bg-black/30 md:hidden"
-        @click="closeSidebar"
+        class="fixed inset-0 z-[45] hidden bg-black/30 md:block xl:hidden"
+        @click="notebookDrawerOpen = false"
     ></div>
     <aside class="notebook-rail relative hidden h-dvh shrink-0 flex-col border-r xl:flex" :style="notebookRailStyle()">
         <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
         <div class="notebook-resize-handle" role="separator" aria-label="Notizbuchleiste in der Breite ändern" aria-orientation="vertical" tabindex="0" :aria-valuenow="notebookRailWidth" aria-valuemin="220" aria-valuemax="420" @pointerdown="startNotebookResize" @keydown.left.prevent="resizeNotebookRailBy(-16)" @keydown.right.prevent="resizeNotebookRailBy(16)"></div>
     </aside>
-    <aside x-show="notebookDrawerOpen || (sidebarOpen && mobileLevel === 'books')" x-cloak class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r md:w-80 xl:hidden" :aria-hidden="!(notebookDrawerOpen || (sidebarOpen && mobileLevel === 'books'))" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+    <aside x-show="isNotebookDrawerVisible()" x-cloak class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r md:w-80 xl:hidden" :aria-hidden="isNotebookDrawerVisible() ? 'false' : 'true'" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
         <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
     </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
@@ -24,10 +27,9 @@
         data-page-permission="<?= e((string) ($page['share_permission'] ?? '')) ?>"
         data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>"
     >
-        <button x-show="!sidebarOpen || mobileLevel === 'pages'" x-cloak @click="sidebarOpen && mobileLevel === 'pages' ? (mobileLevel = 'books') : openNavigationToPages()" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" :aria-label="sidebarOpen && mobileLevel === 'pages' ? 'Zu den Notizbüchern' : 'Zur Seitenauswahl'" :aria-expanded="sidebarOpen">
-            <span x-show="!sidebarOpen || mobileLevel !== 'pages'" x-icon="layers"></span>
-            <span x-show="sidebarOpen && mobileLevel === 'pages'" x-cloak x-icon="menu"></span>
-        </button>
+        <?php /* Der Rückweg aus dem Seiteninhalt liegt mobil im Kopf der Seite
+                 selbst (siehe page_note.php / page_task.php) - dort steht er
+                 neben den übrigen Aktionen, statt den Text zu überlagern. */ ?>
         <?php if ($page['type'] === 'note'): ?>
             <?php include __DIR__ . '/page_note.php'; ?>
         <?php else: ?>

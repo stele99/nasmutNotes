@@ -6,16 +6,19 @@
     @page-drop-move.window="movePagesByIds($event.detail.pageIds, $event.detail.notebookId)"
     @page-drop-trash.window="trashPagesByIds($event.detail.pageIds)"
     class="page-sidebar fixed inset-y-0 left-0 z-40 flex w-full -translate-x-full flex-col border-r transition-transform duration-200 md:sticky md:top-0 md:w-80 md:translate-x-0 xl:w-[22rem]"
-    :class="{ 'translate-x-0': sidebarOpen }"
+    :class="{ 'translate-x-0': isPageSidebarVisible() }"
+    :aria-hidden="isMobile && !isPageSidebarVisible() ? 'true' : 'false'"
     style="border-color: var(--color-border); background-color: var(--color-bg-subtle);"
 >
-    <div class="relative flex items-center gap-2 border-b pb-3 pl-14 pr-4 pt-5 md:pl-4" style="border-color: var(--color-border);">
-        <button type="button" @click="notebookDrawerOpen = true" class="icon-action hidden md:inline-flex xl:hidden" aria-label="Notizbücher öffnen" :aria-expanded="notebookDrawerOpen" x-icon="book-open"></button>
+    <div class="relative flex items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
+        <?php /* Zurück zu den Notizbüchern: mobil die vorige Stapelebene, auf
+                 mittleren Breiten die überlagernde Schublade. */ ?>
+        <button type="button" @click="isMobile ? showBooks() : (notebookDrawerOpen = true)" class="icon-action inline-flex xl:hidden" aria-label="Notizbücher öffnen" :aria-expanded="notebookDrawerOpen" x-icon="book-open"></button>
         <div class="absolute left-1/2 flex max-w-[calc(100%_-_7rem)] -translate-x-1/2 items-center justify-center gap-2 md:static md:min-w-0 md:max-w-none md:flex-1 md:translate-x-0 md:justify-start">
             <span x-show="activeCollection === 'notebook'" x-cloak class="notebook-appearance shrink-0" :style="activeNotebookIconStyle()"><span x-show="activeNotebookIconIs('book-open')" x-icon="book-open:size-5"></span><span x-show="activeNotebookIconIs('folder')" x-icon="folder:size-5"></span><span x-show="activeNotebookIconIs('briefcase')" x-icon="briefcase:size-5"></span><span x-show="activeNotebookIconIs('house')" x-icon="house:size-5"></span><span x-show="activeNotebookIconIs('plane')" x-icon="plane:size-5"></span><span x-show="activeNotebookIconIs('heart')" x-icon="heart:size-5"></span><span x-show="activeNotebookIconIs('lightbulb')" x-icon="lightbulb:size-5"></span><span x-show="activeNotebookIconIs('laptop')" x-icon="laptop:size-5"></span><span x-show="activeNotebookIconIs('wrench')" x-icon="wrench:size-5"></span><span x-show="activeNotebookIconIs('utensils')" x-icon="utensils:size-5"></span><span x-show="activeNotebookIconIs('graduation-cap')" x-icon="graduation-cap:size-5"></span><span x-show="activeNotebookIconIs('star')" x-icon="star:size-5"></span></span>
             <h2 class="truncate text-base font-semibold" x-text="collectionLabel()"></h2>
         </div>
-        <button type="button" @click="closeSidebar" class="icon-action ml-auto md:hidden" aria-label="Menü schließen" x-icon="x"></button>
+        <button type="button" @click="showContent()" class="icon-action ml-auto md:hidden" aria-label="Seitenauswahl schließen" x-icon="x"></button>
     </div>
     <div class="space-y-3 p-3">
         <form x-show="activeCollection !== 'trash'" @submit.prevent="search" class="flex items-center gap-2 rounded-md border px-2 py-2" style="border-color: var(--color-border); background: var(--color-bg);"><span x-icon="search"></span><input x-model="searchQuery" @input="if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none"><button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button></form>

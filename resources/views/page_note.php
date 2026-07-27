@@ -1,15 +1,21 @@
 <div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
     <div class="note-sticky-header page-toolbar flex items-center gap-2">
+        <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
+                 Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
+        <button type="button" @click="goBack()" class="icon-action flex shrink-0 items-center border p-2 md:hidden" style="border-color: var(--color-border);" title="Zurück zur Seitenauswahl" aria-label="Zurück zur Seitenauswahl" x-icon="chevron-left"></button>
         <?php /* Der Seitentitel steht mobil ohnehin direkt darunter als Überschrift -
                  der Breadcrumb kostet dort nur Höhe und entfällt deshalb. Die
-                 Freigabe-Anzeige und die Aktionen bleiben sichtbar. */ ?>
-        <span class="hidden min-w-0 items-center gap-2 md:flex">
+                 Freigabe-Anzeige und die Aktionen bleiben sichtbar. Darüber kürzt
+                 jeder Bestandteil mit Auslassungspunkten, statt umzubrechen: Eine
+                 zweite Zeile machte den Kopf höher und verschöbe damit den Versatz
+                 der darunter klebenden Werkzeugleiste. */ ?>
+        <span class="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             <?php $nbIcon = !empty($page['is_shared']) ? 'share-2' : ($page['notebook_icon'] ?? 'book-open'); ?>
             <?php $nbColor = !empty($page['is_shared']) ? 'var(--color-text-muted)' : ($page['notebook_color'] ?? 'var(--color-text-muted)'); ?>
-            <span style="color: <?= e($nbColor) ?>;" x-icon="<?= e($nbIcon) ?>"></span>
-            <span><?= e(!empty($page['is_shared']) ? 'Geteilt' : (string) ($page['notebook_name'] ?? 'Nicht zugewiesen')) ?></span>
-            <span style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
-            <span class="truncate" x-text="pageTitle"></span>
+            <span class="shrink-0" style="color: <?= e($nbColor) ?>;" x-icon="<?= e($nbIcon) ?>"></span>
+            <span class="min-w-0 truncate"><?= e(!empty($page['is_shared']) ? 'Geteilt' : (string) ($page['notebook_name'] ?? 'Nicht zugewiesen')) ?></span>
+            <span class="shrink-0" style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
+            <span class="min-w-0 truncate" x-text="pageTitle"></span>
         </span>
         <div class="ml-auto flex shrink-0 items-center gap-2">
             <span x-show="isShared" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
@@ -20,14 +26,14 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
-            <button type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
-                <span x-icon="history"></span><span class="hidden md:inline">Verlauf</span>
+            <button type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
+                <span x-icon="history"></span><span class="hidden lg:inline">Verlauf</span>
             </button>
-            <button x-show="!isShared && canEditPage" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
-                <span x-icon="image"></span><span class="hidden md:inline">Komprimieren</span>
+            <button x-show="!isShared && canEditPage" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
+                <span x-icon="image"></span><span class="hidden lg:inline">Komprimieren</span>
             </button>
-            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
-                <span x-icon="share-2"></span><span class="hidden md:inline">Teilen</span>
+            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
+                <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>
         </div>
     </div>
@@ -193,7 +199,7 @@
                 <p class="mt-2 text-xs" style="color: var(--color-text-muted);">Empfehlung: 82 %. Die Qualität gilt für JPEG und WebP; PNG wird verlustfrei komprimiert.</p>
                 <p class="mt-4 rounded-md p-3 text-xs" style="color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 9%, transparent);">Die Bilddateien werden ersetzt und sind nicht über den Versionsverlauf wiederherstellbar.</p>
             </div>
-            <div x-show="compressionResult" x-cloak class="mt-5 rounded-lg p-4" style="background: var(--color-bg-subtle);"><p class="font-medium" style="color: var(--color-success);">Kompression abgeschlossen</p><p class="mt-1 text-sm" x-text="compressionResultLabel()"></p><p x-show="compressionResult && compressionResult.skipped > 0" class="mt-1 text-xs" style="color: var(--color-text-muted);"><span x-text="compressionResult.skipped"></span> Bild(er) waren bereits optimal oder nicht verfügbar.</p></div>
+            <div x-show="compressionResult" x-cloak class="mt-5 rounded-lg p-4" style="background: var(--color-bg-subtle);"><p class="font-medium" style="color: var(--color-success);">Kompression abgeschlossen</p><p class="mt-1 text-sm" x-text="compressionResultLabel()"></p><p x-show="compressionSkippedCount() > 0" class="mt-1 text-xs" style="color: var(--color-text-muted);"><span x-text="compressionSkippedCount()"></span> Bild(er) waren bereits optimal oder nicht verfügbar.</p></div>
             <p x-show="compressionError" x-cloak x-text="compressionError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
             <div class="mt-6 flex justify-end gap-2"><button x-show="!compressionResult" type="button" @click="closeCompressionDialog" :disabled="compressionBusy" class="btn btn-quiet">Abbrechen</button><button x-show="!compressionResult" type="submit" :disabled="compressionBusy" class="btn btn-primary" x-text="compressionBusy ? 'Komprimiere…' : 'Komprimieren'"></button><button x-show="compressionResult" type="button" @click="finishCompression" class="btn btn-primary">Fertig und neu laden</button></div>
         </form>

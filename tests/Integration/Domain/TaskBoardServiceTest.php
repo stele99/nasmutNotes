@@ -34,7 +34,13 @@ final class TaskBoardServiceTest extends TestCase
         $workspaces = new WorkspaceRepository($pdo);
         $pageRepo = new PageRepository($pdo);
         $this->pages = new PageService($pageRepo, $workspaces);
-        $this->board = new TaskBoardService($pdo, $this->pages, new CategoryRepository($pdo), new TaskRepository($pdo));
+        $this->board = new TaskBoardService(
+            $pdo,
+            $this->pages,
+            new CategoryRepository($pdo),
+            new TaskRepository($pdo),
+            $pageRepo,
+        );
 
         $this->userA = $this->makeUser($pdo, $workspaces, 'a@example.com');
         $this->userB = $this->makeUser($pdo, $workspaces, 'b@example.com');
