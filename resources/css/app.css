@@ -397,7 +397,7 @@ body.is-resizing-sidebar {
 .note-sticky-toolbar {
   background: var(--color-bg);
   box-shadow: 0 1px 0 color-mix(in srgb, var(--color-border) 70%, transparent);
-  padding-top: 0.75rem;
+  padding-top: 1.75rem;
   position: sticky;
   top: var(--note-sticky-header-height);
   z-index: 25;
@@ -922,6 +922,27 @@ button:disabled,
   border-radius: var(--radius-md);
   padding: 0.75rem 1rem;
   overflow-x: auto;
+}
+
+/* Codeblöcke lassen sich als Ganzes auswählen (z. B. mit Escape aus dem Block
+   heraus) statt nur zeichenweise per Textmarkierung - ProseMirror setzt dafür
+   dieselbe Klasse wie bei Bildern, nur ohne eigene Formatierung. */
+.prose-editor .tiptap pre.ProseMirror-selectednode {
+  background: color-mix(in srgb, var(--color-text) 12%, var(--color-bg-subtle));
+  outline: 3px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  outline-offset: 3px;
+}
+
+/* Inline-Code (Markierung `code`) statt Codeblock (Knoten `codeBlock`, immer in
+   `pre`): `:not(pre) > code` trifft nur die Inline-Variante, `pre` bringt seine
+   eigene Formatierung schon mit. */
+.prose-editor .tiptap :not(pre) > code,
+.public-note-content :not(pre) > code {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.15em 0.4em;
 }
 
 .prose-editor .tiptap .tableWrapper {

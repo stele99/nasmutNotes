@@ -102,6 +102,8 @@
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" aria-label="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" aria-label="Kursiv" x-icon="italic"></button>
             <button type="button" data-editor-command="strike" @click.prevent="toggleStrike" class="toolbar-button toolbar-text" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
+            <button type="button" data-editor-command="code" @click.prevent="toggleCode" class="toolbar-button" title="Code (inline)" aria-label="Code (inline)" x-icon="code"></button>
+            <button type="button" data-editor-command="codeBlock" @click.prevent="toggleCodeBlock" class="toolbar-button" title="Codeblock" aria-label="Codeblock" x-icon="square-code"></button>
             <span class="toolbar-divider"></span>
             <button type="button" data-editor-command="heading1" @click.prevent="toggleHeading1" class="toolbar-button" title="Überschrift 1" aria-label="Überschrift 1" x-icon="heading-1"></button>
             <button type="button" data-editor-command="heading2" @click.prevent="toggleHeading2" class="toolbar-button" title="Überschrift 2" aria-label="Überschrift 2" x-icon="heading-2"></button>

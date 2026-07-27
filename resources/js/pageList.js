@@ -47,6 +47,8 @@ function offlinePageHtml(page) {
           <div x-show="canEditPage" class="note-sticky-toolbar editor-toolbar mb-5 mt-6 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" x-icon="italic"></button>
+            <button type="button" data-editor-command="code" @click.prevent="toggleCode" class="toolbar-button" title="Code (inline)" x-icon="code"></button>
+            <button type="button" data-editor-command="codeBlock" @click.prevent="toggleCodeBlock" class="toolbar-button" title="Codeblock" x-icon="square-code"></button>
             <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button" title="Tabelle" x-icon="table"></button>
           </div>
           <div class="prose-editor" x-ref="editor"></div>

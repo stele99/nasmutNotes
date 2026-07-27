@@ -1156,6 +1156,12 @@ export function noteEditorPage() {
         case 'strike':
           chain.toggleStrike().run();
           break;
+        case 'code':
+          chain.toggleCode().run();
+          break;
+        case 'codeBlock':
+          chain.toggleCodeBlock().run();
+          break;
         case 'heading1':
           chain.toggleHeading({ level: 1 }).run();
           break;
@@ -1214,6 +1220,14 @@ export function noteEditorPage() {
 
     toggleStrike() {
       this.runEditorCommand('strike');
+    },
+
+    toggleCode() {
+      this.runEditorCommand('code');
+    },
+
+    toggleCodeBlock() {
+      this.runEditorCommand('codeBlock');
     },
 
     toggleHeading1() {
@@ -1284,6 +1298,8 @@ export function noteEditorPage() {
           bold: editor.isActive('bold'),
           italic: editor.isActive('italic'),
           strike: editor.isActive('strike'),
+          code: editor.isActive('code'),
+          codeBlock: editor.isActive('codeBlock'),
           heading1: editor.isActive('heading', { level: 1 }),
           heading2: editor.isActive('heading', { level: 2 }),
           bulletList: editor.isActive('bulletList'),
