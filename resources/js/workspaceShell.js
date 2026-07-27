@@ -18,6 +18,7 @@ export function workspaceShell() {
     notebookRailMoveHandler: null,
     notebookRailEndHandler: null,
     mobileSwipeStart: null,
+    mobileSwipeHorizontal: false,
     mobileLevel: 'books',
     notebooks: [],
     activeCollection: 'home',
@@ -249,17 +250,47 @@ export function workspaceShell() {
       }
       const touch = event.touches[0];
       this.mobileSwipeStart = { x: touch.clientX, y: touch.clientY };
+      this.mobileSwipeHorizontal = false;
+    },
+
+    /**
+     * Ohne dies erkennt der Browser dieselbe Fingerbewegung parallel als eigene
+     * Zurück-Geste (Edge-Swipe). Der dadurch ausgelöste `popstate` reißt die App
+     * dann zur zuvor besuchten Seite (meist die Startseite), noch während die
+     * eigene Sidebar-Animation läuft. preventDefault() auf einer eindeutig
+     * horizontalen Bewegung unterbindet die native Geste zuverlässig.
+     */
+    moveMobileSwipe(event) {
+      if (!this.mobileSwipeStart || event.touches?.length !== 1) {
+        return;
+      }
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - this.mobileSwipeStart.x;
+      const deltaY = touch.clientY - this.mobileSwipeStart.y;
+      if (!this.mobileSwipeHorizontal) {
+        if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
+          return;
+        }
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 0.6) {
+          this.mobileSwipeStart = null;
+          return;
+        }
+        this.mobileSwipeHorizontal = true;
+      }
+      event.preventDefault();
     },
 
     endMobileSwipe(event) {
       if (!this.mobileSwipeStart || event.changedTouches?.length !== 1) {
         this.mobileSwipeStart = null;
+        this.mobileSwipeHorizontal = false;
         return;
       }
       const touch = event.changedTouches[0];
       const deltaX = touch.clientX - this.mobileSwipeStart.x;
       const deltaY = touch.clientY - this.mobileSwipeStart.y;
       this.mobileSwipeStart = null;
+      this.mobileSwipeHorizontal = false;
       if (deltaX > -80 || Math.abs(deltaY) > Math.abs(deltaX) * 0.6) {
         return;
       }

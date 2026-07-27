@@ -20,14 +20,14 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
-            <button type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border px-3 py-1.5 text-sm font-medium" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
-                <span x-icon="history"></span>Verlauf
+            <button type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
+                <span x-icon="history"></span><span class="hidden md:inline">Verlauf</span>
             </button>
-            <button x-show="!isShared && canEditPage" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border px-3 py-1.5 text-sm font-medium" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
-                <span x-icon="image"></span>Komprimieren
+            <button x-show="!isShared && canEditPage" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
+                <span x-icon="image"></span><span class="hidden md:inline">Komprimieren</span>
             </button>
-            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border px-3 py-1.5 text-sm font-medium" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
-                <span x-icon="share-2"></span>Teilen
+            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium md:px-3 md:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
+                <span x-icon="share-2"></span><span class="hidden md:inline">Teilen</span>
             </button>
         </div>
     </div>

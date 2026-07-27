@@ -978,6 +978,14 @@ button:disabled,
 }
 
 @media (max-width: 767px) {
+  /* Verhindert, dass der Browser eine horizontale Wischgeste zusätzlich als
+     eigene Zurück-Navigation interpretiert (siehe moveMobileSwipe()). Vertikales
+     Scrollen bleibt über pan-y erlaubt. */
+  .workspace-shell {
+    touch-action: pan-y;
+    overscroll-behavior-x: none;
+  }
+
   .note-page {
     --note-sticky-header-height: 3.5rem;
   }
