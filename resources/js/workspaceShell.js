@@ -18,8 +18,17 @@ const MOBILE_VIEWS = ['books', 'pages', 'content'];
 const SWIPE_MIN_DISTANCE = 60;
 /** Ab hier steht fest, ob waagerecht oder senkrecht gewischt wird. */
 const SWIPE_LOCK_DISTANCE = 12;
-/** Aus diesem Randstreifen heraus wischt der Nutzer die Systemgeste von iOS. */
+/**
+ * Aus diesem Randstreifen heraus wischt der Nutzer im Browser-Tab die
+ * Zurück-Geste von Safari, nicht unsere eigene - das lässt sich von der Seite
+ * aus nicht unterdrücken, Safari erkennt sie unterhalb der eigenen Touch-
+ * Events. Als installierte App (Home-Bildschirm) gibt es diese Systemgeste
+ * gar nicht, dort bräuchte die Zone nur einen Sicherheitsabstand zum Rand.
+ */
 const SWIPE_EDGE_ZONE = 24;
+const SWIPE_EDGE_ZONE_STANDALONE = 8;
+const isStandaloneDisplay = () => window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
 
 /** Die drei Ebenen selbst liegen fest im Ansichtsfenster - Dialoge ebenso. */
 const MOBILE_PANEL_SELECTOR = '.page-sidebar, .notebook-drawer';
@@ -334,9 +343,8 @@ export function workspaceShell() {
       }
 
       const touch = event.touches[0];
-      // Aus dem linken Randstreifen heraus gehört die Geste dem Browser bzw.
-      // iOS; eine eigene Auswertung liefe dort gegen die Systemnavigation.
-      if (touch.clientX <= SWIPE_EDGE_ZONE) {
+      const edgeZone = isStandaloneDisplay() ? SWIPE_EDGE_ZONE_STANDALONE : SWIPE_EDGE_ZONE;
+      if (touch.clientX <= edgeZone) {
         return;
       }
 
