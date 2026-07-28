@@ -21,9 +21,10 @@ const SWIPE_LOCK_DISTANCE = 12;
 /**
  * Aus diesem Randstreifen heraus wischt der Nutzer die native Zurück-Geste,
  * nicht unsere eigene - das lässt sich von der Seite aus nicht unterdrücken,
- * iOS erkennt sie unterhalb der eigenen Touch-Events. Das gilt unverändert
- * auch als installierte App: Home-Bildschirm-Apps laufen in einer WKWebView
- * mit derselben nativen Kantengeste, unabhängig vom Safari-Chrome.
+ * iOS erkennt sie unterhalb der eigenen Touch-Events. Ohne diesen Ausschluss
+ * würde derselbe Fingerzug zweimal "zurück" auslösen: einmal nativ, einmal
+ * über unsere eigene Erkennung (siehe unten, beide rufen letztlich denselben
+ * `history.back()` auf).
  */
 const SWIPE_EDGE_ZONE = 24;
 
@@ -51,49 +52,51 @@ function blocksSwipe(element, root) {
   return false;
 }
 
-const isStandaloneDisplay = () => window.matchMedia('(display-mode: standalone)').matches
-  || window.navigator.standalone === true;
+/**
+ * Länge der Sitzungs-Historie beim Laden dieser Seite - der Referenzwert, um
+ * zu erkennen, ob in dieser Ladung schon eigene Verlaufseinträge existieren.
+ * Ohne diese Prüfung würde `history.back()` bei einem Direktaufruf (z. B.
+ * geteilter Link, frisch installierte App) die App verlassen, weil es dort
+ * noch nichts zum Zurückgehen gibt.
+ */
+const initialHistoryLength = window.history.length;
 
 /**
- * Als installierte App löst die native Kantengeste `history.back()` aus -
- * unabhängig davon, ob gerade unsere eigene Ebene (Notizbücher/Seiten/Inhalt)
- * oder eine echte andere Seite gemeint war. Auf einer Inhaltsebene ist das
- * praktisch immer ein Fehlgriff: Die Geste soll dort dieselbe Aktion auslösen
- * wie unsere eigene Wisch-Erkennung, nämlich eine Ebene zurück.
+ * Notizbuch- und Seitenauswahl-Ebene bekommen eigene, URL-neutrale
+ * Verlaufseinträge (`history.state` ändert sich, die sichtbare Adresse
+ * bleibt gleich). Sowohl die native Zurück-Geste als auch unsere eigene
+ * Wisch-Erkennung rufen für den Ebenenwechsel letztlich `history.back()`
+ * bzw. `history.forward()` auf (siehe `goBack()`/`goForward()` unten) - beide
+ * Auslöser navigieren dadurch durch dieselbe Historie und landen zuverlässig
+ * am selben Ziel, statt sich gegenseitig zu stören.
  *
- * Der Eingriff läuft in drei Schritten: Die Navigation abfangen, bevor
- * `pageList`s eigener popstate-Listener sie als echten Seitenwechsel
- * verarbeitet (`stopImmediatePropagation`, deshalb muss dieser Listener vor
- * jenem registriert sein - daher hier auf Modulebene statt in `init()`),
- * die Browser-Historie per `history.go(1)` unbemerkt rückgängig machen, und
- * stattdessen `goBack()` der Shell aufrufen. Steht die Shell bereits auf
- * „books“, gibt es lokal nichts zurückzugehen - dann läuft die Navigation
- * normal durch.
+ * Der Listener muss vor `pageList`s eigenem popstate-Listener laufen, damit
+ * er unsere eigenen Einträge abfangen kann, bevor jener sie fälschlich als
+ * echten Seitenwechsel liest - deshalb Registrierung auf Modulebene statt in
+ * `init()` (Module werden vor `Alpine.start()` ausgewertet).
  */
-function armMobileBackTrap() {
-  if (!isStandaloneDisplay()) {
+window.addEventListener('popstate', (event) => {
+  const state = event.state;
+  if (!state?.nasmutView) {
     return;
   }
 
-  let undoing = false;
-  window.addEventListener('popstate', (event) => {
-    if (undoing) {
-      undoing = false;
-      return;
-    }
-    const shell = window.__workspaceShellOwner__;
-    if (!shell || !shell.isMobile || shell.mobileView === 'books') {
-      return;
-    }
+  event.stopImmediatePropagation();
+  const shell = window.__workspaceShellOwner__;
+  if (!shell) {
+    return;
+  }
 
-    event.stopImmediatePropagation();
-    undoing = true;
-    history.go(1);
-    shell.goBack();
-  });
-}
-
-armMobileBackTrap();
+  shell.notebookDrawerOpen = false;
+  shell.mobileView = state.nasmutView;
+  if (state.nasmutView === 'pages') {
+    shell.activeCollection = state.collection;
+    shell.activeNotebookId = state.notebookId ?? null;
+    window.dispatchEvent(new CustomEvent('collection-changed', {
+      detail: { collection: state.collection, notebookId: state.notebookId ?? null },
+    }));
+  }
+});
 
 export function workspaceShell() {
   return {
@@ -132,9 +135,9 @@ export function workspaceShell() {
     notebookSaving: false,
 
     async init() {
-      // Für `armMobileBackTrap()` auf Modulebene - der Listener dort steht
-      // bereits vor jedem Alpine-Init fest, braucht aber Zugriff auf die
-      // gerade entstehende Instanz.
+      // Für den popstate-Listener auf Modulebene - der steht bereits vor
+      // jedem Alpine-Init fest, braucht aber Zugriff auf die gerade
+      // entstehende Instanz.
       window.__workspaceShellOwner__ = this;
       this.restoreNotebookRailWidth();
       this.watchViewport();
@@ -262,6 +265,7 @@ export function workspaceShell() {
     },
 
     selectCollection(collection, notebookId = null) {
+      this.pushMobileState('pages', { collection, notebookId });
       this.activeCollection = collection;
       this.activeNotebookId = notebookId;
       this.notebookDrawerOpen = false;
@@ -273,12 +277,35 @@ export function workspaceShell() {
     },
 
     /**
+     * Eigener Verlaufseintrag für die Notizbuch- bzw. Seitenauswahl-Ebene -
+     * nur mobil relevant, die Ebenen existieren am Desktop nicht. Die
+     * sichtbare Adresse bleibt unverändert, nur `history.state` trägt die
+     * Ebene; der Listener oben liest ihn beim Zurücknavigieren wieder aus.
+     */
+    pushMobileState(view, extra = {}) {
+      if (!this.isMobile) {
+        return;
+      }
+      window.history.pushState({ nasmutView: view, ...extra }, '', window.location.href);
+    },
+
+    /**
      * Der einzige Weg aus der Notizbuchliste zurück zur Übersicht - ausgelöst
-     * über das nasmutNotes-Logo, nicht über einen eigenen Listeneintrag.
+     * über das nasmutNotes-Logo, nicht über einen eigenen Listeneintrag. Läuft
+     * bewusst nicht über `selectCollection()`: Der eigentliche Verlaufseintrag
+     * entsteht gleich darauf über die echte Navigation zu `/app` (Event
+     * `navigate-home`) - ein zusätzlicher hier würde pro Klick zwei Einträge
+     * erzeugen, von denen der zweite sofort wieder überschrieben wird.
      */
     navigateHome() {
-      this.selectCollection('home');
+      this.activeCollection = 'home';
+      this.activeNotebookId = null;
+      this.notebookDrawerOpen = false;
       this.mobileView = 'content';
+      this.openNotebookMenuId = null;
+      window.dispatchEvent(new CustomEvent('collection-changed', {
+        detail: { collection: 'home', notebookId: null },
+      }));
       window.dispatchEvent(new Event('navigate-home'));
     },
 
@@ -354,6 +381,10 @@ export function workspaceShell() {
     },
 
     showBooks() {
+      if (this.mobileView !== 'books') {
+        this.pushMobileState('books');
+      }
+      this.notebookDrawerOpen = false;
       this.mobileView = 'books';
     },
 
@@ -367,16 +398,37 @@ export function workspaceShell() {
       this.mobileView = 'content';
     },
 
-    /** Eine Ebene zurück: Inhalt → Seitenliste → Notizbücher. */
+    /**
+     * Eine Ebene zurück: Inhalt → Seitenliste → Notizbücher. Existiert für
+     * diese Ladung schon ein eigener Verlaufseintrag, läuft das über die
+     * echte Browser-Historie - dann landen Wischgeste, Zurück-Button und
+     * native Geste garantiert am selben Ziel (siehe popstate-Listener oben).
+     * Ohne eigenen Eintrag (z. B. Direktaufruf einer Seite über einen Link)
+     * bleibt der rein lokale Ebenenwechsel als Rückfall.
+     */
     goBack() {
       this.notebookDrawerOpen = false;
+      if (this.mobileView === 'books') {
+        return;
+      }
+      if (window.history.length > initialHistoryLength) {
+        window.history.back();
+        return;
+      }
       const index = MOBILE_VIEWS.indexOf(this.mobileView);
       this.mobileView = MOBILE_VIEWS[Math.max(0, index - 1)];
     },
 
-    /** Eine Ebene vor: Notizbücher → Seitenliste → Inhalt. */
+    /** Eine Ebene vor: Notizbücher → Seitenliste → Inhalt. Siehe `goBack()`. */
     goForward() {
       this.notebookDrawerOpen = false;
+      if (this.mobileView === 'content') {
+        return;
+      }
+      if (window.history.length > initialHistoryLength) {
+        window.history.forward();
+        return;
+      }
       const index = MOBILE_VIEWS.indexOf(this.mobileView);
       this.mobileView = MOBILE_VIEWS[Math.min(MOBILE_VIEWS.length - 1, index + 1)];
     },
