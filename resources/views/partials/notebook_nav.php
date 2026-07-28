@@ -1,7 +1,7 @@
 <div class="flex min-h-0 flex-1 flex-col" @dragend.window="clearDropTarget">
     <div class="flex items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
         <a href="/app" @click.prevent="navigateHome()" class="flex min-w-0 flex-1 items-center gap-2 font-semibold">
-            <span class="notebook-appearance shrink-0" style="color: var(--color-danger);" x-icon="house:size-5"></span>
+            <img src="/icon/logo-mark.svg" alt="" width="28" height="28" class="size-7 shrink-0">
             <span class="truncate text-base"><span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span>
         </a>
         <?php /* Mobil verlässt man die Notizbücher über „Home“ zur Übersicht
@@ -118,6 +118,20 @@
                                     </template>
                                 </div>
 
+                                <div x-show="blocked.length > 0" x-cloak class="mt-5 space-y-3">
+                                    <h4 class="text-sm font-semibold" style="color: var(--color-danger);">Blockierte Änderungen</h4>
+                                    <template x-for="entry in blocked" :key="entry.id">
+                                        <div class="rounded-lg border p-4" style="border-color: var(--color-danger);">
+                                            <p class="font-medium" x-text="entry.title"></p>
+                                            <p class="mt-1 text-sm" style="color: var(--color-text-muted);" x-text="entry.last_error"></p>
+                                            <div class="mt-3 flex flex-wrap gap-2">
+                                                <button type="button" @click="retryBlocked(entry)" :disabled="isResolvingBlocked(entry) || !statusOnline" class="btn btn-secondary">Erneut versuchen</button>
+                                                <button type="button" @click="discardBlocked(entry)" :disabled="isResolvingBlocked(entry)" class="btn btn-quiet">Lokale Änderung verwerfen</button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+
                                 <h4 class="mt-5 text-sm font-semibold">Lokal synchronisiert</h4>
                                 <dl class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                                     <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Notizen</dt><dd class="mt-1 text-2xl font-semibold" x-text="localNoteCount"></dd></div>
@@ -148,9 +162,7 @@
                                 <h3 class="text-xl font-semibold">Import / Export</h3>
                                 <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Notizen aus anderen Anwendungen übernehmen oder den Workspace sichern.</p>
                                 <?php include __DIR__ . '/import_panel.php'; ?>
-                                <div class="mt-4 rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
-                                    <div class="flex items-center gap-3"><span class="flex size-11 items-center justify-center rounded-xl" style="background: var(--color-bg);" x-icon="folder"></span><div><p class="font-medium">Workspace exportieren</p><p class="text-xs" style="color: var(--color-text-muted);">Die Exportfunktion ist derzeit noch nicht verfügbar.</p></div></div>
-                                </div>
+                                <?php include __DIR__ . '/export_panel.php'; ?>
                             </section>
 
                             <section x-show="isSettingsSection('storage')" x-cloak>

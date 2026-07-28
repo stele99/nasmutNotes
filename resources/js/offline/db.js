@@ -480,6 +480,7 @@ export async function completeNoteSync(id, expectedRevision, serverRow) {
     status: 'pending',
     conflict: null,
     last_error: null,
+    retries: 0,
     updated_at: new Date().toISOString(),
   });
   const currentNote = await req(notes.get(Number(current.page_id)));
@@ -563,6 +564,35 @@ export async function markOutboxBlocked(id, expectedRevision, message) {
   }
   await done;
   return blocked;
+}
+
+/**
+ * Records a transient sync failure only when it still belongs to the revision
+ * that was sent. A newer local edit must keep its own retry state.
+ *
+ * @param {number} id
+ * @param {number} expectedRevision
+ * @param {string} message
+ * @returns {Promise<number|null>}
+ */
+export async function markOutboxRetry(id, expectedRevision, message) {
+  const database = await openDb();
+  const tx = database.transaction('outbox', 'readwrite');
+  const done = txDone(tx);
+  const outbox = tx.objectStore('outbox');
+  const current = await req(outbox.get(Number(id)));
+  let retries = null;
+  if (current && Number(current.revision || 0) === Number(expectedRevision)) {
+    retries = Number(current.retries || 0) + 1;
+    outbox.put({
+      ...current,
+      status: 'pending',
+      last_error: message,
+      retries,
+    });
+  }
+  await done;
+  return retries;
 }
 
 /** @param {string} name @param {string} owner @param {number} ttlMs */

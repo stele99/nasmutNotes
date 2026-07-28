@@ -93,6 +93,7 @@ export async function apiFetch(url, options = {}, allowCsrfRetry = true) {
     const error = new Error(message);
     error.status = response.status;
     error.payload = data;
+    error.retryAfter = response.headers.get('Retry-After');
     throw error;
   }
 

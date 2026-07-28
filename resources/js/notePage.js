@@ -101,9 +101,9 @@ export function noteEditorPage() {
       this.canEditPage = pageRoot?.dataset.pageCanEdit
         ? pageRoot.dataset.pageCanEdit === '1'
         : Boolean(window.__CURRENT_PAGE_CAN_EDIT__);
-      this.canRestoreVersions = !(
-        pageRoot?.dataset.pageIsShared === '1' || Boolean(window.__CURRENT_PAGE_IS_SHARED__)
-      );
+      const isShared = pageRoot?.dataset.pageIsShared === '1'
+        || Boolean(window.__CURRENT_PAGE_IS_SHARED__);
+      this.canRestoreVersions = this.canEditPage && !isShared;
       this.savedPageTitle = this.pageTitle;
 
       if (!this.pageId) {
@@ -118,6 +118,7 @@ export function noteEditorPage() {
           this.editLockedElsewhere = true;
         }
       }
+      this.canRestoreVersions = this.canEditPage && !isShared;
 
       let initial;
       let fromOffline = false;
@@ -538,7 +539,7 @@ export function noteEditorPage() {
       try {
         const data = await apiFetch(`/api/pages/${this.pageId}/versions`);
         this.historyVersions = data.versions || [];
-        this.canRestoreVersions = data.can_restore === true;
+        this.canRestoreVersions = this.canEditPage && data.can_restore === true;
       } catch (e) {
         this.historyError = e.message || 'Der Versionsverlauf konnte nicht geladen werden.';
         this.historyVersions = [];
@@ -615,6 +616,60 @@ export function noteEditorPage() {
       return this.selectedVersionId === versionId;
     },
 
+    async ensureRestoreReady() {
+      if (!navigator.onLine) {
+        throw new Error('Die Wiederherstellung benötigt eine Internetverbindung.');
+      }
+      if (this.pendingSave) {
+        throw new Error('Ein Speichervorgang läuft noch. Bitte warte kurz und versuche es erneut.');
+      }
+      if (this.status === 'conflict') {
+        throw new Error('Löse zuerst den bestehenden Versionskonflikt auf.');
+      }
+      if (this.status === 'invalid') {
+        throw new Error('Löse zuerst den fehlgeschlagenen Speichervorgang auf.');
+      }
+      if (this.status === 'unsaved') {
+        await this.saveNow();
+      }
+      if (this.pendingSave) {
+        throw new Error('Der aktuelle Inhalt wird noch gespeichert. Bitte versuche es gleich erneut.');
+      }
+      if (this.status === 'conflict') {
+        throw new Error('Der aktuelle Inhalt hat einen Versionskonflikt. Löse ihn vor der Wiederherstellung auf.');
+      }
+      if (this.status === 'invalid') {
+        throw new Error('Der aktuelle Inhalt konnte nicht gespeichert werden. Löse das Problem vor der Wiederherstellung auf.');
+      }
+      if (!(await hasQueuedNoteChange(this.pageId))) {
+        return;
+      }
+
+      await syncOutbox();
+      const conflict = (await listSyncConflicts())
+        .find((item) => Number(item.page_id) === this.pageId);
+      if (conflict) {
+        this.status = 'conflict';
+        this.offlineConflictId = conflict.id;
+        this.conflictContent = {
+          content: conflict.server_content,
+          version: conflict.server_version,
+        };
+        throw new Error('Der aktuelle Inhalt hat einen Versionskonflikt. Löse ihn vor der Wiederherstellung auf.');
+      }
+
+      const blocked = (await listBlockedEntries())
+        .find((item) => Number(item.page_id) === this.pageId);
+      if (blocked) {
+        this.status = 'invalid';
+        this.saveError = blocked.last_error;
+        throw new Error('Der aktuelle Inhalt konnte nicht synchronisiert werden. Löse das Problem vor der Wiederherstellung auf.');
+      }
+      if (await hasQueuedNoteChange(this.pageId)) {
+        throw new Error('Der aktuelle Inhalt wurde noch nicht synchronisiert. Bitte versuche es gleich erneut.');
+      }
+    },
+
     async restoreSelectedVersion() {
       if (!this.canRestoreVersions || !this.selectedVersionId || this.restoringVersion) {
         return;
@@ -625,25 +680,46 @@ export function noteEditorPage() {
 
       this.restoringVersion = true;
       this.historyError = '';
+      editor?.setEditable(false);
       try {
-        if (this.status === 'unsaved') {
-          await this.saveNow();
-        }
+        await this.ensureRestoreReady();
         const result = await apiFetch(`/api/pages/${this.pageId}/versions/${this.selectedVersionId}/restore`, {
           method: 'POST',
-          body: JSON.stringify({}),
+          body: JSON.stringify({ version: this.version }),
         });
         this.version = result.version;
         this.updatedAt = result.updated_at;
         this.lastEditorName = result.last_editor_name;
         editor?.commands.setContent(result.content, { emitUpdate: false });
         this.status = 'saved';
+        try {
+          await cacheNoteContent(this.pageId, { ...result, dirty: false });
+        } catch {
+          /* Der nächste Abruf holt den wiederhergestellten Stand nach. */
+        }
         this.clearLocalCache();
         this.closeHistory();
       } catch (e) {
-        this.historyError = e.message || 'Die Version konnte nicht wiederhergestellt werden.';
+        const current = e?.payload?.current;
+        if (e?.status === 409 && current?.content) {
+          this.version = Number(current.version);
+          this.updatedAt = current.updated_at;
+          this.lastEditorName = current.last_editor_name;
+          editor?.commands.setContent(current.content, { emitUpdate: false });
+          this.status = 'saved';
+          try {
+            await cacheNoteContent(this.pageId, { ...current, dirty: false });
+          } catch {
+            /* Der nächste Abruf holt den aktuellen Stand nach. */
+          }
+          this.clearLocalCache();
+          this.historyError = 'Die Notiz wurde zwischenzeitlich geändert. Der aktuelle Serverstand wurde geladen.';
+        } else {
+          this.historyError = e?.message || 'Die Version konnte nicht wiederhergestellt werden.';
+        }
       } finally {
         this.restoringVersion = false;
+        editor?.setEditable(this.canEditPage);
       }
     },
 

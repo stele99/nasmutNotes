@@ -1169,6 +1169,20 @@ button:disabled,
     width: 1.6rem;
   }
 
+  /* Derselbe Schalter auf der Workspace-Startseite bekommt exakt die Größe
+     des Logos daneben (size-10 sm:size-14) - sonst wirken Button und Logo wie
+     zwei unabhängige Elemente statt einer Kopfzeile. Überschreibt die
+     .sidebar-toggle-Regel oben durch spätere Position im Stylesheet. */
+  .home-menu-toggle {
+    height: 2.5rem;
+    width: 2.5rem;
+  }
+
+  .home-menu-toggle svg {
+    height: 1.375rem;
+    width: 1.375rem;
+  }
+
   /* "Neue Notiz"/"Neue Aufgabenliste" und die Liste "Zuletzt bearbeitet" auf
      der Workspace-Startseite (nicht die Notiz-/Aufgabenseiten selbst, die
      tragen zusätzlich .page-content-canvas). */
@@ -1195,5 +1209,19 @@ button:disabled,
   textarea,
   select {
     font-size: max(1rem, 1em);
+  }
+}
+
+/* Ab hier wächst der Öffnet-Notizbücher-Schalter auf der Workspace-Startseite
+   im selben Schritt wie das Logo (sm:size-14). */
+@media (min-width: 640px) {
+  .home-menu-toggle {
+    height: 3.5rem;
+    width: 3.5rem;
+  }
+
+  .home-menu-toggle svg {
+    height: 1.75rem;
+    width: 1.75rem;
   }
 }

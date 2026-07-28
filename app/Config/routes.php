@@ -10,6 +10,7 @@ use App\Controllers\AttachmentController;
 use App\Controllers\AuthController;
 use App\Controllers\BoardController;
 use App\Controllers\CategoryController;
+use App\Controllers\ExportController;
 use App\Controllers\HealthController;
 use App\Controllers\HomeController;
 use App\Controllers\ImportController;
@@ -160,6 +161,11 @@ return static function (App $app): void {
         $group->post('/archive/parts/{id}', [ImportController::class, 'append']);
         $group->post('/archive/parts/{id}/complete', [ImportController::class, 'complete']);
         $group->delete('/archive/parts/{id}', [ImportController::class, 'abort']);
+    })->add(new RequireAuthMiddleware(true));
+
+    $app->group('/api/export', function ($group): void {
+        $group->get('/notebooks', [ExportController::class, 'notebooks']);
+        $group->get('/workspace', [ExportController::class, 'workspace']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));

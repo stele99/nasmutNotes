@@ -37,6 +37,7 @@ final class NoteContentRepository
         string $contentText,
         int $expectedVersion,
         int $updatedBy,
+        string $updatedAt,
     ): bool {
         $stmt = $this->pdo->prepare(
             'UPDATE note_contents
@@ -46,7 +47,7 @@ final class NoteContentRepository
         $stmt->execute([
             'content' => $content,
             'content_text' => $contentText,
-            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'now' => $updatedAt,
             'page_id' => $pageId,
             'expected_version' => $expectedVersion,
             'updated_by' => $updatedBy,

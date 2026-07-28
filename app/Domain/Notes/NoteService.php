@@ -14,6 +14,7 @@ use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
 use PDO;
+use PDOException;
 
 final class NoteService
 {
@@ -51,6 +52,7 @@ final class NoteService
      * @param array<string, mixed> $content
      * @return array{content: array<string, mixed>, version: int, updated_at: string, last_editor_name: ?string}
      * @throws VersionConflictException bei Versionskonflikt (Kap. 10.4).
+     * @throws NoteWriteUnavailableException wenn SQLite den Schreibzugriff nicht reservieren kann.
      */
     public function save(User $user, int $pageId, array $content, int $expectedVersion, bool $forceSnapshot = false): array
     {
@@ -75,21 +77,26 @@ final class NoteService
         $contentText = $this->validator->extractText($content);
         $pageId = (int) $page['id'];
 
-        $this->pdo->beginTransaction();
+        $transactionStarted = false;
         try {
+            $this->beginImmediateTransaction();
+            $transactionStarted = true;
+            $this->pages->assertCanWrite($user, $pageId);
+
             $current = $this->noteContents->find($pageId);
             if ($current === null) {
                 throw new NotFoundException("Notizinhalt für Seite #{$pageId} nicht gefunden.");
             }
 
             if ((int) $current['version'] !== $expectedVersion) {
-                $this->pdo->rollBack();
-                throw new VersionConflictException(
-                    json_decode((string) $current['content'], true) ?? ['type' => 'doc', 'content' => []],
-                    (int) $current['version'],
-                    (string) $current['updated_at'],
-                    $current['last_editor_name'] !== null ? (string) $current['last_editor_name'] : null,
-                );
+                throw $this->versionConflict($current);
+            }
+
+            if ((string) $current['content'] === $encoded) {
+                $this->commitTransaction();
+                $transactionStarted = false;
+
+                return $this->mapContent($current);
             }
 
             if ($this->shouldSnapshot($current, $user, $encoded, $forceSnapshot)) {
@@ -100,42 +107,42 @@ final class NoteService
                 );
             }
 
+            $updatedAt = gmdate('Y-m-d\TH:i:s.v\Z');
             $saved = $this->noteContents->saveIfVersionMatches(
                 $pageId,
                 $encoded,
                 $contentText,
                 $expectedVersion,
                 $user->id,
+                $updatedAt,
             );
 
             if (!$saved) {
-                $this->pdo->rollBack();
-                $fresh = $this->noteContents->find($pageId);
-                assert($fresh !== null);
+                $this->rollBackTransaction();
+                $transactionStarted = false;
 
-                throw new VersionConflictException(
-                    json_decode((string) $fresh['content'], true) ?? ['type' => 'doc', 'content' => []],
-                    (int) $fresh['version'],
-                    (string) $fresh['updated_at'],
-                    $fresh['last_editor_name'] !== null ? (string) $fresh['last_editor_name'] : null,
-                );
+                throw $this->freshVersionConflict($pageId);
             }
 
-            $this->pageRepository->touchUpdatedAt($pageId);
-            $this->pdo->commit();
+            $this->pageRepository->touchUpdatedAt($pageId, $updatedAt);
+            $this->commitTransaction();
+            $transactionStarted = false;
+
+            return $this->savedContent($content, $expectedVersion + 1, $updatedAt, $user);
         } catch (VersionConflictException $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
             }
             throw $e;
         } catch (\Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
+            }
+            if ($e instanceof PDOException && $this->isSqliteBusy($e)) {
+                throw new NoteWriteUnavailableException($e);
             }
             throw $e;
         }
-
-        return $this->get($user, $pageId);
     }
 
     /**
@@ -156,7 +163,7 @@ final class NoteService
 
         return [
             'versions' => $versions,
-            'can_restore' => ($page['is_shared'] ?? false) !== true,
+            'can_restore' => ($page['is_shared'] ?? false) !== true && ($page['can_edit'] ?? false) === true,
         ];
     }
 
@@ -183,13 +190,18 @@ final class NoteService
 
     /**
      * @return array{content: array<string, mixed>, version: int, updated_at: string, last_editor_name: ?string}
+     * @throws VersionConflictException bei einer zwischenzeitlich geänderten Notiz.
+     * @throws NoteWriteUnavailableException wenn SQLite den Schreibzugriff nicht reservieren kann.
      */
-    public function restoreVersion(User $user, int $pageId, int $versionId): array
+    public function restoreVersion(User $user, int $pageId, int $versionId, int $expectedVersion): array
     {
         $page = $this->pages->find($user, $pageId);
         $this->assertIsNotePage($page);
         if (($page['is_shared'] ?? false) === true) {
             throw new ForbiddenException('Nur der Eigentümer kann den Versionsverlauf wiederherstellen.');
+        }
+        if (($page['can_edit'] ?? false) !== true) {
+            throw new ForbiddenException('Versionen können für Seiten im Papierkorb nicht wiederhergestellt werden.');
         }
         $pageId = (int) $page['id'];
 
@@ -219,11 +231,26 @@ final class NoteService
 
         $contentText = $this->validator->extractText($restoredContent);
 
-        $this->pdo->beginTransaction();
+        $transactionStarted = false;
         try {
+            $this->beginImmediateTransaction();
+            $transactionStarted = true;
+            $this->pages->assertCanWrite($user, $pageId);
+
             $current = $this->noteContents->find($pageId);
             if ($current === null) {
                 throw new NotFoundException("Notizinhalt für Seite #{$pageId} nicht gefunden.");
+            }
+
+            if ((int) $current['version'] !== $expectedVersion) {
+                throw $this->versionConflict($current);
+            }
+
+            if ((string) $current['content'] === $encoded) {
+                $this->commitTransaction();
+                $transactionStarted = false;
+
+                return $this->mapContent($current);
             }
 
             if ($this->shouldSnapshot($current, $user, $encoded, true)) {
@@ -234,33 +261,101 @@ final class NoteService
                 );
             }
 
+            $updatedAt = gmdate('Y-m-d\TH:i:s.v\Z');
             $saved = $this->noteContents->saveIfVersionMatches(
                 $pageId,
                 $encoded,
                 $contentText,
-                (int) $current['version'],
+                $expectedVersion,
                 $user->id,
+                $updatedAt,
             );
 
             if (!$saved) {
-                throw new VersionConflictException(
-                    json_decode((string) $current['content'], true) ?? ['type' => 'doc', 'content' => []],
-                    (int) $current['version'],
-                    (string) $current['updated_at'],
-                    $current['last_editor_name'] !== null ? (string) $current['last_editor_name'] : null,
-                );
+                $this->rollBackTransaction();
+                $transactionStarted = false;
+
+                throw $this->freshVersionConflict($pageId);
             }
 
-            $this->pageRepository->touchUpdatedAt($pageId);
-            $this->pdo->commit();
+            $this->pageRepository->touchUpdatedAt($pageId, $updatedAt);
+            $this->commitTransaction();
+            $transactionStarted = false;
+
+            return $this->savedContent($restoredContent, $expectedVersion + 1, $updatedAt, $user);
         } catch (\Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
+            }
+            if ($e instanceof PDOException && $this->isSqliteBusy($e)) {
+                throw new NoteWriteUnavailableException($e);
             }
             throw $e;
         }
+    }
 
-        return $this->get($user, $pageId);
+    private function beginImmediateTransaction(): void
+    {
+        // Reserviert den SQLite-Schreibzugriff vor dem Read-Modify-Write-Ablauf.
+        $this->pdo->exec('BEGIN IMMEDIATE');
+    }
+
+    private function commitTransaction(): void
+    {
+        $this->pdo->exec('COMMIT');
+    }
+
+    private function rollBackTransaction(): void
+    {
+        try {
+            $this->pdo->exec('ROLLBACK');
+        } catch (PDOException) {
+            // Ein fehlgeschlagener Commit kann die Transaktion bereits beendet haben.
+        }
+    }
+
+    /** @param array<string, mixed> $current */
+    private function versionConflict(array $current): VersionConflictException
+    {
+        return new VersionConflictException(
+            json_decode((string) $current['content'], true) ?? ['type' => 'doc', 'content' => []],
+            (int) $current['version'],
+            (string) $current['updated_at'],
+            $current['last_editor_name'] !== null ? (string) $current['last_editor_name'] : null,
+        );
+    }
+
+    private function freshVersionConflict(int $pageId): VersionConflictException
+    {
+        $current = $this->noteContents->find($pageId);
+        if ($current === null) {
+            throw new NotFoundException("Notizinhalt für Seite #{$pageId} nicht gefunden.");
+        }
+
+        return $this->versionConflict($current);
+    }
+
+    /**
+     * @param array<string, mixed> $content
+     * @return array{content: array<string, mixed>, version: int, updated_at: string, last_editor_name: ?string}
+     */
+    private function savedContent(array $content, int $version, string $updatedAt, User $user): array
+    {
+        return [
+            'content' => $content,
+            'version' => $version,
+            'updated_at' => $updatedAt,
+            'last_editor_name' => $user->name,
+        ];
+    }
+
+    private function isSqliteBusy(PDOException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'database is locked')
+            || str_contains($message, 'database is busy')
+            || str_contains($message, 'database table is locked');
     }
 
     /**

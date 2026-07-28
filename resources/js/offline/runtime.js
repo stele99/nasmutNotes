@@ -11,6 +11,8 @@ const DEFAULT_LIMIT = 100;
 const PREFETCH_CONCURRENCY = 4;
 const PREFETCH_MIN_INTERVAL_MS = 5 * 60 * 1000;
 const SYNC_LEASE_MS = 5 * 60 * 1000;
+const RETRY_BASE_MS = 1000;
+const RETRY_MAX_MS = 60 * 1000;
 const RUNTIME_ID = crypto.randomUUID();
 const syncChannel = typeof BroadcastChannel === 'function'
   ? new BroadcastChannel('shareinfo-offline-sync')
@@ -32,6 +34,7 @@ let prefetchProgress = { done: 0, total: 0 };
 let prefetchAbort = null;
 /** @type {Promise<void>|null} */
 let reconnectRun = null;
+let retryTimer = null;
 
 function emit() {
   const status = getStatusSnapshot();
@@ -150,6 +153,7 @@ export async function initOfflineRuntime() {
   });
   window.addEventListener('offline', () => {
     online = false;
+    clearSyncRetry();
     emit();
   });
 
@@ -453,6 +457,7 @@ export async function syncOutbox() {
   if (!online) {
     return { synced: 0, conflicts: 0, errors: 0 };
   }
+  clearSyncRetry();
   return withOutboxLock(() => runSyncOutbox());
 }
 
@@ -538,7 +543,14 @@ async function runSyncOutbox() {
           );
         } else {
           errors += 1;
-          lastError = error.message || 'Sync offline/Netzwerkfehler';
+          const retries = await db.markOutboxRetry(
+            Number(item.id),
+            Number(item.revision || 0),
+            error.message || 'Sync offline/Netzwerkfehler',
+          );
+          const delay = retryDelay(retries ?? (Number(item.retries || 0) + 1), error.retryAfter);
+          lastError = `${error.message || 'Sync offline/Netzwerkfehler'} Erneuter Versuch in ${Math.ceil(delay / 1000)} s.`;
+          scheduleSyncRetry(delay);
           break;
         }
       }
@@ -554,6 +566,34 @@ async function runSyncOutbox() {
   }
 
   return { synced, conflicts, errors };
+}
+
+function retryDelay(retries, retryAfter) {
+  const retryAfterSeconds = Number(retryAfter);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return Math.min(RETRY_MAX_MS, Math.round(retryAfterSeconds * 1000));
+  }
+  const exponent = Math.min(Math.max(0, Number(retries) - 1), 6);
+  const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * (2 ** exponent));
+
+  return Math.round(delay * (0.75 + Math.random() * 0.5));
+}
+
+function scheduleSyncRetry(delay) {
+  if (!online || retryTimer !== null) {
+    return;
+  }
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void syncOutbox();
+  }, delay);
+}
+
+function clearSyncRetry() {
+  if (retryTimer !== null) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
 }
 
 function dispatchNoteSync(action, pageId, result, outboxId, sourceContent = null) {

@@ -1,5 +1,5 @@
 /* Shareinfo service worker: shell, assets, attachments */
-const SHELL_CACHE = 'shareinfo-shell-v3';
+const SHELL_CACHE = 'shareinfo-shell-v4';
 const ATTACHMENT_CACHE = 'shareinfo-attachments-v1';
 const SHELL_URLS = [
   '/app',

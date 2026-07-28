@@ -21,13 +21,19 @@
         <?php /* Die Übersicht ist mobil der Einstieg und hat keine eigene
                  Kopfzeile; der Weg zu den Notizbüchern liegt deshalb hier als
                  fixierter Schalter. */ ?>
-        <button x-show="isMobileView('content')" x-cloak @click="showBooks()" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Notizbücher öffnen" x-icon="menu">
+        <?php /* Größe und linke Position folgen dem Logo darunter (size-10
+                 sm:size-14, px-6 sm:px-10 der Sektion) - sonst wirken Button
+                 und Logo wie zwei unabhängige Elemente. */ ?>
+        <button x-show="isMobileView('content')" x-cloak @click="showBooks()" class="sidebar-toggle home-menu-toggle fixed left-6 top-4 z-[100] flex border shadow-sm sm:left-10 md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Notizbücher öffnen" x-icon="menu">
         </button>
         <section class="page-canvas mx-auto px-6 py-10 sm:px-10 sm:py-20 lg:py-28" x-data="pageList" @pages-changed.window="refresh">
             <?php /* Abstand bleibt so groß, dass der fixierte Schalter die
                      Überschrift nicht überlagert. */ ?>
             <div class="pt-6 sm:pt-12">
-                <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">Mein Workspace <span class="text-[0.5em]">by <span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span></h1>
+                <div class="flex items-center gap-3 sm:gap-4">
+                    <img src="/icon/logo-mark.svg" alt="" width="56" height="56" class="size-10 shrink-0 sm:size-14">
+                    <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">Mein Workspace</h1>
+                </div>
                 <p class="mt-2 hidden max-w-2xl text-lg sm:block" style="color: var(--color-text-muted);">Notizen, Aufgaben und Ideen an einem Ort.</p>
                 <div class="mt-5 flex flex-row gap-3 sm:mt-8">
                     <button type="button" @click="createPage('note')" class="btn btn-primary flex-1 sm:flex-none">

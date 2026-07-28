@@ -101,9 +101,20 @@ final class NoteServiceTest extends TestCase
         $result = $this->notes->save($this->user, $this->pageId, $this->doc('Hallo Welt'), 1);
 
         self::assertSame(2, $result['version']);
+        self::assertSame('a@example.com', $result['last_editor_name']);
 
         $reloaded = $this->notes->get($this->user, $this->pageId);
         self::assertSame(2, $reloaded['version']);
+    }
+
+    public function testSavingIdenticalContentDoesNotIncrementVersion(): void
+    {
+        $first = $this->notes->save($this->user, $this->pageId, $this->doc('Unverändert'), 1);
+        $second = $this->notes->save($this->user, $this->pageId, $this->doc('Unverändert'), 2);
+
+        self::assertSame(2, $first['version']);
+        self::assertSame(2, $second['version']);
+        self::assertSame(2, $this->notes->get($this->user, $this->pageId)['version']);
     }
 
     public function testStaleVersionThrowsConflictWithCurrentState(): void
@@ -195,7 +206,7 @@ final class NoteServiceTest extends TestCase
         $versions = $this->notes->listVersions($this->user, $this->pageId);
         $versionId = $versions['versions'][0]['id'];
 
-        $restored = $this->notes->restoreVersion($this->user, $this->pageId, $versionId);
+        $restored = $this->notes->restoreVersion($this->user, $this->pageId, $versionId, 3);
 
         self::assertSame('Alt', $restored['content']['content'][0]['content'][0]['text']);
         self::assertSame(4, $restored['version']);
@@ -218,7 +229,39 @@ final class NoteServiceTest extends TestCase
         self::assertFalse($versions['can_restore']);
 
         $this->expectException(ForbiddenException::class);
-        $this->notes->restoreVersion($this->otherUser, $this->pageId, $versions['versions'][0]['id']);
+        $this->notes->restoreVersion($this->otherUser, $this->pageId, $versions['versions'][0]['id'], 3);
+    }
+
+    public function testRestoreRejectsAStaleCurrentVersion(): void
+    {
+        $this->notes->save($this->user, $this->pageId, $this->doc('Alt'), 1);
+        $this->setContentUpdatedAt(gmdate('Y-m-d\TH:i:s.v\Z', time() - 31 * 60));
+        $this->notes->save($this->user, $this->pageId, $this->doc('Zwischenstand'), 2);
+        $versionId = $this->notes->listVersions($this->user, $this->pageId)['versions'][0]['id'];
+        $this->notes->save($this->user, $this->pageId, $this->doc('Aktuell'), 3);
+
+        try {
+            $this->notes->restoreVersion($this->user, $this->pageId, $versionId, 3);
+            self::fail('Erwartete VersionConflictException wurde nicht geworfen.');
+        } catch (VersionConflictException $e) {
+            self::assertSame(4, $e->currentVersion);
+            self::assertSame('Aktuell', $e->currentContent['content'][0]['content'][0]['text']);
+        }
+        self::assertSame(1, $this->versionCount());
+    }
+
+    public function testTrashedNoteCannotRestoreVersion(): void
+    {
+        $this->notes->save($this->user, $this->pageId, $this->doc('Alt'), 1);
+        $this->setContentUpdatedAt(gmdate('Y-m-d\TH:i:s.v\Z', time() - 31 * 60));
+        $this->notes->save($this->user, $this->pageId, $this->doc('Aktuell'), 2);
+        $versionId = $this->notes->listVersions($this->user, $this->pageId)['versions'][0]['id'];
+        $this->pages->softDelete($this->user, $this->pageId);
+
+        self::assertFalse($this->notes->listVersions($this->user, $this->pageId)['can_restore']);
+
+        $this->expectException(ForbiddenException::class);
+        $this->notes->restoreVersion($this->user, $this->pageId, $versionId, 3);
     }
 
     public function testPrunesToTwentyVersions(): void

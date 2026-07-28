@@ -190,6 +190,7 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 
 | `BACKUP_PATH` | Ablage der Sicherungen, außerhalb des Webroots; relativ zum Projekt-Root oder absolut |
 | `BACKUP_KEEP` | Anzahl aufbewahrter Sicherungen (Standard 14) |
+| `EXPORT_TMP_PATH` | Ablage der zusammengebauten Export-Archive; sie verfallen nach einer Stunde |
 
 Weitere Variablen (`TRASH_RETENTION_DAYS`, `IMPORT_MAX_LINES`, `SEARCH_RESULT_LIMIT`) sind für spätere Ausbaustufen vorgesehen und bereits in `.env.example` dokumentiert.
 
@@ -205,6 +206,26 @@ php bin/console.php backup:list            # vorhandene Sicherungen anzeigen
 php bin/console.php backup:verify <id>     # Prüfsummen und Vollständigkeit prüfen
 php bin/console.php backup:restore <id>    # Sicherung einspielen
 ```
+
+## Export
+
+Über den Einstellungen-Dialog (Bereich **Import / Export**) lassen sich beliebige
+Notizbücher auswählen und als ZIP herunterladen. Aufbau je Notizbuch ein Ordner:
+
+```
+Notizbuch/
+  Meine Notiz.md        Markdown mit Frontmatter (title, type, notebook, created, updated)
+  Meine Aufgaben.md     Task-Seite: je Kategorie eine Überschrift, Aufgaben als Checkliste
+  files/
+    screenshot.png      eingebettete Bilder und Dateianhänge
+```
+
+Bilder und Anhänge werden relativ nach `files/…` verlinkt — genau die Form, die
+der eigene Import wieder auflöst. Ein Export lässt sich damit zurückspielen; das
+ist als Round-Trip-Test abgesichert (`ExportImportRoundTripTest`).
+
+Der Papierkorb und mit dir geteilte fremde Seiten bleiben außen vor: Exportiert
+wird, was im eigenen Workspace liegt.
 
 ## Sicherung und Wiederherstellung
 

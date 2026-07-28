@@ -9,6 +9,8 @@ use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
 use App\Domain\Backup\BackupLayout;
 use App\Domain\Backup\BackupService;
+use App\Domain\Export\MarkdownRenderer;
+use App\Domain\Export\NotebookExportService;
 use App\Domain\Import\ArchiveChunkStore;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Import\ZipImportService;
@@ -198,6 +200,35 @@ return static function (string $rootPath): DI\Container {
         ),
 
         MarkdownConverter::class => static fn (): MarkdownConverter => new MarkdownConverter(),
+
+        MarkdownRenderer::class => static fn (): MarkdownRenderer => new MarkdownRenderer(),
+
+        NotebookExportService::class => static fn (
+            WorkspaceRepository $workspaces,
+            NotebookRepository $notebooks,
+            PageRepository $pages,
+            NoteContentRepository $contents,
+            NoteAttachmentRepository $images,
+            PageAttachmentRepository $files,
+            CategoryRepository $categories,
+            TaskRepository $tasks,
+            UploadStorage $storage,
+            MarkdownRenderer $markdown,
+            AuditLogRepository $auditLog,
+        ): NotebookExportService => new NotebookExportService(
+            $workspaces,
+            $notebooks,
+            $pages,
+            $contents,
+            $images,
+            $files,
+            $categories,
+            $tasks,
+            $storage,
+            $markdown,
+            $auditLog,
+            $rootPath . '/' . trim(Env::get('EXPORT_TMP_PATH', 'var/tmp/export') ?? 'var/tmp/export', '/'),
+        ),
 
         // Teile eines laufenden Uploads liegen außerhalb des Web-Roots und sind
         // flüchtig; var/ ist dafür der richtige Ort.

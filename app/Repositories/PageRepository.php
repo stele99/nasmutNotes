@@ -288,10 +288,10 @@ final class PageRepository
         return $stmt->rowCount();
     }
 
-    public function touchUpdatedAt(int $id): void
+    public function touchUpdatedAt(int $id, ?string $updatedAt = null): void
     {
         $stmt = $this->pdo->prepare('UPDATE pages SET updated_at = :now WHERE id = :id');
-        $stmt->execute(['now' => gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
+        $stmt->execute(['now' => $updatedAt ?? gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
     }
 
     /**
