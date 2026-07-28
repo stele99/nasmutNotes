@@ -1,6 +1,5 @@
 import { apiFetch } from './api.js';
 import { createEditor } from './editor/index.js';
-import { prepareImageForUpload } from './editor/imagePrepare.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { sanitizeNoteDoc } from './editor/sanitize.js';
 import {
@@ -1040,8 +1039,10 @@ export function noteEditorPage() {
     /**
      * Datei- bzw. Kameraauswahl aus der Werkzeugleiste. Das Eingabefeld wird
      * geleert, damit dieselbe Datei direkt noch einmal gewählt werden kann.
+     * Die Verkleinerung/Kompression übernimmt `insertImageFiles` selbst -
+     * derselbe Weg wie Einfügen und Drag & Drop (siehe imageUpload.js).
      */
-    async insertPickedImage(event) {
+    insertPickedImage(event) {
       const input = event.target;
       const files = Array.from(input?.files || []);
       if (input) {
@@ -1051,11 +1052,7 @@ export function noteEditorPage() {
         return;
       }
       this.imageUploadError = '';
-      const prepared = await Promise.all(files.map((file) => prepareImageForUpload(file)));
-      if (!editor || editor.isDestroyed) {
-        return;
-      }
-      editor.chain().focus().insertImageFiles(prepared).run();
+      editor.chain().focus().insertImageFiles(files).run();
     },
 
     openActiveLink() {

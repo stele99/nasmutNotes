@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { prepareImageForUpload } from './imagePrepare.js';
 
 const imageUploadPluginKey = new PluginKey('protectedImageUpload');
 
@@ -78,7 +79,7 @@ export const ProtectedImageUpload = Extension.create({
       }));
       setPendingUploads(pendingUploads + files.length);
 
-      Promise.all(files.map((file) => options.onUpload(file)))
+      Promise.all(files.map((file) => prepareImageForUpload(file).then((prepared) => options.onUpload(prepared))))
         .then((attachments) => {
           if (editor.isDestroyed) {
             return;

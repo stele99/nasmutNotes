@@ -1,12 +1,14 @@
-const MAX_EDGE = 2560;
+const MAX_EDGE = 1960;
 const MAX_BYTES = 2 * 1024 * 1024;
-const JPEG_QUALITY = 0.85;
+const JPEG_QUALITY = 0.82;
 
 /**
- * Verkleinert Aufnahmen aus Kamera und Dateiauswahl vor dem Upload. Ein Handy
- * liefert schnell 12–48 Megapixel; der Server lässt maximal `MAX_UPLOAD_MB`
- * (Default 10) und 40 MP zu, und über Mobilfunk wäre das Original ohnehin
- * unnötig teuer. Schlägt etwas fehl, geht die Originaldatei raus - die
+ * Verkleinert Aufnahmen aus Kamera, Dateiauswahl, Einfügen und Drag & Drop vor
+ * dem Upload - auf dieselbe Kantenlänge ("Bildschirm", 1960 px) und Qualität
+ * (82 %) wie die serverseitige Massenkompression (ImageCompressionService),
+ * damit neu eingefügte Bilder gar nicht erst unkomprimiert abgelegt werden.
+ * Ein Handy liefert schnell 12–48 Megapixel; über Mobilfunk wäre das Original
+ * ohnehin unnötig teuer. Schlägt etwas fehl, geht die Originaldatei raus - die
  * serverseitige Prüfung meldet dann verständlich, was nicht passt.
  */
 export async function prepareImageForUpload(file) {
