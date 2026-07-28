@@ -6,6 +6,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="/admin" class="btn btn-secondary">Nutzer &amp; Speicher</a>
+            <a href="/admin/backups" class="btn btn-secondary">Sicherungen</a>
             <a href="/app" class="btn btn-secondary">Zum Workspace</a>
         </div>
     </div>

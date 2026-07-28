@@ -188,14 +188,71 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 | `LOG_LEVEL` | Monolog-Level (`debug`, `info`, `warning`, `error`) |
 | `VITE_DEV_SERVER` | Nur `APP_ENV=development`: URL des Vite-Dev-Servers |
 
-Weitere Variablen (`TRASH_RETENTION_DAYS`, `IMPORT_MAX_LINES`, `SEARCH_RESULT_LIMIT`, `BACKUP_PATH`) sind für spätere Ausbaustufen vorgesehen und bereits in `.env.example` dokumentiert.
+| `BACKUP_PATH` | Ablage der Sicherungen, außerhalb des Webroots; relativ zum Projekt-Root oder absolut |
+| `BACKUP_KEEP` | Anzahl aufbewahrter Sicherungen (Standard 14) |
+
+Weitere Variablen (`TRASH_RETENTION_DAYS`, `IMPORT_MAX_LINES`, `SEARCH_RESULT_LIMIT`) sind für spätere Ausbaustufen vorgesehen und bereits in `.env.example` dokumentiert.
 
 ## CLI-Kommandos
 
 ```bash
 php bin/console.php migrate     # ausstehende Migrationen anwenden (idempotent)
 php bin/console.php user:list   # alle Nutzer auflisten
+php bin/console.php trash:purge # abgelaufene Papierkorb-Seiten entfernen
+
+php bin/console.php backup:run             # Sicherung anlegen (für Cron)
+php bin/console.php backup:list            # vorhandene Sicherungen anzeigen
+php bin/console.php backup:verify <id>     # Prüfsummen und Vollständigkeit prüfen
+php bin/console.php backup:restore <id>    # Sicherung einspielen
 ```
+
+## Sicherung und Wiederherstellung
+
+Jeder Lauf erzeugt einen **vollständigen** Stand: einen `VACUUM INTO`-Abzug der
+Datenbank (ein einfaches Kopieren der Datei wäre im WAL-Modus unbrauchbar) und
+ein Manifest, das jede Upload-Datei des Zeitpunkts mit Prüfsumme auflistet.
+
+Gespeichert wird jede Datei aber nur **einmal**, in einem inhaltsadressierten
+Pool unter `BACKUP_PATH/pool/`. Ein weiterer Lauf kostet deshalb nur die seither
+hinzugekommenen Dateien — und trotzdem lässt sich jeder Snapshot für sich allein
+wiederherstellen. Das Löschen eines alten Snapshots beschädigt keinen anderen,
+anders als bei einer klassischen Inkrementalkette.
+
+Der Admin-Bereich unter **`/admin/backups`** zeigt alle Sicherungen, legt neue
+an und lädt eine beliebige davon als vollständiges, in sich geschlossenes ZIP
+herunter (aus Pool und Manifest zusammengesetzt).
+
+Täglicher Cron-Eintrag:
+
+```cron
+0 3 * * * cd /pfad/zum/projekt && php bin/console.php backup:run >> var/log/backup.log 2>&1
+```
+
+**Wiederherstellen** — bewusst nur über die CLI, denn der Vorgang ersetzt
+Datenbank und Anhänge. Die Anwendung sollte dabei gestoppt sein:
+
+```bash
+php bin/console.php backup:list
+php bin/console.php backup:verify 2026-07-28-030000
+php bin/console.php backup:restore 2026-07-28-030000
+php bin/console.php migrate
+```
+
+`backup:restore` prüft vorher die Prüfsummen, legt automatisch eine
+Sicherheitskopie des aktuellen Standes an und entfernt die WAL-Dateien — bleiben
+die liegen, legt SQLite ihren Inhalt über den eingespielten Abzug und der
+Restore wäre still wirkungslos. Mit `--prune` werden zusätzlich Dateien
+entfernt, die das Manifest nicht kennt (exakter Stand statt Zusammenführung).
+
+Zwei bewusste Auslassungen:
+
+- **Die `.env` ist nicht Teil der Sicherung.** Sie enthält `APP_KEY` und das
+  Google-Client-Secret; ein herunterladbares Archiv mit Zugangsdaten wäre ein
+  unnötiges Risiko. Die Datei ändert sich praktisch nie und gehört einmalig in
+  einen Passwortmanager.
+- **Der Pool liegt auf demselben Server.** Er schützt gegen versehentliches
+  Löschen in der Anwendung, nicht gegen einen Plattenschaden. Für den Ernstfall
+  regelmäßig ein Voll-ZIP herunterladen und außerhalb des Servers ablegen.
 
 ## Qualitätssicherung
 

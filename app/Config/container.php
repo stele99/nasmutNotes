@@ -7,6 +7,8 @@ use App\Domain\AdminService;
 use App\Domain\Auth\AuthService;
 use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
+use App\Domain\Backup\BackupLayout;
+use App\Domain\Backup\BackupService;
 use App\Domain\Import\ArchiveChunkStore;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Import\ZipImportService;
@@ -170,6 +172,29 @@ return static function (string $rootPath): DI\Container {
             Env::int('DEFAULT_STORAGE_QUOTA_MB', 0),
             Env::int('MAX_ATTACHMENT_MB', 10),
             Env::int('OFFLINE_ATTACHMENT_MAX_KB', PageAttachmentService::DEFAULT_OFFLINE_MAX_KB),
+        ),
+
+        // Sicherungen liegen außerhalb des Web-Roots und überstehen ein
+        // Deployment, weil var/ dabei nicht überschrieben wird (NFR-OPS-06).
+        BackupLayout::class => static function () use ($rootPath): BackupLayout {
+            $path = Env::get('BACKUP_PATH', 'var/backups') ?? 'var/backups';
+
+            return new BackupLayout(
+                str_starts_with($path, '/') ? rtrim($path, '/') : $rootPath . '/' . trim($path, '/'),
+            );
+        },
+
+        BackupService::class => static fn (
+            PDO $pdo,
+            AuditLogRepository $auditLog,
+            BackupLayout $layout,
+            UploadStorage $storage,
+        ): BackupService => new BackupService(
+            $pdo,
+            $auditLog,
+            $layout,
+            $storage->basePath(),
+            Env::int('BACKUP_KEEP', 14),
         ),
 
         MarkdownConverter::class => static fn (): MarkdownConverter => new MarkdownConverter(),

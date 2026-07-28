@@ -20,6 +20,12 @@ final class UploadStorage
         return is_dir($this->basePath) && is_writable($this->basePath);
     }
 
+    /** Wurzel der Ablage. Die Sicherung läuft den Baum ab (NFR-OPS-06). */
+    public function basePath(): string
+    {
+        return $this->basePath;
+    }
+
     public function writeImage(int $pageId, string $bytes, string $extension): string
     {
         $directory = $this->basePath . '/notes/' . $pageId;

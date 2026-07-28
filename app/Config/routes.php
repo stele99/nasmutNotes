@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\Admin\AdminDashboardController;
+use App\Controllers\Admin\BackupAdminController;
 use App\Controllers\Admin\InviteAdminController;
 use App\Controllers\AppController;
 use App\Controllers\AttachmentController;
@@ -48,6 +49,10 @@ return static function (App $app): void {
         ->add(new RequireAdminMiddleware(false))
         ->add(new RequireAuthMiddleware(false));
 
+    $app->get('/admin/backups', [BackupAdminController::class, 'page'])
+        ->add(new RequireAdminMiddleware(false))
+        ->add(new RequireAuthMiddleware(false));
+
     $app->group('/api/admin', function ($group): void {
         $group->get('/invites', [InviteAdminController::class, 'index']);
         $group->post('/invites', [InviteAdminController::class, 'store']);
@@ -63,6 +68,10 @@ return static function (App $app): void {
             [AdminDashboardController::class, 'updateOfflineAttachmentLimit'],
         );
         $group->post('/attachments/purge-orphans', [AdminDashboardController::class, 'purgeOrphans']);
+        $group->get('/backups', [BackupAdminController::class, 'index']);
+        $group->post('/backups', [BackupAdminController::class, 'store']);
+        $group->get('/backups/{id}/download', [BackupAdminController::class, 'download']);
+        $group->delete('/backups/{id}', [BackupAdminController::class, 'destroy']);
     })
         ->add(new RequireAdminMiddleware(true))
         ->add(new RequireAuthMiddleware(true));
