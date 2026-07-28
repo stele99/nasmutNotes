@@ -1112,6 +1112,83 @@ button:disabled,
     line-height: 1.4;
   }
 
+  /* Sidebar-Schrift und die Bedienelemente ganz oben (Zurück/Schließen,
+     "+Notiz"/"+Aufgaben") sind auf dem Handy sonst zu klein zum bequemen
+     Lesen und Treffen. */
+  .page-sidebar h2 {
+    font-size: 1.125rem;
+  }
+
+  .page-sidebar .page-card a {
+    font-size: 1.0625rem;
+  }
+
+  .page-sidebar .page-card .text-xs {
+    font-size: 0.875rem;
+  }
+
+  .page-sidebar .page-card .text-\[11px\] {
+    font-size: 0.8125rem;
+  }
+
+  .page-sidebar .icon-action {
+    padding: 0.625rem;
+  }
+
+  .page-sidebar .icon-action svg {
+    height: 1.375rem;
+    width: 1.375rem;
+  }
+
+  .page-sidebar .btn {
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+  }
+
+  /* Aktionsknöpfe im Kopf von Notiz- und Aufgabenseiten (Zurück, Teilen,
+     Verlauf, Komprimieren) zeigen auf dem Handy nur das Icon und brauchen
+     deshalb eine größere Trefferfläche als auf dem Desktop. */
+  .page-toolbar .icon-action {
+    padding: 0.625rem;
+  }
+
+  .page-toolbar .icon-action svg {
+    height: 1.375rem;
+    width: 1.375rem;
+  }
+
+  /* Öffnet-Notizbücher-Schalter oben links auf der Workspace-Startseite -
+     dieselbe größere Trefferfläche wie die anderen Kopf-Buttons. */
+  .sidebar-toggle {
+    height: 2.75rem;
+    width: 2.75rem;
+  }
+
+  .sidebar-toggle svg {
+    height: 1.6rem;
+    width: 1.6rem;
+  }
+
+  /* "Neue Notiz"/"Neue Aufgabenliste" und die Liste "Zuletzt bearbeitet" auf
+     der Workspace-Startseite (nicht die Notiz-/Aufgabenseiten selbst, die
+     tragen zusätzlich .page-content-canvas). */
+  .page-canvas:not(.page-content-canvas) .btn {
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .page-canvas:not(.page-content-canvas) .text-base {
+    font-size: 1.0625rem;
+  }
+
+  .page-canvas:not(.page-content-canvas) .text-sm {
+    font-size: 0.9375rem;
+  }
+
+  .page-canvas:not(.page-content-canvas) .text-xs {
+    font-size: 0.875rem;
+  }
+
   /* iOS Safari zoomt beim Fokussieren jedes Eingabefelds mit weniger als 16 px
      Schriftgröße - unabhängig vom viewport-Meta-Tag. */
   input,

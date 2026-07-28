@@ -585,6 +585,11 @@ export function pageList() {
       return total > shown ? `${shown} von ${total} Seiten` : `${total} Seiten`;
     },
 
+    searchResultsLabel() {
+      const total = this.searchResults.length;
+      return total === 1 ? '1 Ergebnis' : `${total} Ergebnisse`;
+    },
+
     observeRecentSentinel() {
       const sentinel = this.$refs.recentSentinel;
       if (!sentinel || this.recentObserver || typeof IntersectionObserver !== 'function') {

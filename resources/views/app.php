@@ -37,15 +37,21 @@
                         <span x-icon="list-todo"></span>Neue Aufgabenliste
                     </button>
                 </div>
+                <form @submit.prevent="search" class="mt-4 flex max-w-md items-center gap-2 rounded-md border px-3 py-2.5" style="border-color: var(--color-border); background: var(--color-bg);">
+                    <span style="color: var(--color-text-muted);" x-icon="search"></span>
+                    <input x-model="searchQuery" @input="if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none">
+                    <button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button>
+                </form>
             </div>
 
             <div class="mt-8 max-w-2xl sm:mt-16">
                 <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--color-border);">
-                    <h2 class="text-xl font-semibold">Zuletzt bearbeitet</h2>
-                    <span class="text-sm" style="color: var(--color-text-muted);" x-text="recentCountLabel()"></span>
+                    <h2 class="text-xl font-semibold" x-text="searchQuery.trim() !== '' ? 'Suchergebnisse' : 'Zuletzt bearbeitet'"></h2>
+                    <span class="text-sm" style="color: var(--color-text-muted);" x-text="searchQuery.trim() !== '' ? searchResultsLabel() : recentCountLabel()"></span>
                 </div>
-                <div class="divide-y divide-[color:var(--color-border)]">
-                        <template x-for="page in recentPages()" :key="page.id">
+                <p x-show="searchLoading" x-cloak class="py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
+                <div x-show="!searchLoading" class="divide-y divide-[color:var(--color-border)]">
+                        <template x-for="page in (searchQuery.trim() !== '' ? searchResults : recentPages())" :key="page.id">
                             <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
                                 <span x-show="page.type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
                                 <span x-show="page.type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
@@ -60,11 +66,14 @@
                         </template>
                 </div>
                 <?php /* Sentinel für das Nachladen beim Scrollen; der Button bleibt als
-                         Rückfalloption, wenn kein IntersectionObserver zur Verfügung steht. */ ?>
-                <div x-ref="recentSentinel" x-show="hasMoreRecentPages()" class="pt-4">
+                         Rückfalloption, wenn kein IntersectionObserver zur Verfügung steht.
+                         Die Suche liefert bereits das komplette Ergebnis, braucht also kein
+                         Nachladen. */ ?>
+                <div x-ref="recentSentinel" x-show="searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
                     <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Seiten laden</button>
                 </div>
-                <p x-show="!loading && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>
+                <p x-show="!loading && searchQuery.trim() === '' && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>
+                <p x-show="!searchLoading && searchQuery.trim() !== '' && searchResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Treffer für „<span x-text="searchQuery"></span>“.</p>
             </div>
         </section>
     </main>
