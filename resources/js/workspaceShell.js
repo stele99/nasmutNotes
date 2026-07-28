@@ -19,16 +19,13 @@ const SWIPE_MIN_DISTANCE = 60;
 /** Ab hier steht fest, ob waagerecht oder senkrecht gewischt wird. */
 const SWIPE_LOCK_DISTANCE = 12;
 /**
- * Aus diesem Randstreifen heraus wischt der Nutzer im Browser-Tab die
- * Zurück-Geste von Safari, nicht unsere eigene - das lässt sich von der Seite
- * aus nicht unterdrücken, Safari erkennt sie unterhalb der eigenen Touch-
- * Events. Als installierte App (Home-Bildschirm) gibt es diese Systemgeste
- * gar nicht, dort bräuchte die Zone nur einen Sicherheitsabstand zum Rand.
+ * Aus diesem Randstreifen heraus wischt der Nutzer die native Zurück-Geste,
+ * nicht unsere eigene - das lässt sich von der Seite aus nicht unterdrücken,
+ * iOS erkennt sie unterhalb der eigenen Touch-Events. Das gilt unverändert
+ * auch als installierte App: Home-Bildschirm-Apps laufen in einer WKWebView
+ * mit derselben nativen Kantengeste, unabhängig vom Safari-Chrome.
  */
 const SWIPE_EDGE_ZONE = 24;
-const SWIPE_EDGE_ZONE_STANDALONE = 8;
-const isStandaloneDisplay = () => window.matchMedia('(display-mode: standalone)').matches
-  || window.navigator.standalone === true;
 
 /** Die drei Ebenen selbst liegen fest im Ansichtsfenster - Dialoge ebenso. */
 const MOBILE_PANEL_SELECTOR = '.page-sidebar, .notebook-drawer';
@@ -53,6 +50,50 @@ function blocksSwipe(element, root) {
 
   return false;
 }
+
+const isStandaloneDisplay = () => window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
+
+/**
+ * Als installierte App löst die native Kantengeste `history.back()` aus -
+ * unabhängig davon, ob gerade unsere eigene Ebene (Notizbücher/Seiten/Inhalt)
+ * oder eine echte andere Seite gemeint war. Auf einer Inhaltsebene ist das
+ * praktisch immer ein Fehlgriff: Die Geste soll dort dieselbe Aktion auslösen
+ * wie unsere eigene Wisch-Erkennung, nämlich eine Ebene zurück.
+ *
+ * Der Eingriff läuft in drei Schritten: Die Navigation abfangen, bevor
+ * `pageList`s eigener popstate-Listener sie als echten Seitenwechsel
+ * verarbeitet (`stopImmediatePropagation`, deshalb muss dieser Listener vor
+ * jenem registriert sein - daher hier auf Modulebene statt in `init()`),
+ * die Browser-Historie per `history.go(1)` unbemerkt rückgängig machen, und
+ * stattdessen `goBack()` der Shell aufrufen. Steht die Shell bereits auf
+ * „books“, gibt es lokal nichts zurückzugehen - dann läuft die Navigation
+ * normal durch.
+ */
+function armMobileBackTrap() {
+  if (!isStandaloneDisplay()) {
+    return;
+  }
+
+  let undoing = false;
+  window.addEventListener('popstate', (event) => {
+    if (undoing) {
+      undoing = false;
+      return;
+    }
+    const shell = window.__workspaceShellOwner__;
+    if (!shell || !shell.isMobile || shell.mobileView === 'books') {
+      return;
+    }
+
+    event.stopImmediatePropagation();
+    undoing = true;
+    history.go(1);
+    shell.goBack();
+  });
+}
+
+armMobileBackTrap();
 
 export function workspaceShell() {
   return {
@@ -91,6 +132,10 @@ export function workspaceShell() {
     notebookSaving: false,
 
     async init() {
+      // Für `armMobileBackTrap()` auf Modulebene - der Listener dort steht
+      // bereits vor jedem Alpine-Init fest, braucht aber Zugriff auf die
+      // gerade entstehende Instanz.
+      window.__workspaceShellOwner__ = this;
       this.restoreNotebookRailWidth();
       this.watchViewport();
       await this.refreshNotebooks();
@@ -343,8 +388,7 @@ export function workspaceShell() {
       }
 
       const touch = event.touches[0];
-      const edgeZone = isStandaloneDisplay() ? SWIPE_EDGE_ZONE_STANDALONE : SWIPE_EDGE_ZONE;
-      if (touch.clientX <= edgeZone) {
+      if (touch.clientX <= SWIPE_EDGE_ZONE) {
         return;
       }
 
