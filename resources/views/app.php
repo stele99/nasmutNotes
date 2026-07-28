@@ -12,7 +12,11 @@
         <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
         <div class="notebook-resize-handle" role="separator" aria-label="Notizbuchleiste in der Breite ändern" aria-orientation="vertical" tabindex="0" :aria-valuenow="notebookRailWidth" aria-valuemin="220" aria-valuemax="420" @pointerdown="startNotebookResize" @keydown.left.prevent="resizeNotebookRailBy(-16)" @keydown.right.prevent="resizeNotebookRailBy(16)"></div>
     </aside>
-    <aside x-show="isNotebookDrawerVisible()" x-cloak class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r md:w-80 xl:hidden" :aria-hidden="isNotebookDrawerVisible() ? 'false' : 'true'" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+    <?php /* Wie .page-sidebar bleibt die Schublade immer im DOM und wird per
+             Transform ein-/ausgefahren, statt über x-show schlagartig
+             umzuschalten - sonst fehlt hier die Animation, die die Seiten-
+             Sidebar beim Wechsel zwischen den mobilen Ebenen hat. */ ?>
+    <aside class="notebook-drawer fixed inset-y-0 left-0 z-50 flex w-full -translate-x-full flex-col border-r transition-transform duration-200 md:w-80 xl:hidden" :class="{ 'translate-x-0': isNotebookDrawerVisible() }" :aria-hidden="isNotebookDrawerVisible() ? 'false' : 'true'" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
         <?php include __DIR__ . '/partials/notebook_nav.php'; ?>
     </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>

@@ -361,6 +361,12 @@ body.is-resizing-sidebar {
   }
 }
 
+/* Anders als .page-sidebar bleibt die Schublade bis xl per Klick auf-/zuklappbar
+   (nicht nur mobil) - die Regel gilt deshalb ohne Breakpoint-Einschränkung. */
+.notebook-drawer[aria-hidden="true"] {
+  pointer-events: none;
+}
+
 .workspace-main {
   background: var(--color-bg);
   padding-bottom: env(safe-area-inset-bottom, 0px);
