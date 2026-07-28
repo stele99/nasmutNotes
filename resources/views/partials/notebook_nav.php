@@ -1,5 +1,8 @@
 <div class="flex min-h-0 flex-1 flex-col" @dragend.window="clearDropTarget">
-    <div class="flex items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
+    <?php /* min-h gleicht die Kopfzeile auf dieselbe Höhe wie die der
+             Seiten-Sidebar aus - deren Inhalt ist ohne Logo-Bild niedriger,
+             ohne feste Höhe läge die Trennlinie hier ein paar Pixel tiefer. */ ?>
+    <div class="flex min-h-[3.75rem] items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
         <a href="/app" @click.prevent="navigateHome()" class="flex min-w-0 flex-1 items-center gap-2 font-semibold">
             <img src="/icon/logo-mark.svg" alt="" width="28" height="28" class="size-7 shrink-0">
             <span class="truncate text-base"><span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span>

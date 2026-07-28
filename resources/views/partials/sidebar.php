@@ -10,7 +10,8 @@
     :aria-hidden="isMobile && !isPageSidebarVisible() ? 'true' : 'false'"
     style="border-color: var(--color-border); background-color: var(--color-bg-subtle);"
 >
-    <div class="relative flex items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
+    <?php /* min-h auf denselben Wert wie in notebook_nav.php - siehe dort. */ ?>
+    <div class="relative flex min-h-[3.75rem] items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
         <?php /* Zurück zu den Notizbüchern: mobil die vorige Stapelebene, auf
                  mittleren Breiten die überlagernde Schublade. */ ?>
         <button type="button" @click="isMobile ? showBooks() : (notebookDrawerOpen = true)" class="icon-action flex shrink-0 items-center border p-2 xl:hidden" style="border-color: var(--color-border);" title="Zurück zur Notizbuchauswahl" aria-label="Notizbücher öffnen" :aria-expanded="notebookDrawerOpen" x-icon="chevron-left"></button>
