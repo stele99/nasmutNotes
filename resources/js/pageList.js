@@ -302,11 +302,37 @@ export function pageList() {
           this.setPages([]);
           this.trashError = error.message || 'Der Papierkorb konnte nicht geladen werden.';
         } else {
-          this.setPages(await getCachedPages());
+          this.setPages(this.filterCachedPages(await getCachedPages()));
         }
       } finally {
         this.loading = false;
       }
+    },
+
+    /**
+     * Offline-Rückfall: Die Sammlung filtert normalerweise der Server über die
+     * Query-Parameter - der lokale Cache enthält aber immer alle Seiten. Ohne
+     * diesen Filter zeigte ein offline gewähltes Notizbuch den gesamten
+     * Workspace statt seiner eigenen Seiten.
+     */
+    filterCachedPages(pages) {
+      let result = pages;
+      if (this.activeCollection === 'notebook' && this.activeNotebookId) {
+        result = result.filter(
+          (page) => !page.is_shared && Number(page.notebook_id) === Number(this.activeNotebookId),
+        );
+      } else if (this.activeCollection === 'unassigned') {
+        result = result.filter((page) => !page.is_shared && page.notebook_id == null);
+      } else if (this.activeCollection === 'shared') {
+        // Eigene geteilte Seiten kennt nur der Server; offline bleiben die
+        // mit mir geteilten übrig.
+        result = result.filter((page) => page.is_shared);
+      }
+      if (this.typeFilter) {
+        result = result.filter((page) => page.type === this.typeFilter);
+      }
+
+      return result;
     },
 
     /**
