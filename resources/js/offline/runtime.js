@@ -1,7 +1,7 @@
 import { apiFetch } from '../api.js';
 import * as db from './db.js';
 
-export const CACHE_LIMITS = [100, 1000, 5000, 10000, 'all'];
+export const CACHE_LIMITS = [100, 250, 500, 1000, 5000, 10000, 'all'];
 const ATTACHMENT_CACHE = 'shareinfo-attachments-v1';
 const CACHE_PREFIX = 'shareinfo-';
 const SETTINGS_KEY = 'cache_limit';

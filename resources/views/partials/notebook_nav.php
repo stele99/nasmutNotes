@@ -1,8 +1,8 @@
 <div class="flex min-h-0 flex-1 flex-col" @dragend.window="clearDropTarget">
-    <div class="flex items-center gap-2 px-4 pb-4 pt-5">
-        <a href="/app" class="flex min-w-0 flex-1 items-center gap-2 font-semibold">
-            <span class="flex size-7 items-center justify-center rounded-md" style="background: var(--color-bg);" x-icon="book-open"></span>
-            <span><span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span>
+    <div class="flex items-center gap-2 border-b px-4 pb-3 pt-5" style="border-color: var(--color-border);">
+        <a href="/app" @click.prevent="navigateHome()" class="flex min-w-0 flex-1 items-center gap-2 font-semibold">
+            <span class="notebook-appearance shrink-0" style="color: var(--color-danger);" x-icon="house:size-5"></span>
+            <span class="truncate text-base"><span class="font-bold" style="color: var(--color-danger);">nasmut</span>Notes</span>
         </a>
         <?php /* Mobil verlässt man die Notizbücher über „Home“ zur Übersicht
                  oder über ein Notizbuch zur Seitenauswahl - ein eigener
@@ -11,7 +11,6 @@
         <button type="button" @click="showPages()" class="icon-action hidden md:inline-flex xl:hidden" aria-label="Notizbücher schließen" x-icon="x"></button>
     </div>
     <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3" aria-label="Notizbücher">
-        <button type="button" @click="navigateHome" class="notebook-item" :class="activeCollection === 'home' ? 'is-active' : ''" :aria-current="activeCollection === 'home' ? 'page' : null"><span x-icon="home"></span>Home</button>
         <button type="button" @click="selectCollection('favorites')" class="notebook-item" :class="activeCollection === 'favorites' ? 'is-active' : ''" :aria-current="activeCollection === 'favorites' ? 'page' : null"><span x-icon="star"></span>Favoriten</button>
         <button type="button" @click="selectCollection('unassigned')" @dragenter.prevent="setDropTargetNotebook(null)" @dragover.prevent="setDropTargetNotebook(null)" @drop.prevent="dropPageOnNotebook(null, $event)" class="notebook-item" :class="{ 'is-active': activeCollection === 'unassigned', 'is-drop-target': isUnassignedDropTarget() }" :aria-current="activeCollection === 'unassigned' ? 'page' : null"><span x-icon="inbox"></span><span>Nicht zugewiesen</span><span x-show="isUnassignedDropTarget()" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span></button>
         <button type="button" @click="selectCollection('shared')" class="notebook-item" :class="activeCollection === 'shared' ? 'is-active' : ''" :aria-current="activeCollection === 'shared' ? 'page' : null"><span x-icon="share-2"></span>Geteilt</button>
@@ -52,14 +51,26 @@
                         <div><h2 id="settings-dialog-title" class="font-semibold">Einstellungen</h2><p class="text-sm" style="color: var(--color-text-muted);" x-text="statusOnline ? 'Online' : 'Offline'"></p></div>
                         <button type="button" @click="closeDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
                     </header>
-                    <div class="grid min-h-0 flex-1 grid-cols-[9rem_minmax(0,1fr)] sm:grid-cols-[13rem_minmax(0,1fr)]">
-                        <nav class="space-y-1 border-r p-3" aria-label="Einstellungen" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                    <div class="flex min-h-0 flex-1 flex-col overflow-hidden sm:grid sm:grid-cols-[13rem_minmax(0,1fr)]">
+                        <?php /* Unter `sm` ersetzt ein Dropdown die Bereichsleiste - eine
+                                 9rem breite Spalte daneben ließe für den Inhalt kaum noch
+                                 Platz. */ ?>
+                        <div class="border-b p-3 sm:hidden" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                            <label class="sr-only" for="settings-section-select">Bereich</label>
+                            <select id="settings-section-select" x-model="settingsSection" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                <option value="app">App</option>
+                                <option value="sync">Sync</option>
+                                <option value="transfer">Import / Export</option>
+                                <option value="storage">Speicher</option>
+                            </select>
+                        </div>
+                        <nav class="hidden space-y-1 border-r p-3 sm:block" aria-label="Einstellungen" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
                             <button type="button" @click="selectSettingsSection('app')" class="settings-nav-button" :class="isSettingsSection('app') ? 'is-active' : ''"><span x-icon="home"></span><span>App</span></button>
                             <button type="button" @click="selectSettingsSection('sync')" class="settings-nav-button" :class="isSettingsSection('sync') ? 'is-active' : ''"><span x-icon="wifi"></span><span>Sync</span></button>
                             <button type="button" @click="selectSettingsSection('transfer')" class="settings-nav-button" :class="isSettingsSection('transfer') ? 'is-active' : ''"><span x-icon="upload"></span><span>Import / Export</span></button>
                             <button type="button" @click="selectSettingsSection('storage')" class="settings-nav-button" :class="isSettingsSection('storage') ? 'is-active' : ''"><span x-icon="folder"></span><span>Speicher</span></button>
                         </nav>
-                        <div class="min-h-0 overflow-y-auto p-5 sm:p-6">
+                        <div class="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
                             <section x-show="isSettingsSection('app')">
                                 <h3 class="text-xl font-semibold">App installieren</h3>
                                 <p class="mt-1 text-sm" style="color: var(--color-text-muted);">nasmutNotes als eigenständige App auf diesem Gerät verwenden.</p>
@@ -80,6 +91,33 @@
                             <section x-show="isSettingsSection('sync')" x-cloak>
                                 <h3 class="text-xl font-semibold">Synchronisation</h3>
                                 <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Lokale Änderungen übertragen und Offline-Inhalte aktualisieren.</p>
+
+                                <?php /* Konflikte stehen ganz oben, weil sie eine Entscheidung
+                                         brauchen - der Klick auf den Sync-Status in der Leiste
+                                         landet genau hier (siehe openSyncSettings). */ ?>
+                                <div x-show="conflicts.length > 0" x-cloak class="mt-5 space-y-3">
+                                    <h4 class="text-sm font-semibold" style="color: var(--color-danger);">Sync-Konflikte</h4>
+                                    <template x-for="conflict in conflicts" :key="conflict.id">
+                                        <div class="rounded-lg border p-4" style="border-color: var(--color-danger);">
+                                            <p class="font-medium" x-text="conflict.title"></p>
+                                            <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                                                <div class="rounded-md border p-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                                                    <p class="text-sm font-medium" x-text="localConflictLabel(conflict)"></p>
+                                                    <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="conflictPreview(conflict.local_content)"></p>
+                                                </div>
+                                                <div class="rounded-md border p-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                                                    <p class="text-sm font-medium" x-text="serverConflictLabel(conflict)"></p>
+                                                    <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="conflictPreview(conflict.server_content)"></p>
+                                                </div>
+                                            </div>
+                                            <div class="mt-3 flex flex-wrap gap-2">
+                                                <button type="button" @click="keepLocalConflict(conflict)" :disabled="isResolvingConflict(conflict)" class="btn btn-secondary">Lokale Fassung behalten</button>
+                                                <button type="button" @click="useServerConflict(conflict)" :disabled="isResolvingConflict(conflict)" class="btn btn-quiet">Serverfassung übernehmen</button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+
                                 <h4 class="mt-5 text-sm font-semibold">Lokal synchronisiert</h4>
                                 <dl class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                                     <div class="rounded-lg border p-3" style="border-color: var(--color-border);"><dt class="text-xs" style="color: var(--color-text-muted);">Notizen</dt><dd class="mt-1 text-2xl font-semibold" x-text="localNoteCount"></dd></div>

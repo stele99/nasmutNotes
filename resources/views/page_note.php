@@ -38,13 +38,13 @@
         </div>
     </div>
     <div class="pt-4 md:pt-10">
-        <div class="mb-6 flex items-start justify-between gap-4 md:mb-10">
+        <div class="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-4" :class="(attachments.length > 0 || uploadingAttachment) ? 'mb-6 md:mb-10' : 'mb-3 md:mb-6'">
             <div class="min-w-0">
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
             </div>
             <div class="flex shrink-0 items-start gap-3">
-                <div class="text-right text-sm" style="color: var(--color-text-muted);">
+                <div class="text-left text-xs md:text-right md:text-sm" style="color: var(--color-text-muted);">
                     <p x-text="statusLabel()"></p>
                 </div>
             </div>

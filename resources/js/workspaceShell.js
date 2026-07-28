@@ -219,8 +219,8 @@ export function workspaceShell() {
     },
 
     /**
-     * Der einzige Weg aus der Notizbuchliste zurück zur Übersicht - anders als
-     * die übrigen Einträge führt „Home“ deshalb nicht zur Seitenauswahl.
+     * Der einzige Weg aus der Notizbuchliste zurück zur Übersicht - ausgelöst
+     * über das nasmutNotes-Logo, nicht über einen eigenen Listeneintrag.
      */
     navigateHome() {
       this.selectCollection('home');
