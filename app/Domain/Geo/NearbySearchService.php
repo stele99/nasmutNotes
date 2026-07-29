@@ -31,7 +31,6 @@ final class NearbySearchService
     public const DEFAULT_RADIUS_KM = 1.0;
     public const MIN_RADIUS_KM = 0.05;
     public const MAX_RADIUS_KM = 500.0;
-    private const MAX_RESULTS = 200;
 
     public function __construct(
         private readonly PageService $pages,
@@ -98,7 +97,7 @@ final class NearbySearchService
 
         usort($results, static fn (array $left, array $right): int => $left['distance_km'] <=> $right['distance_km']);
 
-        return array_slice($results, 0, self::MAX_RESULTS);
+        return $results;
     }
 
     /** Haversine-Formel: hinreichend genau für einen Umkreis von Metern bis einigen hundert Kilometern. */

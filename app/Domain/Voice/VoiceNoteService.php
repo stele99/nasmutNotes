@@ -339,7 +339,11 @@ final class VoiceNoteService
     {
         $columns = array_values(array_filter(
             $columns,
-            static fn (array $column): bool => (string) $column['type'] !== LogColumnType::Location->value,
+            static fn (array $column): bool => !in_array(
+                (string) $column['type'],
+                [LogColumnType::Location->value, LogColumnType::User->value],
+                true,
+            ),
         ));
 
         $settings = $this->requireUsableSettings();

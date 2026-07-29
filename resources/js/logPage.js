@@ -205,6 +205,9 @@ export function logPage() {
     },
 
     cellLabel(entry, column) {
+      if (column.type === 'user') {
+        return entry.created_by_name || '';
+      }
       const value = this.cellValue(entry, column);
       if (!value) {
         return '';
@@ -322,6 +325,9 @@ export function logPage() {
       const values = {};
       const coordinates = {};
       this.columns.forEach((column) => {
+        if (column.type === 'user') {
+          return;
+        }
         const value = entry.values?.[String(column.id)];
         values[String(column.id)] = value ? this.editableValue(column, value) : '';
         if (value && value.lat !== null && value.lat !== undefined) {
@@ -453,7 +459,9 @@ export function logPage() {
 
       const values = {};
       this.columns.forEach((column) => {
-        values[String(column.id)] = this.payloadValue(column);
+        if (column.type !== 'user') {
+          values[String(column.id)] = this.payloadValue(column);
+        }
       });
 
       this.entryBusy = true;

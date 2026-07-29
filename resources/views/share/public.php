@@ -49,7 +49,7 @@
                                     <tr class="border-t" style="border-color: var(--color-border);">
                                         <td class="whitespace-nowrap px-3 py-2 font-medium"><?= e(str_replace('T', ' ', substr((string) $entry['occurred_at'], 0, 16))) ?></td>
                                         <?php foreach ($log_columns as $column): ?>
-                                            <td class="px-3 py-2"><?= e((string) ($entry['values'][$column['id']] ?? '')) ?></td>
+                                            <td class="px-3 py-2"><?= e((string) ($entry['values'][$column['type'] === 'user' ? 'user' : $column['id']] ?? '')) ?></td>
                                         <?php endforeach; ?>
                                     </tr>
                                 <?php endforeach; ?>

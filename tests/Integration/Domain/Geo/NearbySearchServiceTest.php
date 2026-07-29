@@ -83,6 +83,20 @@ final class NearbySearchServiceTest extends TestCase
         self::assertLessThan($results[1]['distance_km'], $results[0]['distance_km']);
     }
 
+    public function testReturnsAllPagesWithinTheRadius(): void
+    {
+        for ($index = 0; $index < 205; ++$index) {
+            $this->pages->create($this->user, 'note', "Notiz {$index}", null, null, [
+                'lat' => self::STUTTGART_LAT,
+                'lon' => self::STUTTGART_LON,
+            ]);
+        }
+
+        $results = $this->nearby->search($this->user, self::STUTTGART_LAT, self::STUTTGART_LON, 10.0);
+
+        self::assertCount(205, $results);
+    }
+
     public function testTaskAndLogPagesAreIncludedAsWellAsNotes(): void
     {
         $task = $this->pages->create($this->user, 'task', 'Baustelle', null, null, [

@@ -30,10 +30,10 @@
                  und Logo wie zwei unabhängige Elemente. */ ?>
         <button x-show="isMobileView('content')" x-cloak @click="showBooks()" class="sidebar-toggle home-menu-toggle fixed left-6 top-4 z-[100] flex border shadow-sm sm:left-10 md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Notizbücher öffnen" x-icon="menu">
         </button>
-        <section class="page-canvas mx-auto px-6 py-10 sm:px-10 sm:py-20 lg:py-28" x-data="pageList" @pages-changed.window="refresh">
+        <section class="page-canvas mx-auto px-6 py-6 sm:px-10 sm:py-10 lg:py-12" x-data="pageList" @pages-changed.window="refresh">
             <?php /* Abstand bleibt so groß, dass der fixierte Schalter die
                      Überschrift nicht überlagert. */ ?>
-            <div class="pt-6 sm:pt-12">
+            <div class="pt-10 sm:pt-2">
                 <div class="flex items-center gap-3 sm:gap-4">
                     <img src="/icon/logo-mark.svg" alt="" width="56" height="56" class="size-10 shrink-0 sm:size-14">
                     <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">Mein Workspace</h1>
@@ -73,17 +73,34 @@
                 </div>
             </div>
 
-            <div class="mt-8 max-w-2xl sm:mt-16">
-                <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--color-border);">
-                    <h2 class="text-xl font-semibold" x-text="nearbyActive ? 'In der Nähe' : (searchQuery.trim() !== '' ? 'Suchergebnisse' : 'Zuletzt bearbeitet')"></h2>
-                    <span class="flex items-center gap-3">
-                        <span class="text-sm" style="color: var(--color-text-muted);" x-text="nearbyActive ? nearbyResultsLabel() : (searchQuery.trim() !== '' ? searchResultsLabel() : recentCountLabel())"></span>
-                        <button x-show="nearbyActive" x-cloak type="button" @click="clearNearby" class="icon-action" aria-label="Umkreissuche verlassen" title="Umkreissuche verlassen" x-icon="x"></button>
-                    </span>
+            <div class="mt-8 max-w-2xl sm:mt-12">
+                <div class="flex items-end justify-between gap-3 border-b" style="border-color: var(--color-border);">
+                    <div class="workspace-tabs flex min-w-0 overflow-x-auto overflow-y-hidden" role="tablist" aria-label="Workspace-Ansicht">
+                        <button type="button" class="tab-button" :class="workspaceTab === 'recent' ? 'is-active' : ''" :aria-selected="workspaceTab === 'recent'" @click="selectWorkspaceTab('recent')" role="tab">Zuletzt bearbeitet</button>
+                        <button type="button" class="tab-button" :class="workspaceTab === 'favorites' ? 'is-active' : ''" :aria-selected="workspaceTab === 'favorites'" @click="selectWorkspaceTab('favorites')" role="tab">Favoriten</button>
+                        <button type="button" class="tab-button" :class="workspaceTab === 'location' ? 'is-active' : ''" :aria-selected="workspaceTab === 'location'" @click="selectWorkspaceTab('location')" role="tab">Standort</button>
+                    </div>
+                    <span class="hidden shrink-0 pb-2 text-sm sm:inline" style="color: var(--color-text-muted);" x-text="searchQuery.trim() !== '' ? searchResultsLabel() : workspaceCountLabel()"></span>
                 </div>
-                <div x-show="nearbyActive" x-cloak class="divide-y divide-[color:var(--color-border)]">
+
+                <h2 x-show="searchQuery.trim() !== ''" x-cloak class="pt-5 text-lg font-semibold">Suchergebnisse</h2>
+
+                <div x-show="searchQuery.trim() === '' && workspaceTab === 'location'" x-cloak>
+                    <div class="flex items-center justify-between gap-3 py-4">
+                        <p class="text-sm" style="color: var(--color-text-muted);">Seiten im Umkreis von 10 km, nach Entfernung sortiert.</p>
+                        <button type="button" @click="openNearbyDialog" class="btn btn-quiet shrink-0">Anderen Ort wählen</button>
+                    </div>
+                    <p x-show="nearbyLoading || nearbyLocating" class="py-6 text-sm" style="color: var(--color-text-muted);">Aktueller Standort wird ermittelt…</p>
+                    <div x-show="nearbyError && !nearbyLoading" class="rounded-lg border p-4" style="border-color: var(--color-border);">
+                        <p class="text-sm" style="color: var(--color-danger);" x-text="nearbyError"></p>
+                        <button type="button" @click="runNearbyFromCurrentLocation(10)" class="btn btn-quiet mt-3">Erneut versuchen</button>
+                    </div>
+                </div>
+
+                <div x-show="searchQuery.trim() === '' && workspaceTab === 'location' && !nearbyLoading && !nearbyLocating && !nearbyError" x-cloak class="divide-y divide-[color:var(--color-border)]">
                     <template x-for="item in nearbyResults" :key="nearbyResultKey(item)">
                         <a href="#" @click.prevent="openNearbyResult(item)" class="flex items-start gap-3 py-4 hover:opacity-70">
+                            <span x-show="item.page_type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
                             <span x-show="item.page_type === 'log'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
                             <span x-show="item.page_type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
                             <div class="min-w-0 flex-1">
@@ -95,32 +112,32 @@
                     </template>
                     <p x-show="nearbyResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Seiten im Umkreis gefunden.</p>
                 </div>
-                <p x-show="!nearbyActive && searchLoading" x-cloak class="py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
-                <div x-show="!nearbyActive && !searchLoading" class="divide-y divide-[color:var(--color-border)]">
-                        <template x-for="page in (searchQuery.trim() !== '' ? searchResults : recentPages())" :key="page.id">
-                            <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
-                                <span x-show="page.type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
-                                <span x-show="page.type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
-                                <span x-show="page.type === 'log'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
-                                <span x-show="page.is_shared" class="pt-0.5" style="color: var(--color-accent);" title="Geteilte Seite" x-icon="share-2"></span>
-                                <div class="min-w-0 flex-1">
-                                    <p class="truncate text-base font-medium" x-text="page.title"></p>
-                                    <p class="mt-0.5 truncate text-sm" style="color: var(--color-text-muted);" x-text="pageSummary(page)"></p>
-                                    <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted); opacity: 0.8;" x-text="pageMeta(page)"></p>
-                                </div>
-                                <span class="pt-0.5" style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
-                            </a>
-                        </template>
+
+                <p x-show="searchQuery.trim() !== '' && searchLoading" x-cloak class="py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
+                <div x-show="(searchQuery.trim() !== '' || workspaceTab !== 'location') && !searchLoading" class="divide-y divide-[color:var(--color-border)]">
+                    <template x-for="page in (searchQuery.trim() !== '' ? searchResults : workspacePages())" :key="page.id">
+                        <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
+                            <span x-show="page.type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
+                            <span x-show="page.type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
+                            <span x-show="page.type === 'log'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
+                            <span x-show="page.is_shared" class="pt-0.5" style="color: var(--color-accent);" title="Geteilte Seite" x-icon="share-2"></span>
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-base font-medium" x-text="page.title"></p>
+                                <p class="mt-0.5 truncate text-sm" style="color: var(--color-text-muted);" x-text="pageSummary(page)"></p>
+                                <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted); opacity: 0.8;" x-text="pageMeta(page)"></p>
+                            </div>
+                            <span class="pt-0.5" style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
+                        </a>
+                    </template>
                 </div>
-                <?php /* Sentinel für das Nachladen beim Scrollen; der Button bleibt als
-                         Rückfalloption, wenn kein IntersectionObserver zur Verfügung steht.
-                         Die Suche liefert bereits das komplette Ergebnis, braucht also kein
-                         Nachladen. */ ?>
-                <div x-ref="recentSentinel" x-show="!nearbyActive && searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
+
+                <?php /* Nur die Liste „Zuletzt bearbeitet" wird schrittweise erweitert. */ ?>
+                <div x-ref="recentSentinel" x-show="searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
                     <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Seiten laden</button>
                 </div>
-                <p x-show="!nearbyActive && !loading && searchQuery.trim() === '' && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>
-                <p x-show="!nearbyActive && !searchLoading && searchQuery.trim() !== '' && searchResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Treffer für „<span x-text="searchQuery"></span>“.</p>
+                <p x-show="workspaceTab === 'recent' && !loading && searchQuery.trim() === '' && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>
+                <p x-show="workspaceTab === 'favorites' && !loading && searchQuery.trim() === '' && favoritePages().length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Noch keine Favoriten vorhanden.</p>
+                <p x-show="!searchLoading && searchQuery.trim() !== '' && searchResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Treffer für „<span x-text="searchQuery"></span>“.</p>
             </div>
             <?php include __DIR__ . '/partials/nearby_search_dialog.php'; ?>
         </section>

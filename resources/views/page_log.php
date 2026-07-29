@@ -136,7 +136,8 @@
                 <template x-for="column in columns" :key="column.id">
                     <div class="mt-5">
                         <label class="block text-sm font-medium" x-text="column.name"></label>
-                        <div class="mt-2 flex gap-2">
+                        <p x-show="column.type === 'user'" class="mt-2 text-sm" style="color: var(--color-text-muted);">Wird beim Anlegen automatisch eingetragen.</p>
+                        <div x-show="column.type !== 'user'" class="mt-2 flex gap-2">
                             <input
                                 :value="valueInput(column)"
                                 @input="onValueInput(column, $event)"

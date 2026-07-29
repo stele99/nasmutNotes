@@ -702,8 +702,7 @@ button:disabled,
   }
 }
 
-/* Kapitel-Reiter der Task-Seite (Desktop). Der aktive Reiter sitzt bündig auf
-   der Trennlinie darunter, wie bei Browser-Tabs. */
+/* Reiter. Der aktive Reiter sitzt bündig auf der Trennlinie darunter. */
 .tab-button {
   border-bottom: 2px solid transparent;
   color: var(--color-text-muted);
@@ -722,6 +721,14 @@ button:disabled,
 .tab-button.is-active {
   border-bottom-color: var(--color-accent);
   color: var(--color-text);
+}
+
+.workspace-tabs {
+  scrollbar-width: none;
+}
+
+.workspace-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 /* Die Seitenliste ist bewusst flach und füllt die ganze Breite der Leiste. */

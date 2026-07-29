@@ -52,12 +52,19 @@ final class LogService
 
         $columns = $this->log->columnsForPage($pageId);
         $sortColumnId = $this->resolveSortColumn($sort, $columns);
+        $sortColumnType = null;
+        foreach ($columns as $column) {
+            if ((int) $column['id'] === $sortColumnId) {
+                $sortColumnType = (string) $column['type'];
+                break;
+            }
+        }
         // Vorgabe ist absteigend: Das Jüngste gehört bei einem Logbuch nach oben.
         $ascending = $direction === 'asc';
 
         return [
             'columns' => $columns,
-            'entries' => $this->log->entriesForPage($pageId, $sortColumnId, $ascending),
+            'entries' => $this->log->entriesForPage($pageId, $sortColumnId, $ascending, $sortColumnType),
             'entry_count' => $this->log->countEntries($pageId),
             'sort' => $sortColumnId === null ? 'occurred_at' : (string) $sortColumnId,
             'direction' => $ascending ? 'asc' : 'desc',
@@ -277,10 +284,10 @@ final class LogService
             if (!isset($columns[$columnId])) {
                 throw new ValidationException('Unbekannte Spalte im Eintrag.');
             }
-            $normalized[$columnId] = $this->normalizeValue(
-                LogColumnType::from((string) $columns[$columnId]['type']),
-                $value,
-            );
+            $type = LogColumnType::from((string) $columns[$columnId]['type']);
+            if ($type !== LogColumnType::User) {
+                $normalized[$columnId] = $this->normalizeValue($type, $value);
+            }
         }
 
         return $normalized;
@@ -298,6 +305,7 @@ final class LogService
             LogColumnType::Time => $this->timeValue($value),
             LogColumnType::Location => $this->locationValue($value),
             LogColumnType::Hours, LogColumnType::Number, LogColumnType::Money => $this->numberValue($type, $value),
+            LogColumnType::User => null,
         };
     }
 

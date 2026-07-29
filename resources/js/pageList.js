@@ -108,9 +108,10 @@ export function pageList() {
     ...nearbySearchMixin(),
     voiceNoticeTimer: null,
     pages: [],
-    // Für die Übersicht sortierte Kopie: Favoriten zuerst, dann nach
-    // Änderungsdatum. Die Seitenleiste nutzt weiterhin `pages`.
+    // Für die Übersicht rein nach Änderungsdatum sortierte Kopie. Favoriten
+    // haben ihren eigenen Reiter und beeinflussen diese Reihenfolge nicht.
     orderedPages: [],
+    workspaceTab: 'recent',
     recentLimit: RECENT_PAGE_SIZE,
     recentObserver: null,
     loading: true,
@@ -368,13 +369,8 @@ export function pageList() {
       this.pages = pages;
       const availableIds = new Set(pages.map((page) => Number(page.id)));
       this.selectedPageIds = this.selectedPageIds.filter((id) => availableIds.has(id));
-      this.orderedPages = [...pages].sort((left, right) => {
-        const favoriteDifference = Number(right.is_favorite ?? 0) - Number(left.is_favorite ?? 0);
-        if (favoriteDifference !== 0) {
-          return favoriteDifference;
-        }
-        return String(right.updated_at || '').localeCompare(String(left.updated_at || ''));
-      });
+      this.orderedPages = [...pages].sort((left, right) => String(right.updated_at || '')
+        .localeCompare(String(left.updated_at || '')));
     },
 
     async createPage(type) {
@@ -642,17 +638,36 @@ export function pageList() {
       window.__CURRENT_PAGE_CAN_EDIT__ = canEdit;
     },
 
-    /**
-     * Übersicht: Favoriten zuerst, danach zuletzt bearbeitete zuerst. Der
-     * Ausschnitt wächst beim Scrollen, damit auch große Workspaces nicht auf
-     * einen Schlag in den DOM gerendert werden (FR-WS-11).
-     */
+    /** Der Ausschnitt wächst beim Scrollen, damit große Workspaces klein starten. */
     recentPages() {
       return this.orderedPages.slice(0, this.recentLimit);
     },
 
+    favoritePages() {
+      return this.orderedPages.filter((page) => page.is_favorite);
+    },
+
+    workspacePages() {
+      return this.workspaceTab === 'favorites' ? this.favoritePages() : this.recentPages();
+    },
+
+    async selectWorkspaceTab(tab) {
+      if (!['recent', 'favorites', 'location'].includes(tab)) {
+        return;
+      }
+      this.workspaceTab = tab;
+      this.searchQuery = '';
+      this.searchResults = [];
+
+      if (tab === 'location') {
+        await this.runNearbyFromCurrentLocation(10);
+      } else {
+        this.nearbyActive = false;
+      }
+    },
+
     hasMoreRecentPages() {
-      return this.orderedPages.length > this.recentLimit;
+      return this.workspaceTab === 'recent' && this.orderedPages.length > this.recentLimit;
     },
 
     loadMoreRecentPages() {
@@ -669,6 +684,18 @@ export function pageList() {
       const shown = Math.min(this.recentLimit, total);
 
       return total > shown ? `${shown} von ${total} Seiten` : `${total} Seiten`;
+    },
+
+    workspaceCountLabel() {
+      if (this.workspaceTab === 'location') {
+        return this.nearbyResultsLabel();
+      }
+      if (this.workspaceTab === 'favorites') {
+        const total = this.favoritePages().length;
+        return total === 1 ? '1 Favorit' : `${total} Favoriten`;
+      }
+
+      return this.recentCountLabel();
     },
 
     searchResultsLabel() {
@@ -745,11 +772,15 @@ export function pageList() {
     clearSearch() {
       this.searchQuery = '';
       this.searchResults = [];
-      this.clearNearby();
+      if (this.workspaceTab !== 'location') {
+        this.clearNearby();
+      }
     },
 
     async search() {
-      this.clearNearby();
+      if (this.workspaceTab !== 'location') {
+        this.clearNearby();
+      }
       const query = this.searchQuery.trim();
       if (!query) {
         this.searchResults = [];

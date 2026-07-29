@@ -85,6 +85,7 @@ final class PublicShareService
             $data['log_columns'] = array_map(static fn (array $column): array => [
                 'id' => (int) $column['id'],
                 'name' => (string) $column['name'],
+                'type' => (string) $column['type'],
                 'is_numeric' => LogColumnType::from((string) $column['type'])->isNumeric(),
             ], $this->log->columnsForPage((int) $page['id']));
 
@@ -95,6 +96,8 @@ final class PublicShareService
                         ? (string) $value['value_text']
                         : ($value['value_number'] !== null ? (string) $value['value_number'] : '');
                 }
+
+                $values['user'] = $entry['created_by_name'] !== null ? (string) $entry['created_by_name'] : '';
 
                 return ['id' => (int) $entry['id'], 'occurred_at' => (string) $entry['occurred_at'], 'values' => $values];
             }, $this->log->entriesForPage((int) $page['id'], null, false));

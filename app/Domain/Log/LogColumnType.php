@@ -18,6 +18,7 @@ enum LogColumnType: string
     case Hours = 'hours';
     case Number = 'number';
     case Money = 'money';
+    case User = 'user';
 
     public static function fromInput(mixed $value): self
     {
@@ -48,6 +49,7 @@ enum LogColumnType: string
             self::Hours => 'stunden',
             self::Number => 'zahl',
             self::Money => 'betrag',
+            self::User => 'benutzer',
         };
     }
 
@@ -60,6 +62,7 @@ enum LogColumnType: string
             self::Hours => 'Stunden',
             self::Number => 'Zahl',
             self::Money => 'Betrag',
+            self::User => 'User',
         };
     }
 }

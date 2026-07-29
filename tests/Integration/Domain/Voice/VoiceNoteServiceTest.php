@@ -187,6 +187,29 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertStringNotContainsString('Einsatzort', $request);
     }
 
+    public function testUserColumnsAreKeptAwayFromTheModel(): void
+    {
+        $columns = [
+            ['id' => 3, 'name' => 'Tätigkeit', 'type' => 'text'],
+            ['id' => 4, 'name' => 'Erstellt von', 'type' => 'user'],
+        ];
+
+        $this->queueTranscription('Kundenbesuch dokumentiert');
+        $this->queuePostprocessing([
+            'occurred_at' => '2026-07-29T09:00',
+            'values' => ['Tätigkeit' => 'Kundenbesuch', 'Erstellt von' => 'Andere Person'],
+        ]);
+
+        $result = $this->service()->transcribeForLog(
+            $this->makeUpload(),
+            $columns,
+            '2026-07-29T09:40:00+02:00',
+        );
+
+        self::assertSame([3 => 'Kundenbesuch'], $result['values']);
+        self::assertStringNotContainsString('Erstellt von', $this->lastChatRequest());
+    }
+
     public function testUnknownNotebookLeavesNoteUnassigned(): void
     {
         $this->notebooks->create($this->user, ['name' => 'Arbeit']);

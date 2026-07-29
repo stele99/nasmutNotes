@@ -130,6 +130,40 @@ final class LogServiceTest extends TestCase
         self::assertSame('2026-07-29T07:30:00.000Z', $entry['occurred_at']);
     }
 
+    public function testUserColumnsShowTheCreatorAndCannotBeOverwritten(): void
+    {
+        $creator = $this->column('Erstellt von', 'user');
+
+        $entry = $this->entry('2026-07-29T09:00:00+02:00', [$creator => 'Andere Person']);
+
+        self::assertSame('a@example.com', $entry['created_by_name']);
+        self::assertArrayNotHasKey($creator, $entry['values']);
+
+        $updated = $this->log->updateEntry($this->user, (int) $entry['id'], [
+            'values' => [$creator => 'Noch jemand'],
+        ]);
+        self::assertSame('a@example.com', $updated['created_by_name']);
+        self::assertArrayNotHasKey($creator, $updated['values']);
+    }
+
+    public function testEntriesCanBeSortedByTheirCreator(): void
+    {
+        $creator = $this->column('User', 'user');
+        $workspaces = new WorkspaceRepository($this->pdo);
+        $secondUser = $this->makeUser($workspaces, 'z@example.com');
+        $repository = new LogRepository($this->pdo);
+
+        $repository->createEntry($this->pageId, '2026-07-02T08:00:00.000Z', $secondUser->id);
+        $repository->createEntry($this->pageId, '2026-07-01T08:00:00.000Z', $this->user->id);
+
+        $entries = $this->log->board($this->user, $this->pageId, (string) $creator, 'asc')['entries'];
+
+        self::assertSame(
+            ['a@example.com', 'z@example.com'],
+            array_column($entries, 'created_by_name'),
+        );
+    }
+
     public function testPlainDecimalsKeepTheirValue(): void
     {
         $hours = $this->column('Dauer', 'hours');

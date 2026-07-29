@@ -101,8 +101,12 @@ final class LogRepository
      *
      * @return array<int, array<string, mixed>>
      */
-    public function entriesForPage(int $pageId, ?int $sortColumnId, bool $ascending): array
-    {
+    public function entriesForPage(
+        int $pageId,
+        ?int $sortColumnId,
+        bool $ascending,
+        ?string $sortColumnType = null,
+    ): array {
         $direction = $ascending ? 'ASC' : 'DESC';
         $limit = self::MAX_ENTRIES;
 
@@ -112,6 +116,16 @@ final class LogRepository
                  LEFT JOIN users u ON u.id = e.created_by
                      WHERE e.page_id = :page_id
                   ORDER BY e.occurred_at {$direction}, e.id {$direction}
+                     LIMIT {$limit}";
+            $params = ['page_id' => $pageId];
+        } elseif ($sortColumnType === 'user') {
+            $sql = "SELECT e.*, u.name AS created_by_name
+                      FROM log_entries e
+                 LEFT JOIN users u ON u.id = e.created_by
+                     WHERE e.page_id = :page_id
+                  ORDER BY (u.name IS NULL) ASC,
+                           u.name COLLATE NOCASE {$direction},
+                           e.occurred_at DESC
                      LIMIT {$limit}";
             $params = ['page_id' => $pageId];
         } else {

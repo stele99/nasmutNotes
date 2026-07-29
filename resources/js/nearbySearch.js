@@ -162,12 +162,46 @@ export function nearbySearchMixin() {
         const data = await apiFetch(`/api/search/nearby?${query.toString()}`);
         this.nearbyResults = data.results || [];
         this.nearbyActive = true;
+        if ('workspaceTab' in this) {
+          this.workspaceTab = 'location';
+        }
         this.searchQuery = '';
         this.searchResults = [];
         this.closeNearbyDialog();
       } catch (error) {
         this.nearbyError = error.message || 'Die Umkreissuche ist fehlgeschlagen.';
       } finally {
+        this.nearbyLoading = false;
+      }
+    },
+
+    /** Startseiten-Reiter: aktueller Gerätestandort mit festem Umkreis. */
+    async runNearbyFromCurrentLocation(radiusKm) {
+      this.nearbyLocating = true;
+      this.nearbyLoading = true;
+      this.nearbyError = '';
+      this.nearbyResults = [];
+      try {
+        const location = await requestLocation();
+        if (!location) {
+          this.nearbyError = 'Der aktuelle Standort konnte nicht ermittelt werden.';
+          return;
+        }
+        this.nearbyRadiusKm = radiusKm;
+        this.setNearbyCenter(location.lat, location.lon);
+
+        const query = new URLSearchParams({
+          lat: String(location.lat),
+          lon: String(location.lon),
+          radius_km: String(radiusKm),
+        });
+        const data = await apiFetch(`/api/search/nearby?${query.toString()}`);
+        this.nearbyResults = data.results || [];
+        this.nearbyActive = true;
+      } catch (error) {
+        this.nearbyError = error.message || 'Die Umkreissuche ist fehlgeschlagen.';
+      } finally {
+        this.nearbyLocating = false;
         this.nearbyLoading = false;
       }
     },
