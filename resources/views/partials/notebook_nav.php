@@ -93,17 +93,17 @@
                                 <?php /* Aufnahmeort neuer Notizen: je Gerät, in der Vorgabe
                                          erst auf Klick (FR-NOTE-25). */ ?>
                                 <h3 class="mt-8 text-xl font-semibold">Standort</h3>
-                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Notizen können festhalten, wo sie entstanden sind. Die Einstellung gilt für dieses Gerät.</p>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Notizen können festhalten, wo sie entstanden sind. Die Einstellung wird in deinem Benutzerprofil gespeichert.</p>
                                 <div class="mt-4 space-y-3">
                                     <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
-                                        <input type="radio" name="location-mode" value="manual" :checked="isLocationMode('manual')" @change="selectLocationMode('manual')" class="mt-1">
+                                        <input type="radio" :name="locationRadioName" value="manual" :checked="isLocationMode('manual')" :disabled="locationModeSaving" @change="selectLocationMode('manual')" class="mt-1">
                                         <span class="min-w-0">
                                             <span class="block font-medium">Nur auf Klick</span>
                                             <span class="block text-xs" style="color: var(--color-text-muted);">Neue Notizen entstehen ohne Standort; auf der Notiz gibt es „Standort hinzufügen".</span>
                                         </span>
                                     </label>
                                     <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
-                                        <input type="radio" name="location-mode" value="auto" :checked="isLocationMode('auto')" :disabled="!locationSupported" @change="selectLocationMode('auto')" class="mt-1">
+                                        <input type="radio" :name="locationRadioName" value="auto" :checked="isLocationMode('auto')" :disabled="!locationSupported || locationModeSaving" @change="selectLocationMode('auto')" class="mt-1">
                                         <span class="min-w-0">
                                             <span class="block font-medium">Immer automatisch</span>
                                             <span class="block text-xs" style="color: var(--color-text-muted);">Jede neue Notiz - auch die per Sprache - hält den Standort gleich beim Anlegen fest. Ohne Ortung entsteht sie einfach ohne.</span>

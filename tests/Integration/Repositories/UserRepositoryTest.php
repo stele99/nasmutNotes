@@ -37,4 +37,16 @@ final class UserRepositoryTest extends TestCase
         self::assertNotSame('', $acknowledgedAt);
         self::assertSame($acknowledgedAt, $users->findById($user->id)?->infoAcknowledgedAt);
     }
+
+    public function testLocationCaptureModeIsStoredOnTheUser(): void
+    {
+        $users = new UserRepository($this->makeDatabase(), new AdminEmails(''));
+        $user = $users->create('sub-1', 'a@example.com', 'A', null);
+
+        self::assertNull($user->locationCaptureMode);
+
+        $users->updateLocationCaptureMode($user->id, 'auto');
+
+        self::assertSame('auto', $users->findById($user->id)?->locationCaptureMode);
+    }
 }

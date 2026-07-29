@@ -46,6 +46,15 @@ final class ProfileController
             $result['info_acknowledged'] = true;
         }
 
+        if (array_key_exists('location_capture_mode', $body)) {
+            $mode = $body['location_capture_mode'];
+            if (!is_string($mode) || !in_array($mode, ['manual', 'auto'], true)) {
+                throw new ValidationException('Ungültige Standort-Einstellung.');
+            }
+            $this->users->updateLocationCaptureMode($user->id, $mode);
+            $result['location_capture_mode'] = $mode;
+        }
+
         if ($result === []) {
             throw new ValidationException('Keine gültige Profileinstellung übermittelt.');
         }

@@ -58,6 +58,7 @@ final class AppController
                 'is_admin' => $user->isAdmin,
                 'nearby_search_radius_km' => $user->nearbySearchRadiusKm,
                 'info_acknowledged' => $user->infoAcknowledgedAt !== null,
+                'location_capture_mode' => $user->locationCaptureMode,
             ],
             'storage' => $this->pages->workspaceStats($user),
             'offline' => [

@@ -16,6 +16,7 @@ final class User
         public readonly bool $isAdmin,
         public readonly float $nearbySearchRadiusKm = 1.0,
         public readonly ?string $infoAcknowledgedAt = null,
+        public readonly ?string $locationCaptureMode = null,
     ) {
     }
 
@@ -33,6 +34,9 @@ final class User
             nearbySearchRadiusKm: (float) ($row['nearby_search_radius_km'] ?? 1.0),
             infoAcknowledgedAt: isset($row['info_acknowledged_at'])
                 ? (string) $row['info_acknowledged_at']
+                : null,
+            locationCaptureMode: isset($row['location_capture_mode'])
+                ? (string) $row['location_capture_mode']
                 : null,
         );
     }

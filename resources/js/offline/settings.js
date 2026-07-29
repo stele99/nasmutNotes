@@ -19,9 +19,10 @@ import {
 } from './runtime.js';
 import { onInstallStateChange, promptInstall } from '../install.js';
 import { apiFetch } from '../api.js';
-import { getLocationMode, isLocationSupported, setLocationMode } from '../geo.js';
+import { getLocationMode, isLocationSupported, loadLocationMode, saveLocationMode } from '../geo.js';
 
 const LARGE_LIMITS = [5000, 10000, 'all'];
+let settingsInstance = 0;
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) {
@@ -38,6 +39,8 @@ function formatBytes(bytes) {
 }
 
 export function offlineSettings() {
+  settingsInstance += 1;
+
   return {
     open: false,
     settingsSection: 'app',
@@ -77,13 +80,17 @@ export function offlineSettings() {
     workspaceFileCount: 0,
     workspaceStorageLabel: '–',
     workspaceTopItems: [],
-    // Standort neuer Notizen: je Gerät, in der Vorgabe erst auf Klick
+    // Standort neuer Notizen: im Benutzerprofil, in der Vorgabe erst auf Klick
     // (FR-NOTE-25).
     locationSupported: isLocationSupported(),
     locationMode: getLocationMode(),
+    locationRadioName: `location-mode-${settingsInstance}`,
+    locationModeHandler: null,
+    locationModeSaving: false,
 
     async init() {
       await this.refreshStats();
+      this.locationMode = await loadLocationMode();
       this.unsubscribe = onStatusChange((status) => {
         const previousConflictCount = this.conflictCount;
         const wasPrefetching = this.statusPrefetching;
@@ -116,6 +123,10 @@ export function offlineSettings() {
         this.appInstalled = state.installed;
         this.showIosInstallHint = state.showIosHint;
       });
+      this.locationModeHandler = (event) => {
+        this.locationMode = event.detail?.mode || getLocationMode();
+      };
+      window.addEventListener('location-mode-changed', this.locationModeHandler);
     },
 
     destroy() {
@@ -124,6 +135,9 @@ export function offlineSettings() {
       }
       if (this.installUnsubscribe) {
         this.installUnsubscribe();
+      }
+      if (this.locationModeHandler) {
+        window.removeEventListener('location-mode-changed', this.locationModeHandler);
       }
     },
 
@@ -141,6 +155,7 @@ export function offlineSettings() {
       this.settingsSection = section;
       this.message = '';
       this.error = '';
+      this.locationMode = await loadLocationMode(true);
       await this.refreshStats();
     },
 
@@ -220,9 +235,25 @@ export function offlineSettings() {
      * `manual`: Der Ort kommt erst, wenn er auf der Notiz angefordert wird.
      * `auto`: Schon beim Anlegen fragt der Browser danach (FR-NOTE-25).
      */
-    selectLocationMode(mode) {
+    async selectLocationMode(mode) {
+      if (this.locationModeSaving || mode === this.locationMode) {
+        return;
+      }
+      const previous = this.locationMode;
       this.locationMode = mode;
-      setLocationMode(mode);
+      this.locationModeSaving = true;
+      this.error = '';
+      try {
+        this.locationMode = await saveLocationMode(mode);
+        window.dispatchEvent(new CustomEvent('location-mode-changed', {
+          detail: { mode: this.locationMode },
+        }));
+      } catch (error) {
+        this.locationMode = previous;
+        this.error = error.message || 'Die Standort-Einstellung konnte nicht gespeichert werden.';
+      } finally {
+        this.locationModeSaving = false;
+      }
     },
 
     isLocationMode(mode) {

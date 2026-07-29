@@ -99,6 +99,12 @@ final class UserRepository
         return $acknowledgedAt;
     }
 
+    public function updateLocationCaptureMode(int $id, string $mode): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET location_capture_mode = :mode WHERE id = :id');
+        $stmt->execute(['mode' => $mode, 'id' => $id]);
+    }
+
     /** @return User[] */
     public function all(): array
     {

@@ -1,5 +1,7 @@
+import { apiFetch } from './api.js';
+
 /**
- * Aufnahmeort von Notizen (FR-NOTE-25). Freiwillig und je Gerät einstellbar:
+ * Aufnahmeort von Notizen (FR-NOTE-25). Freiwillig im Benutzerprofil einstellbar:
  * Standardmäßig wird er nur auf Klick gesetzt, auf Wunsch schon beim Anlegen.
  */
 
@@ -9,6 +11,8 @@ const MODE_KEY = 'notes-location-mode';
 const LEGACY_KEY = 'notes-location-capture';
 
 export const LOCATION_MODES = ['manual', 'auto'];
+let profileMode = null;
+let modeRequest = null;
 
 /** Nach dieser Zeit entsteht die Notiz lieber ohne Ort als gar nicht. */
 const LOOKUP_TIMEOUT_MS = 8000;
@@ -22,6 +26,10 @@ export function isLocationSupported() {
  * `auto`: Schon beim Anlegen einer Notiz wird er mitgeschickt.
  */
 export function getLocationMode() {
+  return LOCATION_MODES.includes(profileMode) ? profileMode : 'manual';
+}
+
+function legacyLocationMode() {
   try {
     const stored = window.localStorage.getItem(MODE_KEY);
     if (LOCATION_MODES.includes(stored)) {
@@ -35,12 +43,62 @@ export function getLocationMode() {
 }
 
 export function setLocationMode(mode) {
+  profileMode = LOCATION_MODES.includes(mode) ? mode : 'manual';
+}
+
+function clearLegacyLocationMode() {
   try {
-    window.localStorage.setItem(MODE_KEY, LOCATION_MODES.includes(mode) ? mode : 'manual');
+    window.localStorage.removeItem(MODE_KEY);
     window.localStorage.removeItem(LEGACY_KEY);
   } catch {
-    /* Ohne localStorage bleibt es bei der Voreinstellung "manual". */
+    /* Der Profilwert ist bereits gespeichert; der alte Browserwert ist harmlos. */
   }
+}
+
+export function loadLocationMode(force = false) {
+  if (force) {
+    modeRequest = null;
+  }
+  if (!modeRequest) {
+    modeRequest = apiFetch('/api/session')
+      .then(async (session) => {
+        const stored = session?.user?.location_capture_mode;
+        if (LOCATION_MODES.includes(stored)) {
+          setLocationMode(stored);
+          clearLegacyLocationMode();
+          return getLocationMode();
+        }
+
+        // Einmalige Übernahme der früher nur im Browser gespeicherten Auswahl.
+        const legacy = legacyLocationMode();
+        const result = await apiFetch('/api/profile', {
+          method: 'PATCH',
+          body: JSON.stringify({ location_capture_mode: legacy }),
+        });
+        setLocationMode(result.location_capture_mode);
+        clearLegacyLocationMode();
+        return getLocationMode();
+      })
+      .catch(() => {
+        setLocationMode(profileMode || legacyLocationMode());
+        return getLocationMode();
+      });
+  }
+
+  return modeRequest;
+}
+
+export async function saveLocationMode(mode) {
+  const normalized = LOCATION_MODES.includes(mode) ? mode : 'manual';
+  const result = await apiFetch('/api/profile', {
+    method: 'PATCH',
+    body: JSON.stringify({ location_capture_mode: normalized }),
+  });
+  setLocationMode(result.location_capture_mode);
+  modeRequest = Promise.resolve(getLocationMode());
+  clearLegacyLocationMode();
+
+  return getLocationMode();
 }
 
 /**
@@ -72,8 +130,9 @@ export function requestLocation() {
  * Beim Anlegen einer Notiz - nur in der automatischen Betriebsart. Sonst bleibt
  * die Notiz zunächst ohne Ort und bekommt ihn auf Klick.
  */
-export function captureLocationOnCreate() {
-  return getLocationMode() === 'auto' ? requestLocation() : Promise.resolve(null);
+export async function captureLocationOnCreate() {
+  const mode = await loadLocationMode();
+  return mode === 'auto' ? requestLocation() : null;
 }
 
 /**
