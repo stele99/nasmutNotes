@@ -24,4 +24,17 @@ final class UserRepositoryTest extends TestCase
 
         self::assertSame(7.5, $users->findById($user->id)?->nearbySearchRadiusKm);
     }
+
+    public function testInformationAcknowledgementIsStoredOnTheUser(): void
+    {
+        $users = new UserRepository($this->makeDatabase(), new AdminEmails(''));
+        $user = $users->create('sub-1', 'a@example.com', 'A', null);
+
+        self::assertNull($user->infoAcknowledgedAt);
+
+        $acknowledgedAt = $users->acknowledgeInfo($user->id);
+
+        self::assertNotSame('', $acknowledgedAt);
+        self::assertSame($acknowledgedAt, $users->findById($user->id)?->infoAcknowledgedAt);
+    }
 }

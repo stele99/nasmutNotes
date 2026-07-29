@@ -15,6 +15,7 @@ final class User
         public readonly bool $isActive,
         public readonly bool $isAdmin,
         public readonly float $nearbySearchRadiusKm = 1.0,
+        public readonly ?string $infoAcknowledgedAt = null,
     ) {
     }
 
@@ -30,6 +31,9 @@ final class User
             isActive: ((int) $row['is_active']) === 1,
             isAdmin: $isAdmin,
             nearbySearchRadiusKm: (float) ($row['nearby_search_radius_km'] ?? 1.0),
+            infoAcknowledgedAt: isset($row['info_acknowledged_at'])
+                ? (string) $row['info_acknowledged_at']
+                : null,
         );
     }
 }

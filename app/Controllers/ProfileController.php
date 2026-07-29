@@ -20,23 +20,36 @@ final class ProfileController
     public function update(Request $request, Response $response): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $radius = $body['nearby_search_radius_km'] ?? null;
-        if (!is_int($radius) && !is_float($radius) && !is_string($radius)) {
-            throw new ValidationException('Ungültiger Suchradius.');
-        }
-        if (!is_numeric($radius)) {
-            throw new ValidationException('Ungültiger Suchradius.');
-        }
-
-        $radiusKm = (float) $radius;
-        if (!is_finite($radiusKm) || $radiusKm < 0.1 || $radiusKm > 50.0) {
-            throw new ValidationException('Der Suchradius muss zwischen 0,1 und 50 km liegen.');
-        }
-        $radiusKm = round($radiusKm, 1);
-
         $user = CurrentUser::require($request);
-        $this->users->updateNearbySearchRadius($user->id, $radiusKm);
+        $result = [];
 
-        return JsonResponse::json($response, ['nearby_search_radius_km' => $radiusKm]);
+        if (array_key_exists('nearby_search_radius_km', $body)) {
+            $radius = $body['nearby_search_radius_km'];
+            if (!is_int($radius) && !is_float($radius) && !is_string($radius)) {
+                throw new ValidationException('Ungültiger Suchradius.');
+            }
+            if (!is_numeric($radius)) {
+                throw new ValidationException('Ungültiger Suchradius.');
+            }
+
+            $radiusKm = (float) $radius;
+            if (!is_finite($radiusKm) || $radiusKm < 0.1 || $radiusKm > 50.0) {
+                throw new ValidationException('Der Suchradius muss zwischen 0,1 und 50 km liegen.');
+            }
+            $radiusKm = round($radiusKm, 1);
+            $this->users->updateNearbySearchRadius($user->id, $radiusKm);
+            $result['nearby_search_radius_km'] = $radiusKm;
+        }
+
+        if (($body['info_acknowledged'] ?? null) === true) {
+            $this->users->acknowledgeInfo($user->id);
+            $result['info_acknowledged'] = true;
+        }
+
+        if ($result === []) {
+            throw new ValidationException('Keine gültige Profileinstellung übermittelt.');
+        }
+
+        return JsonResponse::json($response, $result);
     }
 }

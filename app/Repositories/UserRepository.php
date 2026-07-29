@@ -90,6 +90,15 @@ final class UserRepository
         $stmt->execute(['radius' => $radiusKm, 'id' => $id]);
     }
 
+    public function acknowledgeInfo(int $id): string
+    {
+        $acknowledgedAt = gmdate('Y-m-d\TH:i:s.v\Z');
+        $stmt = $this->pdo->prepare('UPDATE users SET info_acknowledged_at = :acknowledged_at WHERE id = :id');
+        $stmt->execute(['acknowledged_at' => $acknowledgedAt, 'id' => $id]);
+
+        return $acknowledgedAt;
+    }
+
     /** @return User[] */
     public function all(): array
     {

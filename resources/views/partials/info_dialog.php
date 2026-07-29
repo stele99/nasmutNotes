@@ -3,8 +3,8 @@
     x-cloak
     class="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5"
     style="background-color: rgb(0 0 0 / 0.5);"
-    @click.self="infoDialogOpen = false"
-    @keydown.escape.window="infoDialogOpen = false"
+    @click.self="dismissInfoDialog"
+    @keydown.escape.window="dismissInfoDialog"
     role="dialog"
     aria-modal="true"
     aria-labelledby="info-dialog-title"
@@ -15,7 +15,7 @@
                 <p class="text-sm font-medium" style="color: var(--color-accent);">Informationen zur Nutzung</p>
                 <h2 id="info-dialog-title" class="mt-1 text-xl font-semibold">Datenschutz, Verantwortung &amp; Datensicherheit</h2>
             </div>
-            <button type="button" @click="infoDialogOpen = false" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+            <button x-show="!infoAcknowledgementRequired" x-cloak type="button" @click="dismissInfoDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
         </header>
 
         <div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 text-sm leading-relaxed sm:px-6">
@@ -59,6 +59,7 @@
             <section>
                 <h3 class="font-semibold">KI-Dienste</h3>
                 <p class="mt-1" style="color: var(--color-text-muted);">KI-Funktionen sind optional. Bei ihrer Nutzung werden die für die konkrete Aufgabe erforderlichen Inhalte an OpenAI oder an den administrativ konfigurierten kompatiblen KI-Dienst übertragen. Dazu können insbesondere Notiztexte, Diktat-Audiodaten, Transkripte, Logbuchspalten und die zu verarbeitenden Eingaben gehören.</p>
+                <p class="mt-2" style="color: var(--color-text-muted);">Bei Verwendung der Diktatfunktion wird die aufgenommene Audiodatei zur Transkription an OpenAI oder den administrativ konfigurierten Sprachdienst übertragen. Wenn die KI-Nachbearbeitung aktiviert ist, wird zusätzlich das erzeugte Transkript an den konfigurierten KI-Dienst übermittelt.</p>
                 <p class="mt-2" style="color: var(--color-text-muted);">KI-Ergebnisse können unvollständig, fehlerhaft oder missverständlich sein. Sie müssen vor der Übernahme eigenverantwortlich geprüft werden. Vertrauliche, besonders schützenswerte oder nicht zur Weitergabe bestimmte Informationen sollten nicht an KI-Funktionen übermittelt werden.</p>
             </section>
 
@@ -71,10 +72,11 @@
                 <p class="font-medium">Empfehlung</p>
                 <p class="mt-1" style="color: var(--color-text-muted);">Nutze Freigaben, Standort- und KI-Funktionen bewusst, prüfe automatisch erzeugte Inhalte und bewahre von geschäftskritischen oder unersetzlichen Daten eine eigene Kopie auf.</p>
             </div>
+            <p x-show="infoDialogError" x-cloak x-text="infoDialogError" class="text-sm" style="color: var(--color-danger);" role="alert"></p>
         </div>
 
         <footer class="flex justify-end border-t px-5 py-4 sm:px-6" style="border-color: var(--color-border);">
-            <button type="button" @click="infoDialogOpen = false" class="btn btn-primary">Verstanden</button>
+            <button type="button" @click="closeInfoDialog" :disabled="infoDialogBusy" class="btn btn-primary" x-text="infoDialogBusy ? 'Speichert…' : (infoAcknowledgementRequired ? 'Gelesen und verstanden' : 'Schließen')"></button>
         </footer>
     </div>
 </div>

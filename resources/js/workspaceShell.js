@@ -114,6 +114,9 @@ export function workspaceShell() {
     dropTargetNotebookId: null,
     notebookDialogOpen: false,
     infoDialogOpen: false,
+    infoAcknowledgementRequired: false,
+    infoDialogBusy: false,
+    infoDialogError: '',
     notebookDialogMode: 'create',
     notebookDialogNotebookId: null,
     openNotebookMenuId: null,
@@ -143,6 +146,57 @@ export function workspaceShell() {
       this.restoreNotebookRailWidth();
       this.watchViewport();
       await this.refreshNotebooks();
+      await this.initializeInfoDialog();
+    },
+
+    async initializeInfoDialog() {
+      try {
+        const session = await apiFetch('/api/session');
+        if (session?.user?.info_acknowledged !== true) {
+          this.infoAcknowledgementRequired = true;
+          this.infoDialogOpen = true;
+        }
+      } catch {
+        // Offline bleibt der Dialog über das Info-Symbol erreichbar.
+      }
+    },
+
+    openInfoDialog() {
+      this.infoAcknowledgementRequired = false;
+      this.infoDialogError = '';
+      this.infoDialogOpen = true;
+    },
+
+    dismissInfoDialog() {
+      if (!this.infoAcknowledgementRequired && !this.infoDialogBusy) {
+        this.infoDialogOpen = false;
+        this.infoDialogError = '';
+      }
+    },
+
+    async closeInfoDialog() {
+      if (this.infoDialogBusy) {
+        return;
+      }
+      if (!this.infoAcknowledgementRequired) {
+        this.dismissInfoDialog();
+        return;
+      }
+
+      this.infoDialogBusy = true;
+      this.infoDialogError = '';
+      try {
+        await apiFetch('/api/profile', {
+          method: 'PATCH',
+          body: JSON.stringify({ info_acknowledged: true }),
+        });
+        this.infoAcknowledgementRequired = false;
+        this.infoDialogOpen = false;
+      } catch (error) {
+        this.infoDialogError = error.message || 'Die Bestätigung konnte nicht gespeichert werden.';
+      } finally {
+        this.infoDialogBusy = false;
+      }
     },
 
     watchViewport() {
