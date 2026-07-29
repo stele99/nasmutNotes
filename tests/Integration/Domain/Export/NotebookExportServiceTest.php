@@ -6,6 +6,7 @@ namespace Tests\Integration\Domain\Export;
 
 use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Export\NotebookExportService;
+use App\Domain\Log\LogService;
 use App\Domain\NotebookService;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\ProseMirrorValidator;
@@ -14,6 +15,7 @@ use App\Domain\TaskBoardService;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
@@ -94,6 +96,7 @@ final class NotebookExportServiceTest extends TestCase
             $this->fileRepository,
             $categoryRepository,
             $taskRepository,
+            new LogRepository($this->pdo),
             $this->storage,
             new MarkdownRenderer(),
             new AuditLogRepository($this->pdo),
@@ -191,6 +194,40 @@ final class NotebookExportServiceTest extends TestCase
         self::assertStringContainsString('- [ ] Werkzeug', $markdown);
         // Reihenfolge: Küche steht vor Garage, wie im Board.
         self::assertLessThan(strpos($markdown, '## Garage'), strpos($markdown, '## Küche'));
+    }
+
+    public function testExportsLogPageAsMarkdownTable(): void
+    {
+        $notebook = $this->notebooks->create($this->user, ['name' => 'Betrieb']);
+        $page = $this->pages->create($this->user, 'log', 'Fahrtenbuch', null, (int) $notebook['id']);
+        $pageId = (int) $page['id'];
+
+        $log = new LogService(
+            $this->pdo,
+            $this->pages,
+            new PageRepository($this->pdo),
+            new LogRepository($this->pdo),
+        );
+        $place = (int) $log->createColumn($this->user, $pageId, 'Ziel', 'location')['id'];
+        $hours = (int) $log->createColumn($this->user, $pageId, 'Dauer', 'hours')['id'];
+
+        $log->createEntry($this->user, $pageId, '2026-07-01T08:00:00+00:00', [
+            $place => ['label' => 'Stuttgart', 'lat' => 48.775846, 'lon' => 9.182932],
+            $hours => '2,5',
+        ]);
+        $log->createEntry($this->user, $pageId, '2026-07-02T09:30:00+00:00', [$place => 'München | Zentrum']);
+
+        $markdown = $this->exportEntries([(int) $notebook['id']])['Betrieb/Fahrtenbuch.md'];
+
+        self::assertStringContainsString('type: log', $markdown);
+        self::assertStringContainsString('| Zeitpunkt | Eintrag | Ziel | Dauer |', $markdown);
+        self::assertStringContainsString('2026-07-01 08:00', $markdown);
+        self::assertStringContainsString('Stuttgart (48.77585, 9.18293)', $markdown);
+        self::assertStringContainsString('2,50 h', $markdown);
+        // Der senkrechte Strich in einem Wert darf die Tabelle nicht sprengen.
+        self::assertStringContainsString('München \\| Zentrum', $markdown);
+        // Neueste Einträge stehen auch im Export oben.
+        self::assertLessThan(strpos($markdown, '2026-07-01'), strpos($markdown, '2026-07-02'));
     }
 
     public function testSanitizesTitlesThatWouldBecomePaths(): void

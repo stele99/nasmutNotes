@@ -43,6 +43,7 @@ export function adminDashboard() {
     voicePostprocessEnabled: true,
     voicePostprocessModel: '',
     voicePrompt: '',
+    voiceLogPrompt: '',
     voiceMaxSeconds: 300,
     voiceMaxMb: 25,
 
@@ -84,6 +85,7 @@ export function adminDashboard() {
       this.voicePostprocessEnabled = voice.postprocess_enabled !== false;
       this.voicePostprocessModel = voice.postprocess_model || '';
       this.voicePrompt = voice.postprocess_prompt || '';
+      this.voiceLogPrompt = voice.log_prompt || '';
       this.voiceMaxSeconds = Number(voice.max_seconds || 300);
       this.voiceMaxMb = Number(voice.max_mb || 25);
     },
@@ -111,6 +113,7 @@ export function adminDashboard() {
         postprocess_enabled: this.voicePostprocessEnabled,
         postprocess_model: this.voicePostprocessModel,
         postprocess_prompt: this.voicePrompt,
+        log_prompt: this.voiceLogPrompt,
         max_seconds: Number(this.voiceMaxSeconds),
         max_mb: Number(this.voiceMaxMb),
       };
@@ -131,7 +134,7 @@ export function adminDashboard() {
       await this.run(async () => {
         await apiFetch('/api/admin/settings/voice', {
           method: 'PATCH',
-          body: JSON.stringify({ postprocess_prompt: '' }),
+          body: JSON.stringify({ postprocess_prompt: '', log_prompt: '' }),
         });
         this.message = 'Die Standardanweisung wurde wiederhergestellt.';
       });

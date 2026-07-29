@@ -46,6 +46,10 @@
                     <button type="button" @click="createPage('task')" class="btn btn-secondary flex-1 sm:flex-none">
                         <span x-icon="list-todo"></span>Neue Aufgabenliste
                     </button>
+                    <?php /* Logbuch: Einträge mit Zeitpunkt und eigenen Spalten (FR-LOG-01). */ ?>
+                    <button type="button" @click="createPage('log')" class="btn btn-secondary flex-1 sm:flex-none">
+                        <span x-icon="scroll-text"></span>Neues Logbuch
+                    </button>
                     <?php /* Sprachnotiz: Aufnehmen, transkribieren lassen und als fertige
                              Notiz mit Überschrift und Notizbuch anlegen (FR-VOICE-01..04). */ ?>
                     <?php if (!empty($voiceEnabled)): ?>
@@ -75,6 +79,7 @@
                             <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
                                 <span x-show="page.type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
                                 <span x-show="page.type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
+                                <span x-show="page.type === 'log'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
                                 <span x-show="page.is_shared" class="pt-0.5" style="color: var(--color-accent);" title="Geteilte Seite" x-icon="share-2"></span>
                                 <div class="min-w-0 flex-1">
                                     <p class="truncate text-base font-medium" x-text="page.title"></p>

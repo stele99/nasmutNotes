@@ -15,6 +15,7 @@ use App\Controllers\HealthController;
 use App\Controllers\HomeController;
 use App\Controllers\ImportController;
 use App\Controllers\InviteController;
+use App\Controllers\LogController;
 use App\Controllers\NotebookController;
 use App\Controllers\NoteController;
 use App\Controllers\PageAttachmentController;
@@ -125,6 +126,10 @@ return static function (App $app): void {
         $group->post('/{id}/files', [PageAttachmentController::class, 'store']);
         $group->get('/{id}/board', [BoardController::class, 'show']);
         $group->post('/{id}/categories', [BoardController::class, 'createCategory']);
+        $group->get('/{id}/log', [LogController::class, 'show']);
+        $group->post('/{id}/log/columns', [LogController::class, 'storeColumn']);
+        $group->post('/{id}/log/entries', [LogController::class, 'storeEntry']);
+        $group->post('/{id}/log/voice', [LogController::class, 'storeVoiceEntry']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->group('/api/categories', function ($group): void {
@@ -132,6 +137,16 @@ return static function (App $app): void {
         $group->delete('/{id}', [CategoryController::class, 'destroy']);
         $group->post('/{id}/tasks/import', [TaskController::class, 'import']);
         $group->post('/{id}/tasks', [TaskController::class, 'store']);
+    })->add(new RequireAuthMiddleware(true));
+
+    $app->group('/api/log-columns', function ($group): void {
+        $group->patch('/{id}', [LogController::class, 'updateColumn']);
+        $group->delete('/{id}', [LogController::class, 'destroyColumn']);
+    })->add(new RequireAuthMiddleware(true));
+
+    $app->group('/api/log-entries', function ($group): void {
+        $group->patch('/{id}', [LogController::class, 'updateEntry']);
+        $group->delete('/{id}', [LogController::class, 'destroyEntry']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->group('/api/tasks', function ($group): void {

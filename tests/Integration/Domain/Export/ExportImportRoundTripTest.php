@@ -17,6 +17,7 @@ use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
@@ -94,6 +95,7 @@ final class ExportImportRoundTripTest extends TestCase
             $fileRepository,
             new CategoryRepository($this->pdo),
             new TaskRepository($this->pdo),
+            new LogRepository($this->pdo),
             $storage,
             new MarkdownRenderer(),
             $auditLog,

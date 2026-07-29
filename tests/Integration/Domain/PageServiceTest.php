@@ -279,6 +279,22 @@ final class PageServiceTest extends TestCase
         self::assertNull($removed['location_at']);
     }
 
+    public function testEveryPageTypeCanCarryALocation(): void
+    {
+        foreach (['note', 'task', 'log'] as $type) {
+            $page = $this->pages->create($this->userA, $type, "Seite {$type}", null, null, [
+                'lat' => 48.775846,
+                'lon' => 9.182932,
+            ]);
+            self::assertSame(48.775846, (float) $page['location_lat'], $type);
+
+            $moved = $this->pages->update($this->userA, (int) $page['id'], [
+                'location' => ['lat' => 52.516275, 'lon' => 13.377704],
+            ]);
+            self::assertSame(52.516275, (float) $moved['location_lat'], $type);
+        }
+    }
+
     public function testAnInvalidLocationIsRejectedOnUpdateInsteadOfBeingDropped(): void
     {
         $page = $this->pages->create($this->userA, 'note', 'Mit Ort', null);

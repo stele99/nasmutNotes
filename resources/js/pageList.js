@@ -36,6 +36,19 @@ function offlinePageHtml(page) {
   const notebookIcon = page.is_shared ? 'share-2' : (page.notebook_icon || 'book-open');
   const notebookColor = page.is_shared ? 'var(--color-text-muted)' : (page.notebook_color || 'var(--color-text-muted)');
 
+  // Logbücher leben von der Serverabfrage; offline gibt es nur den Hinweis
+  // darauf, statt einer leeren Tabelle (FR-LOG-01).
+  const logBody = `<div class="page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14">
+        <div class="page-toolbar flex items-center gap-2">
+          <span style="color: ${notebookColor};" x-icon="${notebookIcon}"></span>
+          ${notebookLabel}
+        </div>
+        <div class="pt-10">
+          <h1 class="text-4xl font-semibold tracking-tight">${title}</h1>
+          <p class="mt-4 text-sm" style="color: var(--color-text-muted);">Logbücher sind offline nicht verfügbar. Sobald wieder eine Verbindung besteht, erscheinen die Einträge hier.</p>
+        </div>
+      </div>`;
+
   const body = isNote
     ? `<div class="note-page page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="${id}" data-page-title="${title}" data-page-can-edit="${canEdit}" data-page-is-shared="${isShared}">
         <div class="note-sticky-header page-toolbar flex items-center gap-2">
@@ -56,6 +69,7 @@ function offlinePageHtml(page) {
           <div class="prose-editor" x-ref="editor"></div>
         </div>
       </div>`
+    : page.type === 'log' ? logBody
     : `<div class="page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="taskBoard" data-page-id="${id}" data-page-title="${title}" data-page-can-edit="${canEdit}">
         <div class="page-toolbar flex items-center gap-2">
           <span style="color: ${notebookColor};" x-icon="${notebookIcon}"></span>
@@ -370,10 +384,10 @@ export function pageList() {
       if (this.activeCollection === 'shared' || this.activeCollection === 'favorites' || this.activeCollection === 'trash') {
         return;
       }
-      // Der Aufnahmeort gehört zur Notiz; Aufgabenlisten führen keinen
-      // (FR-NOTE-25). In der Vorgabe „manuell" bleibt er hier leer und wird
-      // erst auf der Notiz per Klick gesetzt.
-      const location = type === 'note' ? await captureLocationOnCreate() : null;
+      // Jede Seite kann festhalten, wo sie entstanden ist (FR-NOTE-25). In der
+      // Vorgabe „manuell" bleibt der Ort hier leer und wird erst auf der Seite
+      // per Klick gesetzt.
+      const location = await captureLocationOnCreate();
       const page = await apiFetch('/api/pages', {
         method: 'POST',
         body: JSON.stringify({
@@ -684,6 +698,20 @@ export function pageList() {
 
     /** Zweite Kartenzeile: Anriss der Notiz bzw. Aufgabenstand der Task-Seite. */
     pageSummary(page) {
+      if (page.type === 'log') {
+        const total = Number(page.log_entry_count || 0);
+        if (total === 0) {
+          return 'Noch keine Einträge';
+        }
+        const latest = page.latest_entry_at
+          ? new Intl.DateTimeFormat('de-DE', { dateStyle: 'short' }).format(new Date(page.latest_entry_at))
+          : null;
+
+        return latest
+          ? `${total} ${total === 1 ? 'Eintrag' : 'Einträge'} · zuletzt ${latest}`
+          : `${total} ${total === 1 ? 'Eintrag' : 'Einträge'}`;
+      }
+
       if (page.type === 'task') {
         const total = Number(page.task_count || 0);
         if (total === 0) {

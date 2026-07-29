@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Voice;
 
 use App\Domain\Import\MarkdownConverter;
+use App\Domain\Log\LogColumnType;
 use App\Domain\NotebookService;
 use App\Domain\Notes\NoteService;
 use App\Domain\PageService;
@@ -31,6 +32,7 @@ final class VoiceNoteService
     public const POSTPROCESS_ENABLED_KEY = 'voice_postprocess_enabled';
     public const POSTPROCESS_MODEL_KEY = 'voice_postprocess_model';
     public const POSTPROCESS_PROMPT_KEY = 'voice_postprocess_prompt';
+    public const LOG_PROMPT_KEY = 'voice_log_prompt';
     public const MAX_SECONDS_KEY = 'voice_max_seconds';
     public const MAX_MB_KEY = 'voice_max_mb';
 
@@ -55,6 +57,29 @@ final class VoiceNoteService
         {"title": "…", "notebook": "…", "text": "…"}
 
         Schreibe in der Sprache des Transkripts.
+        PROMPT;
+
+    public const DEFAULT_LOG_PROMPT = <<<'PROMPT'
+        Du erfasst aus einer diktierten Aufnahme genau einen Eintrag für ein Logbuch.
+
+        Du bekommst die Spalten des Logbuchs mit ihrer Art, die aktuelle Ortszeit und das Transkript.
+
+        Bedeutung der Spaltenarten:
+        - text: Freitext
+        - standort: Ortsangabe als Text (Adresse, Ortsname)
+        - uhrzeit: Uhrzeit im Format HH:MM
+        - stunden: Dezimalzahl (eine Dreiviertelstunde ist 0.75)
+        - zahl: Dezimalzahl
+        - betrag: Geldbetrag in Euro als Dezimalzahl, ohne Währungszeichen
+
+        Antworte ausschließlich mit einem JSON-Objekt der Form:
+        {"occurred_at": "YYYY-MM-DDTHH:MM", "values": {"<Spaltenname>": "<Wert>"}}
+
+        Regeln:
+        1. "occurred_at" ist der Zeitpunkt des Eintrags in Ortszeit. Relative Angaben wie „gestern früh" oder „vor zwei Stunden" von der genannten aktuellen Zeit aus umrechnen. Nennt die Aufnahme keinen Zeitpunkt, nimm die aktuelle Zeit.
+        2. Führe nur Spalten auf, zu denen die Aufnahme tatsächlich etwas sagt. Schreibe die Spaltennamen genau so, wie sie vorgegeben sind.
+        3. Zahlen ohne Einheit und mit Punkt als Dezimaltrennzeichen.
+        4. Erfinde nichts. Was nicht gesagt wurde, bleibt weg.
         PROMPT;
 
     /** Zulässige Aufnahmeformate: Endung => MIME-Typen, die Browser melden. */
@@ -105,6 +130,7 @@ final class VoiceNoteService
             postprocessEnabled: $this->boolSetting(self::POSTPROCESS_ENABLED_KEY, true),
             postprocessModel: $this->stringSetting(self::POSTPROCESS_MODEL_KEY, $this->fallbackPostprocessModel),
             postprocessPrompt: $this->stringSetting(self::POSTPROCESS_PROMPT_KEY, self::DEFAULT_PROMPT),
+            logPrompt: $this->stringSetting(self::LOG_PROMPT_KEY, self::DEFAULT_LOG_PROMPT),
             maxSeconds: max(10, $this->settings->getInt(self::MAX_SECONDS_KEY, $this->fallbackMaxSeconds)
                 ?? $this->fallbackMaxSeconds),
             maxMb: min(self::MAX_UPLOAD_MB, max(1, $this->settings->getInt(self::MAX_MB_KEY, $this->fallbackMaxMb)
@@ -171,6 +197,18 @@ final class VoiceNoteService
             }
             $this->settings->set(self::POSTPROCESS_PROMPT_KEY, $prompt);
             $changed[] = 'postprocess_prompt';
+        }
+
+        if (array_key_exists('log_prompt', $input)) {
+            $prompt = trim((string) ($input['log_prompt'] ?? ''));
+            if ($prompt === '') {
+                $prompt = self::DEFAULT_LOG_PROMPT;
+            }
+            if (mb_strlen($prompt) > 8000) {
+                throw new ValidationException('Die Anweisung darf höchstens 8000 Zeichen lang sein.');
+            }
+            $this->settings->set(self::LOG_PROMPT_KEY, $prompt);
+            $changed[] = 'log_prompt';
         }
 
         if (array_key_exists('max_seconds', $input)) {
@@ -282,6 +320,131 @@ final class VoiceNoteService
             'title' => $result['title'],
             'notebook_name' => $result['notebook_name'],
         ];
+    }
+
+    /**
+     * Diktierter Logbuch-Eintrag (FR-LOG-08): Die Aufnahme wird transkribiert
+     * und auf die Spalten des Logbuchs verteilt. Gespeichert wird hier nichts -
+     * das übernimmt der LogService mit seiner eigenen Prüfung.
+     *
+     * **Ortsspalten bleiben ausgespart**: Sie kommen bei einer Aufnahme immer
+     * vom Ortungsdienst des Geräts (FR-LOG-11). Ein Modell könnte aus dem
+     * Gesagten nur raten, wo der Eintrag entstanden ist.
+     *
+     * @param array<int, array<string, mixed>> $columns Spalten des Logbuchs
+     * @param string|null $clientNow Ortszeit des Clients als ISO-Zeitstempel mit Zeitzone
+     * @return array{occurred_at: ?string, values: array<int, string>, transcript: string}
+     */
+    public function transcribeForLog(UploadedFileInterface $file, array $columns, ?string $clientNow = null): array
+    {
+        $columns = array_values(array_filter(
+            $columns,
+            static fn (array $column): bool => (string) $column['type'] !== LogColumnType::Location->value,
+        ));
+
+        $settings = $this->requireUsableSettings();
+        $upload = $this->storeUpload($file, $settings);
+
+        try {
+            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name']);
+        } finally {
+            @unlink($upload['path']);
+        }
+
+        if ($transcript === '') {
+            throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
+        }
+
+        $reference = $this->referenceTime($clientNow);
+        $lines = array_map(
+            static fn (array $column): string => '- ' . $column['name'] . ' | '
+                . LogColumnType::from((string) $column['type'])->promptName(),
+            $columns,
+        );
+
+        $answer = $this->client->completeJson(
+            $settings,
+            $settings->logPrompt,
+            "Spalten des Logbuchs:\n" . implode("\n", $lines)
+            . "\n\nAktuelle Ortszeit: " . $reference->format('Y-m-d\TH:i')
+            . "\n\nTranskript der Aufnahme:\n" . $transcript,
+        );
+
+        return [
+            'occurred_at' => $this->localTimestamp($answer['occurred_at'] ?? null, $reference),
+            'values' => $this->mapValuesToColumns($answer['values'] ?? null, $columns),
+            'transcript' => $transcript,
+        ];
+    }
+
+    /**
+     * Das Modell antwortet mit Spaltennamen; die Zuordnung erfolgt ohne
+     * Rücksicht auf Groß-/Kleinschreibung. Unbekannte Namen fallen weg, statt
+     * den ganzen Eintrag scheitern zu lassen.
+     *
+     * @param array<int, array<string, mixed>> $columns
+     * @return array<int, string>
+     */
+    private function mapValuesToColumns(mixed $values, array $columns): array
+    {
+        if (!is_array($values)) {
+            return [];
+        }
+
+        $byName = [];
+        foreach ($columns as $column) {
+            $byName[mb_strtolower(trim((string) $column['name']))] = (int) $column['id'];
+        }
+
+        $mapped = [];
+        foreach ($values as $name => $value) {
+            $columnId = $byName[mb_strtolower(trim((string) $name))] ?? null;
+            if ($columnId === null || !is_scalar($value)) {
+                continue;
+            }
+            $text = trim((string) $value);
+            if ($text !== '') {
+                $mapped[$columnId] = $text;
+            }
+        }
+
+        return $mapped;
+    }
+
+    /** Ortszeit des Clients; ohne brauchbare Angabe gilt die Serverzeit. */
+    private function referenceTime(?string $clientNow): \DateTimeImmutable
+    {
+        if ($clientNow !== null && trim($clientNow) !== '') {
+            try {
+                return new \DateTimeImmutable(trim($clientNow));
+            } catch (\Throwable) {
+                /* Serverzeit ist der Rückfall. */
+            }
+        }
+
+        return new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+    }
+
+    /**
+     * Das Modell liefert eine Ortszeit ohne Zeitzone. Ergänzt wird die des
+     * Clients, damit „gestern um acht" nicht um Stunden verrutscht.
+     */
+    private function localTimestamp(mixed $value, \DateTimeImmutable $reference): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $value = trim($value);
+        if (preg_match('/(Z|[+-]\d{2}:?\d{2})$/', $value) === 1) {
+            return $value;
+        }
+
+        try {
+            return new \DateTimeImmutable($value, $reference->getTimezone())->format(\DateTimeInterface::ATOM);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

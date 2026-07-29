@@ -7,6 +7,7 @@ namespace App\Domain\Export;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
@@ -55,6 +56,7 @@ final class NotebookExportService
         private readonly PageAttachmentRepository $files,
         private readonly CategoryRepository $categories,
         private readonly TaskRepository $tasks,
+        private readonly LogRepository $log,
         private readonly UploadStorage $storage,
         private readonly MarkdownRenderer $markdown,
         private readonly AuditLogRepository $auditLog,
@@ -236,9 +238,11 @@ final class NotebookExportService
             ++$written;
         }
 
-        $body = ($page['type'] ?? 'note') === 'task'
-            ? $this->taskMarkdown($pageId)
-            : $this->noteMarkdown($pageId, $imageTargets);
+        $body = match ($page['type'] ?? 'note') {
+            'task' => $this->taskMarkdown($pageId),
+            'log' => $this->logMarkdown($pageId),
+            default => $this->noteMarkdown($pageId, $imageTargets),
+        };
 
         $markdown = $this->frontMatter($page, $notebookName)
             . "\n# " . $this->escapeHeading($title) . "\n\n"
@@ -269,6 +273,76 @@ final class NotebookExportService
             // dessen Hash - der Abgleich läuft deshalb über den Hash.
             static fn (string $token): ?string => $imageTargets[hash('sha256', $token)] ?? null,
         );
+    }
+
+    /**
+     * Logbuch als Markdown-Tabelle: erste Spalte der Zeitpunkt, dann die
+     * eigenen Spalten in ihrer Reihenfolge (FR-LOG-10).
+     */
+    private function logMarkdown(int $pageId): string
+    {
+        $columns = $this->log->columnsForPage($pageId);
+        $entries = $this->log->entriesForPage($pageId, null, false);
+        if ($entries === []) {
+            return "_Keine Einträge._\n";
+        }
+
+        $header = array_merge(['Zeitpunkt'], array_map(
+            fn (array $column): string => $this->escapeCell((string) $column['name']),
+            $columns,
+        ));
+
+        $lines = [
+            '| ' . implode(' | ', $header) . ' |',
+            '| ' . implode(' | ', array_fill(0, count($header), '---')) . ' |',
+        ];
+
+        foreach ($entries as $entry) {
+            $cells = [$this->escapeCell(str_replace('T', ' ', substr((string) $entry['occurred_at'], 0, 16)))];
+            foreach ($columns as $column) {
+                $value = $entry['values'][(int) $column['id']] ?? null;
+                $cells[] = $this->escapeCell($this->logCell($value, (string) $column['type']));
+            }
+            $lines[] = '| ' . implode(' | ', $cells) . ' |';
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    /** @param array<string, mixed>|null $value */
+    private function logCell(?array $value, string $type): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (in_array($type, ['hours', 'number', 'money'], true)) {
+            if ($value['value_number'] === null) {
+                return '';
+            }
+            $number = number_format((float) $value['value_number'], $type === 'number' ? 2 : 2, ',', '.');
+
+            return match ($type) {
+                'hours' => $number . ' h',
+                'money' => $number . ' €',
+                default => $number,
+            };
+        }
+
+        $text = $value['value_text'] !== null ? (string) $value['value_text'] : '';
+        if ($type === 'location' && $value['value_lat'] !== null) {
+            $coordinates = round((float) $value['value_lat'], 5) . ', ' . round((float) $value['value_lon'], 5);
+
+            return $text !== '' ? "{$text} ({$coordinates})" : $coordinates;
+        }
+
+        return $text;
+    }
+
+    /** In einer Markdown-Tabelle trennt der senkrechte Strich die Zellen. */
+    private function escapeCell(string $value): string
+    {
+        return trim(str_replace(['|', "\r\n", "\n", "\r"], ['\\|', ' ', ' ', ' '], $value));
     }
 
     /**
@@ -376,7 +450,11 @@ final class NotebookExportService
     {
         $lines = ['---'];
         $lines[] = 'title: ' . $this->yaml((string) ($page['title'] ?? 'Ohne Titel'));
-        $lines[] = 'type: ' . (($page['type'] ?? 'note') === 'task' ? 'task' : 'note');
+        $lines[] = 'type: ' . match ($page['type'] ?? 'note') {
+            'task' => 'task',
+            'log' => 'log',
+            default => 'note',
+        };
         $lines[] = 'notebook: ' . $this->yaml($notebookName);
         if (($page['created_at'] ?? null) !== null) {
             $lines[] = 'created: ' . $this->yaml((string) $page['created_at']);

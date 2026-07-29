@@ -26,9 +26,11 @@ use App\Support\ValidationException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response as GuzzleResponse;
 use PDO;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\RequestInterface;
 use Slim\Psr7\Factory\StreamFactory;
 use Slim\Psr7\UploadedFile;
 use Tests\Support\InMemoryDatabaseTrait;
@@ -45,6 +47,7 @@ final class VoiceNoteServiceTest extends TestCase
     private MockHandler $httpMock;
     private User $user;
     private string $tmpPath;
+    private string $lastRequestBody = '';
 
     protected function setUp(): void
     {
@@ -122,6 +125,66 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertSame(48.775846, (float) $result['page']['location_lat']);
         self::assertSame(9.182932, (float) $result['page']['location_lon']);
         self::assertSame(30.0, (float) $result['page']['location_accuracy']);
+    }
+
+    public function testMapsADictatedLogEntryOntoTheColumnsAndTheLocalTime(): void
+    {
+        $columns = [
+            ['id' => 7, 'name' => 'Tätigkeit', 'type' => 'text'],
+            ['id' => 8, 'name' => 'Dauer', 'type' => 'hours'],
+            ['id' => 9, 'name' => 'Kosten', 'type' => 'money'],
+        ];
+
+        $this->queueTranscription('Gestern beim Kunden die Heizung gewartet, zweieinhalb Stunden, 89,90 Euro Material');
+        $this->queuePostprocessing([
+            'occurred_at' => '2026-07-28T14:30',
+            'values' => [
+                // Groß-/Kleinschreibung des Spaltennamens darf nichts ausmachen.
+                'tätigkeit' => 'Heizung gewartet',
+                'Dauer' => '2.5',
+                'Kosten' => '89.90',
+                'Unbekannt' => 'wird verworfen',
+            ],
+        ]);
+
+        $result = $this->service()->transcribeForLog(
+            $this->makeUpload(),
+            $columns,
+            '2026-07-29T09:40:00+02:00',
+        );
+
+        self::assertSame([7 => 'Heizung gewartet', 8 => '2.5', 9 => '89.90'], $result['values']);
+        // Ohne Zeitzone im Modellwert gilt die des Clients.
+        self::assertSame('2026-07-28T14:30:00+02:00', $result['occurred_at']);
+        self::assertStringContainsString('Heizung', $result['transcript']);
+    }
+
+    public function testLocationColumnsAreKeptAwayFromTheModel(): void
+    {
+        $columns = [
+            ['id' => 3, 'name' => 'Tätigkeit', 'type' => 'text'],
+            ['id' => 4, 'name' => 'Einsatzort', 'type' => 'location'],
+        ];
+
+        $this->queueTranscription('In Stuttgart beim Kunden gewesen');
+        // Selbst wenn das Modell eine Ortsspalte zurückgibt, zählt sie nicht:
+        // Der Ort kommt bei einer Aufnahme vom Gerät (FR-LOG-11).
+        $this->queuePostprocessing([
+            'occurred_at' => '2026-07-29T09:00',
+            'values' => ['Tätigkeit' => 'Kundenbesuch', 'Einsatzort' => 'Stuttgart'],
+        ]);
+
+        $result = $this->service()->transcribeForLog(
+            $this->makeUpload(),
+            $columns,
+            '2026-07-29T09:40:00+02:00',
+        );
+
+        self::assertSame([3 => 'Kundenbesuch'], $result['values']);
+        // Die Ortsspalte steht dem Modell auch gar nicht erst zur Verfügung.
+        $request = $this->lastChatRequest();
+        self::assertStringContainsString('Tätigkeit', $request);
+        self::assertStringNotContainsString('Einsatzort', $request);
     }
 
     public function testUnknownNotebookLeavesNoteUnassigned(): void
@@ -262,12 +325,23 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertStringNotContainsString('secret', (string) json_encode($view));
     }
 
+    /** Nutzernachricht der letzten Chat-Anfrage - was das Modell zu sehen bekam. */
+    private function lastChatRequest(): string
+    {
+        $payload = json_decode($this->lastRequestBody, true);
+
+        return is_array($payload) ? (string) ($payload['messages'][1]['content'] ?? '') : '';
+    }
+
     private function service(string $apiKey = 'sk-test'): VoiceNoteService
     {
-        $http = new Client([
-            'handler' => HandlerStack::create($this->httpMock),
-            'http_errors' => false,
-        ]);
+        $stack = HandlerStack::create($this->httpMock);
+        $stack->push(Middleware::mapRequest(function (RequestInterface $request): RequestInterface {
+            $this->lastRequestBody = (string) $request->getBody();
+
+            return $request;
+        }));
+        $http = new Client(['handler' => $stack, 'http_errors' => false]);
 
         return new VoiceNoteService(
             $this->settings,
@@ -289,7 +363,7 @@ final class VoiceNoteServiceTest extends TestCase
         ], (string) json_encode(['text' => $text])));
     }
 
-    /** @param array<string, string> $answer */
+    /** @param array<string, mixed> $answer */
     private function queuePostprocessing(array $answer): void
     {
         $this->httpMock->append(new GuzzleResponse(200, [

@@ -26,6 +26,8 @@ final class SearchRepository
              LEFT JOIN note_contents n ON n.page_id = p.id
              LEFT JOIN categories c ON c.page_id = p.id
              LEFT JOIN tasks t ON t.category_id = c.id
+             LEFT JOIN log_entries le ON le.page_id = p.id
+             LEFT JOIN log_values lv ON lv.entry_id = le.id
              LEFT JOIN shared_page_access spa ON spa.user_id = :user_id
              LEFT JOIN share_links sl ON sl.id = spa.share_link_id
                 AND sl.page_id = p.id
@@ -39,6 +41,7 @@ final class SearchRepository
                    OR c.name LIKE :term COLLATE NOCASE
                    OR t.title LIKE :term COLLATE NOCASE
                    OR t.description LIKE :term COLLATE NOCASE
+                   OR lv.value_text LIKE :term COLLATE NOCASE
                )
              ORDER BY p.updated_at DESC
              LIMIT 20'

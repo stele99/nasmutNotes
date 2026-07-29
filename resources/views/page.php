@@ -36,6 +36,8 @@
                  neben den übrigen Aktionen, statt den Text zu überlagern. */ ?>
         <?php if ($page['type'] === 'note'): ?>
             <?php include __DIR__ . '/page_note.php'; ?>
+        <?php elseif ($page['type'] === 'log'): ?>
+            <?php include __DIR__ . '/page_log.php'; ?>
         <?php else: ?>
             <?php include __DIR__ . '/page_task.php'; ?>
         <?php endif; ?>

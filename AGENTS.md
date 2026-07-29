@@ -25,5 +25,6 @@
 
 - Keep database paths and other relative paths rooted at the repository; `DB_PATH=:memory:` is reserved for tests, while normal startup resolves relative paths beneath the project root.
 - Add migrations rather than editing already-applied migration files; the migrator has no rollback command.
+- Each migration runs inside a transaction unless its file contains the marker `-- migrator:no-transaction`; that marker is reserved for table rebuilds that need `PRAGMA foreign_keys = OFF` (changing a CHECK constraint, for example) and makes the file responsible for its own `BEGIN`/`COMMIT`.
 - Do not commit `.env`, `var/`, `vendor/`, `node_modules/`, or `public/build/`; these are ignored and include runtime data, dependencies, caches, or generated assets.
 - For framework or requirements context, consult `docs/URS.md`, but prefer `composer.json`, `package.json`, PHP config, and CI when they disagree with the specification.

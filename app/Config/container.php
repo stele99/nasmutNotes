@@ -15,6 +15,7 @@ use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\Import\ArchiveChunkStore;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Import\ZipImportService;
+use App\Domain\Log\LogService;
 use App\Domain\NotebookService;
 use App\Domain\Notes\AttachmentService;
 use App\Domain\Notes\ImageCompressionService;
@@ -30,6 +31,7 @@ use App\Repositories\AdminRepository;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\InviteRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
@@ -215,6 +217,7 @@ return static function (string $rootPath): DI\Container {
             PageAttachmentRepository $files,
             CategoryRepository $categories,
             TaskRepository $tasks,
+            LogRepository $log,
             UploadStorage $storage,
             MarkdownRenderer $markdown,
             AuditLogRepository $auditLog,
@@ -227,6 +230,7 @@ return static function (string $rootPath): DI\Container {
             $files,
             $categories,
             $tasks,
+            $log,
             $storage,
             $markdown,
             $auditLog,
@@ -322,6 +326,16 @@ return static function (string $rootPath): DI\Container {
         ): NotebookService => new NotebookService($pdo, $notebooks, $workspaces),
 
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
+
+        LogRepository::class => static fn (PDO $pdo): LogRepository => new LogRepository($pdo),
+
+        LogService::class => static fn (
+            PDO $pdo,
+            PageService $pages,
+            PageRepository $pageRepository,
+            LogRepository $log,
+            ReverseGeocoder $geocoder,
+        ): LogService => new LogService($pdo, $pages, $pageRepository, $log, $geocoder),
 
         OpenAiClient::class => static fn (): OpenAiClient => new OpenAiClient(),
 

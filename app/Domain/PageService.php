@@ -14,7 +14,7 @@ use App\Support\ValidationException;
 
 final class PageService
 {
-    private const TYPES = ['note', 'task'];
+    private const TYPES = ['note', 'task', 'log'];
     private const VIEWS = ['board', 'list'];
 
     public function __construct(
@@ -214,6 +214,8 @@ final class PageService
             $pages[$index]['task_count'] = $summary['task_count'] ?? null;
             $pages[$index]['open_task_count'] = $summary['open_task_count'] ?? null;
             $pages[$index]['attachment_count'] = $summary['attachment_count'] ?? 0;
+            $pages[$index]['log_entry_count'] = $summary['log_entry_count'] ?? null;
+            $pages[$index]['latest_entry_at'] = $summary['latest_entry_at'] ?? null;
         }
 
         return $pages;

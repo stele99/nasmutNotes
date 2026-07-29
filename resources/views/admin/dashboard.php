@@ -131,6 +131,11 @@
                 <textarea id="voice-prompt" x-model="voicePrompt" :disabled="busy || !voicePostprocessEnabled" rows="10" class="mt-2 w-full rounded-md border px-3 py-2 font-mono text-xs" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
                 <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Das Modell muss ein JSON-Objekt mit den Feldern <code>title</code>, <code>notebook</code> und <code>text</code> zurückgeben.</p>
             </div>
+            <div class="sm:col-span-2">
+                <label for="voice-log-prompt" class="block text-sm font-medium">Anweisung für diktierte Logbuch-Einträge</label>
+                <textarea id="voice-log-prompt" x-model="voiceLogPrompt" :disabled="busy" rows="10" class="mt-2 w-full rounded-md border px-3 py-2 font-mono text-xs" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Das Modell bekommt die Spalten des Logbuchs und muss <code>occurred_at</code> sowie <code>values</code> zurückgeben.</p>
+            </div>
         </div>
 
         <div class="mt-5 flex flex-wrap justify-end gap-2">

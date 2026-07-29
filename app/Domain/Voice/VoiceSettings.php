@@ -19,6 +19,7 @@ final readonly class VoiceSettings
         public bool $postprocessEnabled,
         public string $postprocessModel,
         public string $postprocessPrompt,
+        public string $logPrompt,
         public int $maxSeconds,
         public int $maxMb,
     ) {
@@ -53,6 +54,7 @@ final readonly class VoiceSettings
             'postprocess_enabled' => $this->postprocessEnabled,
             'postprocess_model' => $this->postprocessModel,
             'postprocess_prompt' => $this->postprocessPrompt,
+            'log_prompt' => $this->logPrompt,
             'max_seconds' => $this->maxSeconds,
             'max_mb' => $this->maxMb,
             'usable' => $this->isUsable(),

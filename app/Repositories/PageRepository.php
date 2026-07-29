@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Domain\Log\LogColumnType;
+use App\Domain\Log\LogService;
 use PDO;
 
 final class PageRepository
@@ -57,6 +59,20 @@ final class PageRepository
             $this->pdo->prepare(
                 'INSERT INTO note_contents (page_id, updated_at) VALUES (:id, :now)'
             )->execute(['id' => $id, 'now' => $now]);
+        }
+
+        // Ein Logbuch ohne Spalte wäre nicht benutzbar; die erste entsteht
+        // deshalb zusammen mit der Seite (FR-LOG-02).
+        if ($type === 'log') {
+            $this->pdo->prepare(
+                'INSERT INTO log_columns (page_id, name, type, position, created_at)
+                 VALUES (:id, :name, :type, 0, :now)'
+            )->execute([
+                'id' => $id,
+                'name' => LogService::DEFAULT_COLUMN_NAME,
+                'type' => LogColumnType::Text->value,
+                'now' => $now,
+            ]);
         }
 
         $page = $this->findByIdForWorkspace($id, $workspaceId);
@@ -136,7 +152,8 @@ final class PageRepository
      * statt einer Abfrage je Seite.
      *
      * @param list<int> $pageIds
-     * @return array<int, array{preview: ?string, last_editor_name: ?string, task_count: ?int, open_task_count: ?int, attachment_count: int}>
+     * @return array<int, array{preview: ?string, last_editor_name: ?string, task_count: ?int,
+     *     open_task_count: ?int, attachment_count: int, log_entry_count: ?int, latest_entry_at: ?string}>
      */
     public function summaries(array $pageIds): array
     {
@@ -165,6 +182,8 @@ final class PageRepository
                     'task_count' => null,
                     'open_task_count' => null,
                     'attachment_count' => 0,
+                    'log_entry_count' => null,
+                    'latest_entry_at' => null,
                 ];
             }
 
@@ -185,6 +204,28 @@ final class PageRepository
                     'task_count' => (int) $row['task_count'],
                     'open_task_count' => (int) $row['open_task_count'],
                     'attachment_count' => 0,
+                    'log_entry_count' => null,
+                    'latest_entry_at' => null,
+                ];
+            }
+
+            // Logbücher zeigen in der Liste ihre Einträge samt jüngstem Datum.
+            $stmt = $this->pdo->prepare(
+                "SELECT page_id, COUNT(*) AS entry_count, MAX(occurred_at) AS latest_entry_at
+                 FROM log_entries
+                 WHERE page_id IN ({$placeholders})
+                 GROUP BY page_id"
+            );
+            $stmt->execute($chunk);
+            foreach ($stmt->fetchAll() as $row) {
+                $summaries[(int) $row['page_id']] = [
+                    'preview' => null,
+                    'last_editor_name' => null,
+                    'task_count' => null,
+                    'open_task_count' => null,
+                    'attachment_count' => 0,
+                    'log_entry_count' => (int) $row['entry_count'],
+                    'latest_entry_at' => $row['latest_entry_at'] !== null ? (string) $row['latest_entry_at'] : null,
                 ];
             }
 
@@ -205,6 +246,8 @@ final class PageRepository
                     'task_count' => null,
                     'open_task_count' => null,
                     'attachment_count' => 0,
+                    'log_entry_count' => null,
+                    'latest_entry_at' => null,
                 ];
                 $summary['attachment_count'] = (int) $row['attachment_count'];
                 $summaries[$pageId] = $summary;

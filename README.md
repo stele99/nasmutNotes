@@ -13,6 +13,7 @@ Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
 - Freigabe von Notiz- und Task-Seiten per Link in drei Stufen: Nur lesen, Lesen und Kopieren (öffentliche Ansicht, angemeldete Nutzer erzeugen eine unabhängige Kopie samt Bildern/Anhängen) sowie Lesen und Schreiben (Anmeldung erforderlich, gemeinsame Bearbeitung im Workspace)
 - Notizseiten mit TipTap-Editor, Autosave, Screenshot-Paste/Drag-and-drop, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
 - Task-Seiten mit Kategorien und Tasks (Anlegen, Bearbeiten, Verschieben, Duplizieren, Löschen mit Verschieben/Kaskade)
+- Logbuch-Seiten: Einträge mit Zeitpunkt und frei definierbaren Spalten (Text, Standort, Uhrzeit, Stunden, Zahl, Betrag), neueste oben, Sortierung nach jeder Spalte, Summen der Zahlenspalten, Einträge auch per Diktat
 - Sprachnotizen: Aufnahme im Browser, serverseitige Transkription über OpenAI, optionale Aufbereitung durch ein zweites Modell samt Überschrift und abgeleitetem Notizbuch; Diktat auch in eine geöffnete Notiz. Alle Parameter im Admin-Dashboard, der Schlüssel nur in `OPENAI_KEY`
 - Optionaler Aufnahmeort von Notizen: je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar, mit serverseitig ermittelter Anschrift
 - Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff

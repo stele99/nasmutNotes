@@ -594,6 +594,55 @@ button:disabled,
   text-decoration: line-through;
 }
 
+/* Logbuch-Tabelle: Die Zeilen sind anklickbar, deshalb ein deutlicher Hover.
+   Die Tabelle scrollt in ihrem Rahmen, nicht die ganze Seite. */
+.log-table {
+  border-collapse: collapse;
+}
+
+.log-cell {
+  padding: 0.625rem 0.875rem;
+  vertical-align: top;
+}
+
+.log-table thead th {
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.log-table tbody tr + tr .log-cell,
+.log-table tfoot .log-cell {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.log-table tfoot .log-cell {
+  border-top-color: var(--color-border);
+}
+
+.log-row {
+  cursor: pointer;
+}
+
+.log-row:hover {
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+.log-sort {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.log-sort:hover {
+  color: var(--color-text);
+}
+
+.btn.is-recording {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
 /* Laufende Sprachaufnahme: derselbe Knopf beendet sie wieder, deshalb muss der
    Zustand auf einen Blick erkennbar sein. */
 .toolbar-button.is-recording,

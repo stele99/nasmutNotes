@@ -1,11 +1,13 @@
 import { apiFetch } from './api.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { cacheBoard, readCachedBoard } from './offline/runtime.js';
+import { pageLocationMixin } from './pageLocation.js';
 
 const POLL_INTERVAL_MS = 5000;
 
 export function taskBoard() {
   return {
+    ...pageLocationMixin(),
     pageId: null,
     categories: [],
     hiddenCompletedCategories: {},
@@ -66,6 +68,7 @@ export function taskBoard() {
         ? pageRoot.dataset.pageCanEdit === '1'
         : Boolean(window.__CURRENT_PAGE_CAN_EDIT__);
       this.savedPageTitle = this.pageTitle;
+      this.initPageLocation(pageRoot);
       this.loadHiddenCompletedCategories();
       this.loadOnlyMineCategories();
 

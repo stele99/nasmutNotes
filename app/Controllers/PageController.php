@@ -232,6 +232,8 @@ final class PageController
             'task_count' => isset($page['task_count']) ? (int) $page['task_count'] : null,
             'open_task_count' => isset($page['open_task_count']) ? (int) $page['open_task_count'] : null,
             'attachment_count' => isset($page['attachment_count']) ? (int) $page['attachment_count'] : 0,
+            'log_entry_count' => isset($page['log_entry_count']) ? (int) $page['log_entry_count'] : null,
+            'latest_entry_at' => $page['latest_entry_at'] ?? null,
         ];
     }
 }

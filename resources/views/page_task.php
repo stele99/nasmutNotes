@@ -1,4 +1,4 @@
-<div class="page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>">
+<div class="page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
     <div class="page-toolbar flex items-center gap-2">
         <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
@@ -35,6 +35,7 @@
         <div class="min-w-0 flex-1">
             <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
             <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-72 text-4xl font-semibold tracking-tight sm:text-5xl">
+            <?php include __DIR__ . '/partials/page_location.php'; ?>
         </div>
     </div>
 
@@ -327,4 +328,6 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
             </template>
         </form>
     </div>
+
+    <?php include __DIR__ . '/partials/page_location_dialog.php'; ?>
 </div>
