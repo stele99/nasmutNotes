@@ -594,11 +594,11 @@ button:disabled,
   text-decoration: line-through;
 }
 
-/* Mittelpunkt-Markierung der Umkreissuche (FR-NOTE-27): ein eingefärbter
-   Punkt statt Leaflets Standardsymbol - das bräuchte ein Bild-Asset, dessen
+/* Standort-Markierung der Karten (FR-NOTE-27): ein eingefärbter Punkt statt
+   Leaflets Standardsymbol - das bräuchte ein Bild-Asset, dessen
    Pfad Leaflet zur Laufzeit aus einer CSS-Hintergrundfarbe herleitet
    (`_detectIconPath`), was unter Vite mit eingebetteten `data:`-URIs bricht. */
-.nearby-marker span {
+.location-marker span {
   display: block;
   width: 16px;
   height: 16px;
@@ -1181,6 +1181,53 @@ button:disabled,
 
 .prose-editor .tiptap ul[data-type="taskList"] ul[data-type="taskList"] {
   margin-top: 0.35em;
+}
+
+.note-history-diff-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  min-height: 2.25rem;
+}
+
+.note-history-diff-row + .note-history-diff-row {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+}
+
+.note-history-diff-marker {
+  color: var(--color-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0.45rem 0.5rem;
+  text-align: center;
+  user-select: none;
+}
+
+.note-history-diff-text {
+  overflow-wrap: anywhere;
+  padding: 0.45rem 0.75rem;
+  white-space: pre-wrap;
+}
+
+.note-history-diff-row.is-added {
+  background: color-mix(in srgb, var(--color-success) 13%, transparent);
+}
+
+.note-history-diff-row.is-added .note-history-diff-marker {
+  color: var(--color-success);
+}
+
+.note-history-diff-row.is-removed {
+  background: color-mix(in srgb, var(--color-danger) 11%, transparent);
+}
+
+.note-history-diff-row.is-removed .note-history-diff-marker {
+  color: var(--color-danger);
+}
+
+.note-history-diff-row.is-code .note-history-diff-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-x: auto;
+  overflow-wrap: normal;
+  white-space: pre;
 }
 
 @media (max-width: 767px) {

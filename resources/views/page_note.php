@@ -126,6 +126,9 @@
                     <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
                 </button>
             <?php endif; ?>
+            <?php if (!empty($aiEnabled)): ?>
+                <button type="button" @click.prevent="openAiRewriteDialog" :disabled="aiBusy || !isOnline" class="toolbar-button" title="Text mit KI korrigieren und strukturieren" aria-label="Text mit KI korrigieren und strukturieren" x-icon="wand-sparkles"></button>
+            <?php endif; ?>
             <input x-ref="imageInput" type="file" accept="image/*" class="hidden" @change="insertPickedImage">
             <input x-ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="insertPickedImage">
             <input x-ref="attachmentInput" type="file" multiple class="hidden" @change="uploadAttachment">
@@ -152,6 +155,40 @@
     </div>
 
     <?php include __DIR__ . '/partials/page_location_dialog.php'; ?>
+
+    <?php if (!empty($aiEnabled)): ?>
+        <div x-show="aiOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeAiRewriteDialog" @keydown.escape.window="closeAiRewriteDialog" role="dialog" aria-modal="true" aria-labelledby="ai-rewrite-title">
+            <div class="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+                <div class="flex items-start justify-between gap-4 border-b px-5 py-4 sm:px-6" style="border-color: var(--color-border);">
+                    <div><h2 id="ai-rewrite-title" class="text-xl font-semibold">Text mit KI überarbeiten</h2><p class="mt-1 text-sm" style="color: var(--color-text-muted);">Korrigiert Sprache und gliedert die gesamte Notiz mit Absätzen und Überschriften.</p></div>
+                    <button type="button" @click="closeAiRewriteDialog" :disabled="aiBusy || aiApplying" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+                </div>
+                <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                    <label for="ai-rewrite-mode" class="block text-sm font-medium">Art der Überarbeitung</label>
+                    <select id="ai-rewrite-mode" x-model="aiMode" @change="resetAiSuggestion" :disabled="aiBusy || aiApplying" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                        <option value="normal">Normal: Fehlerkorrektur und Typografie</option>
+                        <option value="inviting">Einladend: Ergänzung mit Emojis</option>
+                    </select>
+                    <div x-show="!aiSuggestion && !aiBusy" class="mt-4 rounded-lg p-4 text-sm" style="background: var(--color-bg-subtle);">
+                        Der Notiztext wird an den konfigurierten KI-Dienst übertragen. Bilder, Tabellen, Codeblöcke, Checklisten, Links und Inline-Code bleiben dabei exakt unverändert; nur der übrige Text wird überarbeitet.
+                    </div>
+                    <div x-show="aiBusy" x-cloak class="py-10 text-center"><span class="text-sm" style="color: var(--color-text-muted);">Die KI erstellt einen Vorschlag…</span></div>
+                    <div x-show="aiSuggestion" x-cloak>
+                        <p class="mb-2 text-sm font-medium">Vorschau</p>
+                        <div class="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-lg border p-4 text-sm leading-relaxed" style="border-color: var(--color-border); background: var(--color-bg-subtle);" x-text="aiPreview"></div>
+                        <p class="mt-3 text-xs" style="color: var(--color-text-muted);">Bitte prüfe den Vorschlag. Erst „Übernehmen“ ersetzt den bisherigen Text; die vorherige Fassung bleibt im Versionsverlauf.</p>
+                    </div>
+                    <p x-show="aiError" x-cloak x-text="aiError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                </div>
+                <div class="flex flex-wrap justify-end gap-2 border-t px-5 py-4 sm:px-6" style="border-color: var(--color-border);">
+                    <button type="button" @click="closeAiRewriteDialog" :disabled="aiBusy || aiApplying" class="btn btn-quiet">Abbrechen</button>
+                    <button x-show="!aiSuggestion" type="button" @click="requestAiRewrite" :disabled="aiBusy || aiApplying" class="btn btn-primary" x-text="aiBusy ? 'Erstellt…' : 'Vorschlag erstellen'"></button>
+                    <button x-show="aiSuggestion" x-cloak type="button" @click="requestAiRewrite" :disabled="aiBusy || aiApplying" class="btn btn-secondary">Neu erstellen</button>
+                    <button x-show="aiSuggestion" x-cloak type="button" @click="applyAiRewrite" :disabled="aiBusy || aiApplying" class="btn btn-primary" x-text="aiApplying ? 'Übernimmt…' : 'Übernehmen'"></button>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <?php /* PDF-Anhänge öffnen überlagert im Browser-Viewer (FR-NOTE-20). */ ?>
     <div
@@ -224,46 +261,61 @@
     <div
         x-show="historyOpen"
         x-cloak
-        class="fixed inset-0 z-50 flex items-center justify-center p-5"
+        class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeHistory"
         @keydown.escape.window="closeHistory"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="note-history-title"
     >
-        <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+        <div class="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4 border-b px-5 py-4" style="border-color: var(--color-border);">
                 <div>
-                    <h2 class="text-xl font-semibold">Versionsverlauf</h2>
-                    <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Snapshots nach 30 Minuten Pause oder Nutzerwechsel.</p>
+                    <h2 id="note-history-title" class="text-xl font-semibold">Versionen vergleichen</h2>
+                    <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Wähle zwei Fassungen. Entfernte Inhalte erscheinen rot, hinzugefügte grün.</p>
                 </div>
-                <button type="button" @click="closeHistory" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+                <button type="button" @click="closeHistory" :disabled="restoringVersion" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
             </div>
 
-            <div class="grid min-h-0 flex-1 gap-0 md:grid-cols-[16rem_1fr]">
-                <div class="overflow-y-auto border-b md:border-b-0 md:border-r" style="border-color: var(--color-border);">
-                    <p x-show="historyLoading" class="px-4 py-6 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
-                    <p x-show="!historyLoading && historyVersions.length === 0" class="px-4 py-6 text-sm" style="color: var(--color-text-muted);">Noch keine Versionen vorhanden.</p>
-                    <template x-for="version in historyVersions" :key="version.id">
-                        <button
-                            type="button"
-                            x-show="!historyLoading"
-                            class="block w-full border-b px-4 py-3 text-left text-sm hover:opacity-80"
-                            style="border-color: var(--color-border);"
-                            :style="isSelectedVersion(version.id) ? 'background: color-mix(in srgb, var(--color-text) 8%, transparent);' : ''"
-                            @click="selectVersion(version.id)"
-                        >
-                            <span class="block font-medium" x-text="versionLabel(version)"></span>
-                            <span class="mt-1 block truncate" style="color: var(--color-text-muted);" x-text="version.preview"></span>
-                        </button>
-                    </template>
-                </div>
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                <p x-show="historyLoading" class="py-8 text-center text-sm" style="color: var(--color-text-muted);">Versionsverlauf wird geladen…</p>
+                <p x-show="!historyLoading && historyVersions.length === 0" class="py-8 text-center text-sm" style="color: var(--color-text-muted);">Noch keine gespeicherten Versionen vorhanden.</p>
 
-                <div class="min-h-[14rem] overflow-y-auto px-5 py-4">
-                    <p x-show="selectedVersionLoading" class="text-sm" style="color: var(--color-text-muted);">Version wird geladen…</p>
-                    <p x-show="!selectedVersionLoading && !selectedVersion" class="text-sm" style="color: var(--color-text-muted);">Wähle eine Version zur Vorschau.</p>
-                    <div x-show="!selectedVersionLoading && selectedVersion" x-cloak>
-                        <p class="text-sm font-medium" x-text="versionLabel(selectedVersion)"></p>
-                        <pre class="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" style="color: var(--color-text);" x-text="versionPreviewText()"></pre>
+                <div x-show="!historyLoading && historyVersions.length > 0" x-cloak>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <section class="min-w-0">
+                            <label for="history-left-version" class="block text-sm font-medium">Ausgangsversion</label>
+                            <select id="history-left-version" x-model="historyLeftId" @change="selectHistoryLeft" :disabled="restoringVersion" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                <template x-for="version in historyVersions" :key="version.id"><option :value="versionIdValue(version)" x-text="versionLabel(version)"></option></template>
+                            </select>
+                            <div class="mt-3 min-h-44 max-h-72 overflow-auto rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                                <p x-show="historyLeftLoading" class="text-sm" style="color: var(--color-text-muted);">Version wird geladen…</p>
+                                <pre x-show="!historyLeftLoading && historyLeftDocument" class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" x-text="historyDocumentPreview('left')"></pre>
+                            </div>
+                        </section>
+
+                        <section class="min-w-0">
+                            <label for="history-right-version" class="block text-sm font-medium">Vergleichsversion</label>
+                            <select id="history-right-version" x-model="historyRightId" @change="selectHistoryRight" :disabled="restoringVersion" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                <option value="current" x-text="historyCurrentLabel()"></option>
+                                <template x-for="version in historyVersions" :key="version.id"><option :value="versionIdValue(version)" x-text="versionLabel(version)"></option></template>
+                            </select>
+                            <div class="mt-3 min-h-44 max-h-72 overflow-auto rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                                <p x-show="historyRightLoading" class="text-sm" style="color: var(--color-text-muted);">Version wird geladen…</p>
+                                <pre x-show="!historyRightLoading && historyRightDocument" class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" x-text="historyDocumentPreview('right')"></pre>
+                            </div>
+                        </section>
                     </div>
+
+                    <section class="mt-6 border-t pt-5" style="border-color: var(--color-border);">
+                        <div class="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 class="font-semibold">Unterschiede</h3><span class="text-sm" style="color: var(--color-text-muted);" x-text="historyDiffSummary()"></span></div>
+                        <div x-show="historyLeftDocument && historyRightDocument" class="note-history-diff overflow-hidden rounded-lg border" style="border-color: var(--color-border);">
+                            <template x-for="row in historyDiffRows" :key="row.key">
+                                <div :class="historyDiffRowClass(row)"><span class="note-history-diff-marker" x-text="row.marker"></span><span class="note-history-diff-text" x-text="row.text"></span></div>
+                            </template>
+                        </div>
+                    </section>
                 </div>
             </div>
 
@@ -276,10 +328,9 @@
                         type="button"
                         x-show="canRestoreVersions"
                         @click="restoreSelectedVersion"
-                        class="rounded-md px-4 py-2 text-sm font-medium text-white"
-                        style="background: var(--color-accent);"
-                        :disabled="!selectedVersionId || restoringVersion"
-                        x-text="restoringVersion ? 'Stelle wieder her…' : 'Wiederherstellen'"
+                        class="btn btn-primary"
+                        :disabled="!historyLeftId || !historyLeftDocument || restoringVersion"
+                        x-text="restoringVersion ? 'Stelle wieder her…' : 'Ausgangsversion wiederherstellen'"
                     ></button>
                 </div>
             </div>

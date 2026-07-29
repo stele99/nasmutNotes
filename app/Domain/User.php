@@ -14,6 +14,7 @@ final class User
         public readonly ?string $avatarUrl,
         public readonly bool $isActive,
         public readonly bool $isAdmin,
+        public readonly float $nearbySearchRadiusKm = 1.0,
     ) {
     }
 
@@ -28,6 +29,7 @@ final class User
             avatarUrl: $row['avatar_url'] !== null ? (string) $row['avatar_url'] : null,
             isActive: ((int) $row['is_active']) === 1,
             isAdmin: $isAdmin,
+            nearbySearchRadiusKm: (float) ($row['nearby_search_radius_km'] ?? 1.0),
         );
     }
 }

@@ -1,7 +1,11 @@
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { apiFetch } from './api.js';
 import { requestLocation } from './geo.js';
+import {
+  createLocationMap,
+  DEFAULT_MAP_CENTER,
+  DEFAULT_MAP_ZOOM,
+  LOCATED_MAP_ZOOM,
+} from './locationMap.js';
 
 /**
  * Umkreissuche über Seiten und Logbuch-Einträge mit Aufnahmeort (FR-NOTE-27).
@@ -16,33 +20,22 @@ import { requestLocation } from './geo.js';
  */
 
 const DEFAULT_RADIUS_KM = 1;
-const DEFAULT_CENTER = [51.1657, 10.4515]; // Geografische Mitte Deutschlands - nur ohne bekannten Standort sichtbar.
-const DEFAULT_ZOOM = 5;
-const LOCATED_ZOOM = 15;
+let radiusPreference = null;
 
-/**
- * Leaflets Standardmarker leitet den Pfad seiner Bilddateien zur Laufzeit aus
- * einer CSS-Hintergrundfarbe her (`_detectIconPath`). Unter Vite wird dieses
- * Bild aber als `data:`-URI eingebettet, sodass die Herleitung ins Leere
- * liefe und das Symbol in der Produktion fehlen würde. Ein einfacher,
- * eingefärbter Punkt passt außerdem besser zum Rest der Anwendung und braucht
- * keinerlei Bild-Asset.
- */
-function centerMarkerIcon() {
-  return L.divIcon({
-    className: 'nearby-marker',
-    html: '<span></span>',
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-  });
+function loadRadiusPreference() {
+  if (!radiusPreference) {
+    radiusPreference = apiFetch('/api/session')
+      .then((data) => Number(data?.user?.nearby_search_radius_km || DEFAULT_RADIUS_KM))
+      .catch(() => DEFAULT_RADIUS_KM);
+  }
+
+  return radiusPreference;
 }
 
 export function nearbySearchMixin() {
   // Leaflet hält eigenen veränderlichen Zustand (DOM, Ereignis-Handler) und
   // darf wie der ProseMirror-Editor nicht durch Alpine reaktiv gemacht werden.
-  let map = null;
-  let marker = null;
-  let circle = null;
+  let locationMap = null;
 
   return {
     nearbyDialogOpen: false,
@@ -53,11 +46,16 @@ export function nearbySearchMixin() {
     nearbyError: '',
     nearbyActive: false,
     nearbyResults: [],
+    nearbyResultsRadiusKm: null,
 
     openNearbyDialog() {
       this.nearbyError = '';
       this.nearbyDialogOpen = true;
-      this.$nextTick(() => {
+      this.$nextTick(async () => {
+        this.nearbyRadiusKm = await loadRadiusPreference();
+        if (!this.nearbyDialogOpen) {
+          return;
+        }
         this.initNearbyMap();
         if (!this.nearbyCenter) {
           void this.useNearbyCurrentLocation();
@@ -72,56 +70,48 @@ export function nearbySearchMixin() {
 
     initNearbyMap() {
       const element = this.$refs.nearbyMap;
-      if (!element || map) {
+      if (!element || locationMap) {
         return;
       }
 
       const startView = this.nearbyCenter
         ? [this.nearbyCenter.lat, this.nearbyCenter.lon]
-        : DEFAULT_CENTER;
-      map = L.map(element, { attributionControl: false }).setView(startView, this.nearbyCenter ? LOCATED_ZOOM : DEFAULT_ZOOM);
-      L.control.attribution({ prefix: false }).addAttribution('© OpenStreetMap-Mitwirkende').addTo(map);
-      L.tileLayer('/api/map-tiles/{z}/{x}/{y}', { maxZoom: 19 }).addTo(map);
-
-      marker = L.marker(startView, { draggable: true, icon: centerMarkerIcon() }).addTo(map);
-      circle = L.circle(startView, {
-        radius: this.nearbyRadiusKm * 1000,
-        color: '#2563eb',
-        weight: 1,
-        fillOpacity: 0.08,
-      }).addTo(map);
-
-      marker.on('dragend', () => {
-        const { lat, lng } = marker.getLatLng();
-        this.setNearbyCenter(lat, lng, false);
+        : DEFAULT_MAP_CENTER;
+      locationMap = createLocationMap({
+        element,
+        center: startView,
+        zoom: this.nearbyCenter ? LOCATED_MAP_ZOOM : DEFAULT_MAP_ZOOM,
+        radiusMeters: this.nearbyRadiusKm * 1000,
+        onChange: (lat, lon) => this.setNearbyCenter(lat, lon, false),
       });
-      map.on('click', (event) => {
-        this.setNearbyCenter(event.latlng.lat, event.latlng.lng, false);
-      });
-
-      // Das Dialogfenster kann beim ersten Layout noch die falsche Größe
-      // gemeldet haben; ohne diesen Nachtrag bliebe die Karte teils grau.
-      window.setTimeout(() => map?.invalidateSize(), 0);
     },
 
     destroyNearbyMap() {
-      map?.remove();
-      map = null;
-      marker = null;
-      circle = null;
+      locationMap?.destroy();
+      locationMap = null;
     },
 
     setNearbyCenter(lat, lon, panTo = true) {
       this.nearbyCenter = { lat, lon };
-      marker?.setLatLng([lat, lon]);
-      circle?.setLatLng([lat, lon]);
-      if (panTo) {
-        map?.setView([lat, lon], Math.max(map.getZoom(), LOCATED_ZOOM));
-      }
+      locationMap?.setCenter(lat, lon, panTo);
     },
 
     updateNearbyRadius() {
-      circle?.setRadius(this.nearbyRadiusKm * 1000);
+      locationMap?.setRadius(this.nearbyRadiusKm * 1000);
+    },
+
+    async saveNearbyRadiusPreference() {
+      const radiusKm = Number(this.nearbyRadiusKm);
+      try {
+        const data = await apiFetch('/api/profile', {
+          method: 'PATCH',
+          body: JSON.stringify({ nearby_search_radius_km: radiusKm }),
+        });
+        this.nearbyRadiusKm = Number(data.nearby_search_radius_km);
+        radiusPreference = Promise.resolve(this.nearbyRadiusKm);
+      } catch (error) {
+        this.nearbyError = error.message || 'Der Suchradius konnte nicht gespeichert werden.';
+      }
     },
 
     async useNearbyCurrentLocation() {
@@ -161,6 +151,7 @@ export function nearbySearchMixin() {
         });
         const data = await apiFetch(`/api/search/nearby?${query.toString()}`);
         this.nearbyResults = data.results || [];
+        this.nearbyResultsRadiusKm = this.nearbyRadiusKm;
         this.nearbyActive = true;
         if ('workspaceTab' in this) {
           this.workspaceTab = 'location';
@@ -187,7 +178,6 @@ export function nearbySearchMixin() {
           this.nearbyError = 'Der aktuelle Standort konnte nicht ermittelt werden.';
           return;
         }
-        this.nearbyRadiusKm = radiusKm;
         this.setNearbyCenter(location.lat, location.lon);
 
         const query = new URLSearchParams({
@@ -197,6 +187,7 @@ export function nearbySearchMixin() {
         });
         const data = await apiFetch(`/api/search/nearby?${query.toString()}`);
         this.nearbyResults = data.results || [];
+        this.nearbyResultsRadiusKm = radiusKm;
         this.nearbyActive = true;
       } catch (error) {
         this.nearbyError = error.message || 'Die Umkreissuche ist fehlgeschlagen.';
@@ -215,6 +206,13 @@ export function nearbySearchMixin() {
       const total = this.nearbyResults.length;
 
       return total === 1 ? '1 Treffer' : `${total} Treffer`;
+    },
+
+    nearbyResultsRadiusLabel() {
+      const radiusKm = Number(this.nearbyResultsRadiusKm || 10);
+      return radiusKm < 1
+        ? `${Math.round(radiusKm * 1000)} m`
+        : `${radiusKm.toFixed(radiusKm < 10 ? 1 : 0)} km`;
     },
 
     nearbyResultKey(item) {

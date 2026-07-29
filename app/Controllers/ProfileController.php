@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Repositories\UserRepository;
+use App\Support\CurrentUser;
+use App\Support\JsonResponse;
+use App\Support\ValidationException;
+use Psr\Http\Message\ResponseInterface as Response;
+use Psr\Http\Message\ServerRequestInterface as Request;
+
+final class ProfileController
+{
+    public function __construct(private readonly UserRepository $users)
+    {
+    }
+
+    public function update(Request $request, Response $response): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $radius = $body['nearby_search_radius_km'] ?? null;
+        if (!is_int($radius) && !is_float($radius) && !is_string($radius)) {
+            throw new ValidationException('Ungültiger Suchradius.');
+        }
+        if (!is_numeric($radius)) {
+            throw new ValidationException('Ungültiger Suchradius.');
+        }
+
+        $radiusKm = (float) $radius;
+        if (!is_finite($radiusKm) || $radiusKm < 0.1 || $radiusKm > 50.0) {
+            throw new ValidationException('Der Suchradius muss zwischen 0,1 und 50 km liegen.');
+        }
+        $radiusKm = round($radiusKm, 1);
+
+        $user = CurrentUser::require($request);
+        $this->users->updateNearbySearchRadius($user->id, $radiusKm);
+
+        return JsonResponse::json($response, ['nearby_search_radius_km' => $radiusKm]);
+    }
+}

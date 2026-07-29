@@ -5,6 +5,7 @@
             <h1 class="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Nutzer &amp; Speicher</h1>
         </div>
         <div class="flex flex-wrap gap-2">
+            <a href="/admin/ai" class="btn btn-secondary">KI-Einstellungen</a>
             <a href="/admin/invites" class="btn btn-secondary">Einladungen</a>
             <a href="/admin/backups" class="btn btn-secondary">Sicherungen</a>
             <a href="/app" class="btn btn-secondary">Zum Workspace</a>
@@ -67,81 +68,6 @@
             </p>
         </div>
         <button type="button" class="btn btn-secondary" :disabled="busy" @click="editOfflineAttachmentLimit">Ändern</button>
-    </div>
-
-    <?php /* Sprachnotizen: Freischaltung, Zugangsdaten, Modelle und die Anweisung,
-             nach der das Transkript aufbereitet wird (FR-VOICE-05). */ ?>
-    <div class="document-surface mb-8 p-5">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-                <h2 class="font-semibold">Sprachnotizen</h2>
-                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">
-                    Diktate werden bei OpenAI transkribiert, aufbereitet und mit Überschrift und
-                    Notizbuchvorschlag zurückgegeben. Aktuell:
-                    <span class="font-medium" style="color: var(--color-text);" x-text="voiceStatusLabel()"></span>
-                </p>
-            </div>
-            <label class="flex items-center gap-2 text-sm font-medium">
-                <input type="checkbox" x-model="voiceEnabled" :disabled="busy">
-                Freigeschaltet
-            </label>
-        </div>
-
-        <div class="mt-5 grid gap-4 sm:grid-cols-2">
-            <?php /* Der Schlüssel gehört zum Deployment und steht nur in der .env -
-                     hier ist er deshalb reine Anzeige. */ ?>
-            <div class="sm:col-span-2 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
-                <span class="font-medium">API-Schlüssel:</span>
-                <span x-text="voiceApiKeyLabel()"></span>
-            </div>
-            <div>
-                <label for="voice-transcribe-model" class="block text-sm font-medium">Modell für die Transkription</label>
-                <input id="voice-transcribe-model" x-model="voiceTranscribeModel" :disabled="busy" type="text" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-            </div>
-            <div>
-                <label for="voice-language" class="block text-sm font-medium">Sprache</label>
-                <input id="voice-language" x-model="voiceLanguage" :disabled="busy" type="text" maxlength="2" placeholder="de" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Zweistelliger Code; leer lässt das Modell die Sprache erkennen.</p>
-            </div>
-            <div>
-                <label for="voice-postprocess-model" class="block text-sm font-medium">Modell für die Nachbearbeitung</label>
-                <input id="voice-postprocess-model" x-model="voicePostprocessModel" :disabled="busy || !voicePostprocessEnabled" type="text" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-            </div>
-            <div class="flex items-end">
-                <label class="flex items-center gap-2 pb-2 text-sm font-medium">
-                    <input type="checkbox" x-model="voicePostprocessEnabled" :disabled="busy">
-                    Transkript nachbearbeiten
-                </label>
-            </div>
-            <div>
-                <label for="voice-max-seconds" class="block text-sm font-medium">Maximale Aufnahmedauer (Sekunden)</label>
-                <input id="voice-max-seconds" x-model.number="voiceMaxSeconds" :disabled="busy" type="number" min="10" max="3600" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-            </div>
-            <div>
-                <label for="voice-max-mb" class="block text-sm font-medium">Maximale Aufnahmegröße (MB)</label>
-                <input id="voice-max-mb" x-model.number="voiceMaxMb" :disabled="busy" type="number" min="1" max="25" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-            </div>
-            <div class="sm:col-span-2">
-                <label for="voice-base-url" class="block text-sm font-medium">Adresse des Dienstes</label>
-                <input id="voice-base-url" x-model="voiceBaseUrl" :disabled="busy" type="url" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Nur ändern, wenn ein kompatibler Dienst statt api.openai.com genutzt wird.</p>
-            </div>
-            <div class="sm:col-span-2">
-                <label for="voice-prompt" class="block text-sm font-medium">Anweisung für die Nachbearbeitung</label>
-                <textarea id="voice-prompt" x-model="voicePrompt" :disabled="busy || !voicePostprocessEnabled" rows="10" class="mt-2 w-full rounded-md border px-3 py-2 font-mono text-xs" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
-                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Das Modell muss ein JSON-Objekt mit den Feldern <code>title</code>, <code>notebook</code> und <code>text</code> zurückgeben.</p>
-            </div>
-            <div class="sm:col-span-2">
-                <label for="voice-log-prompt" class="block text-sm font-medium">Anweisung für diktierte Logbuch-Einträge</label>
-                <textarea id="voice-log-prompt" x-model="voiceLogPrompt" :disabled="busy" rows="10" class="mt-2 w-full rounded-md border px-3 py-2 font-mono text-xs" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
-                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Das Modell bekommt die Spalten des Logbuchs und muss <code>occurred_at</code> sowie <code>values</code> zurückgeben.</p>
-            </div>
-        </div>
-
-        <div class="mt-5 flex flex-wrap justify-end gap-2">
-            <button type="button" class="btn btn-quiet" :disabled="busy" @click="resetVoicePrompt">Standardanweisung</button>
-            <button type="button" class="btn btn-primary" :disabled="busy" @click="saveVoiceSettings">Speichern</button>
-        </div>
     </div>
 
     <?php /* Verwaiste Bilder: in keiner Notiz und in keiner Version mehr referenziert. */ ?>

@@ -82,6 +82,14 @@ final class UserRepository
         $stmt->execute(['active' => $active ? 1 : 0, 'id' => $id]);
     }
 
+    public function updateNearbySearchRadius(int $id, float $radiusKm): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET nearby_search_radius_km = :radius WHERE id = :id'
+        );
+        $stmt->execute(['radius' => $radiusKm, 'id' => $id]);
+    }
+
     /** @return User[] */
     public function all(): array
     {

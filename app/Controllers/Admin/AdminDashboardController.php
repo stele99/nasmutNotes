@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Domain\AdminService;
+use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Voice\VoiceNoteService;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
@@ -25,6 +26,7 @@ final class AdminDashboardController
         private readonly Renderer $renderer,
         private readonly RateLimiter $rateLimiter,
         private readonly VoiceNoteService $voice,
+        private readonly NoteRewriteService $rewriter,
     ) {
     }
 
@@ -36,10 +38,19 @@ final class AdminDashboardController
         return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
+    public function aiPage(Request $request, Response $response): Response
+    {
+        $html = $this->renderer->page($request, 'admin/ai', [], 'Admin · KI-Einstellungen');
+        $response->getBody()->write($html);
+
+        return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+    }
+
     public function overview(Request $request, Response $response): Response
     {
         return JsonResponse::json($response, array_merge($this->admin->overview(), [
             'voice' => $this->voice->settings()->toAdminArray(),
+            'note_ai' => $this->rewriter->adminSettings(),
         ]));
     }
 
@@ -51,6 +62,17 @@ final class AdminDashboardController
         $settings = $this->voice->updateSettings($admin, $body, RequestIp::hash($request));
 
         return JsonResponse::json($response, ['voice' => $settings->toAdminArray()]);
+    }
+
+    public function updateNoteAiSettings(Request $request, Response $response): Response
+    {
+        $settings = $this->rewriter->updateSettings(
+            CurrentUser::require($request),
+            (array) ($request->getParsedBody() ?? []),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['note_ai' => $settings]);
     }
 
     /** @param array<string, string> $args */

@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { isLocationSupported, locationLabel, locationMapUrl, parseLocationInput, requestLocation } from './geo.js';
+import { createLocationMap, DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, LOCATED_MAP_ZOOM } from './locationMap.js';
 
 /**
  * Aufnahmeort einer Seite (FR-NOTE-25). Wird in die Alpine-Komponenten aller
@@ -9,12 +10,20 @@ import { isLocationSupported, locationLabel, locationMapUrl, parseLocationInput,
  * ihrem `init()` einmal `initPageLocation(root)` auf.
  */
 export function pageLocationMixin() {
+  let locationMap = null;
+  let searchSequence = 0;
+
   return {
     pageLocation: null,
     pageIsShared: Boolean(window.__CURRENT_PAGE_IS_SHARED__),
     locationSupported: isLocationSupported(),
     locationDialogOpen: false,
     locationInput: '',
+    locationDraft: null,
+    locationSearchQuery: '',
+    locationSearchResults: [],
+    locationSearching: false,
+    locationLocating: false,
     locationBusy: false,
     locationError: '',
 
@@ -57,23 +66,54 @@ export function pageLocationMixin() {
 
     /**
      * Der Ort wird auf Klick gesetzt (FR-NOTE-25). Der Dialog bietet den
-     * aktuellen Standort und - um ihn auf einen anderen zu verschieben - die
-     * Eingabe von Koordinaten oder eines kopierten Kartenlinks.
+     * aktuellen Standort, eine Kartenwahl, die Adresssuche und Koordinaten.
      */
     openLocationDialog() {
       if (!this.canEditLocation()) {
         return;
       }
       this.locationError = '';
+      this.locationSearchQuery = '';
+      this.locationSearchResults = [];
+      this.locationDraft = this.pageLocation ? { ...this.pageLocation } : null;
       this.locationInput = this.pageLocation
         ? `${this.pageLocation.lat}, ${this.pageLocation.lon}`
         : '';
       this.locationDialogOpen = true;
+      this.$nextTick(() => this.initLocationMap());
     },
 
     closeLocationDialog() {
+      ++searchSequence;
+      locationMap?.destroy();
+      locationMap = null;
       this.locationDialogOpen = false;
       this.locationBusy = false;
+      this.locationSearching = false;
+      this.locationLocating = false;
+      this.locationError = '';
+    },
+
+    initLocationMap() {
+      const element = this.$refs.locationMap;
+      if (!element || locationMap) {
+        return;
+      }
+      const center = this.locationDraft
+        ? [this.locationDraft.lat, this.locationDraft.lon]
+        : DEFAULT_MAP_CENTER;
+      locationMap = createLocationMap({
+        element,
+        center,
+        zoom: this.locationDraft ? LOCATED_MAP_ZOOM : DEFAULT_MAP_ZOOM,
+        onChange: (lat, lon) => this.setLocationDraft({ lat, lon, accuracy: null }, false),
+      });
+    },
+
+    setLocationDraft(location, panTo = true) {
+      this.locationDraft = location;
+      this.locationInput = `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}`;
+      locationMap?.setCenter(location.lat, location.lon, panTo);
       this.locationError = '';
     },
 
@@ -83,19 +123,64 @@ export function pageLocationMixin() {
         return;
       }
 
-      this.locationBusy = true;
+      const sequence = searchSequence;
+      this.locationLocating = true;
       this.locationError = '';
       try {
         const location = await requestLocation();
+        if (sequence !== searchSequence) {
+          return;
+        }
         if (!location) {
           this.locationError = 'Der Standort konnte nicht ermittelt werden. '
             + 'Vielleicht ist die Ortung abgelehnt oder gerade kein Signal da.';
           return;
         }
-        await this.saveLocation(location);
+        this.setLocationDraft(location);
       } finally {
-        this.locationBusy = false;
+        this.locationLocating = false;
       }
+    },
+
+    async searchLocationAddress() {
+      const query = this.locationSearchQuery.trim();
+      if (query.length < 2) {
+        this.locationError = 'Bitte mindestens zwei Zeichen für die Ortssuche eingeben.';
+        return;
+      }
+
+      const sequence = ++searchSequence;
+      this.locationSearching = true;
+      this.locationSearchResults = [];
+      this.locationError = '';
+      try {
+        const data = await apiFetch(`/api/geocode/search?q=${encodeURIComponent(query)}`);
+        if (sequence !== searchSequence) {
+          return;
+        }
+        this.locationSearchResults = data.results || [];
+        if (this.locationSearchResults.length === 0) {
+          this.locationError = 'Kein passender Ort gefunden.';
+        }
+      } catch (error) {
+        if (sequence === searchSequence) {
+          this.locationError = error.message || 'Die Ortssuche ist fehlgeschlagen.';
+        }
+      } finally {
+        if (sequence === searchSequence) {
+          this.locationSearching = false;
+        }
+      }
+    },
+
+    selectLocationSearchResult(result) {
+      this.locationSearchQuery = result.label;
+      this.locationSearchResults = [];
+      this.setLocationDraft({ lat: Number(result.lat), lon: Number(result.lon), accuracy: null });
+    },
+
+    locationSearchResultKey(result) {
+      return `${result.lat},${result.lon}`;
     },
 
     async applyLocationInput() {
@@ -107,7 +192,13 @@ export function pageLocationMixin() {
 
       this.locationBusy = true;
       try {
-        await this.saveLocation(location);
+        const sameAsDraft = this.locationDraft
+          && this.locationDraft.lat === location.lat
+          && this.locationDraft.lon === location.lon;
+        await this.saveLocation({
+          ...location,
+          accuracy: sameAsDraft ? this.locationDraft.accuracy : null,
+        });
       } finally {
         this.locationBusy = false;
       }
@@ -139,6 +230,12 @@ export function pageLocationMixin() {
       } catch (error) {
         this.locationError = error.message || 'Der Standort konnte nicht gespeichert werden.';
       }
+    },
+
+    destroyPageLocation() {
+      ++searchSequence;
+      locationMap?.destroy();
+      locationMap = null;
     },
   };
 }

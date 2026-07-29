@@ -763,6 +763,7 @@ export function taskBoard() {
     },
 
     destroy() {
+      this.destroyPageLocation();
       clearInterval(this.pollTimer);
       if (this.visibilityHandler) {
         document.removeEventListener('visibilitychange', this.visibilityHandler);

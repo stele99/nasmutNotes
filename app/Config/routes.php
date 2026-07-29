@@ -11,16 +11,19 @@ use App\Controllers\AuthController;
 use App\Controllers\BoardController;
 use App\Controllers\CategoryController;
 use App\Controllers\ExportController;
+use App\Controllers\GeocodeController;
 use App\Controllers\HealthController;
 use App\Controllers\HomeController;
 use App\Controllers\ImportController;
 use App\Controllers\InviteController;
 use App\Controllers\LogController;
 use App\Controllers\MapTileController;
+use App\Controllers\NoteAiController;
 use App\Controllers\NotebookController;
 use App\Controllers\NoteController;
 use App\Controllers\PageAttachmentController;
 use App\Controllers\PageController;
+use App\Controllers\ProfileController;
 use App\Controllers\PublicShareController;
 use App\Controllers\SearchController;
 use App\Controllers\ShareController;
@@ -49,6 +52,10 @@ return static function (App $app): void {
         ->add(new RequireAdminMiddleware(false))
         ->add(new RequireAuthMiddleware(false));
 
+    $app->get('/admin/ai', [AdminDashboardController::class, 'aiPage'])
+        ->add(new RequireAdminMiddleware(false))
+        ->add(new RequireAuthMiddleware(false));
+
     $app->get('/admin/invites', [InviteAdminController::class, 'page'])
         ->add(new RequireAdminMiddleware(false))
         ->add(new RequireAuthMiddleware(false));
@@ -72,6 +79,7 @@ return static function (App $app): void {
             [AdminDashboardController::class, 'updateOfflineAttachmentLimit'],
         );
         $group->patch('/settings/voice', [AdminDashboardController::class, 'updateVoiceSettings']);
+        $group->patch('/settings/note-ai', [AdminDashboardController::class, 'updateNoteAiSettings']);
         $group->post('/attachments/purge-orphans', [AdminDashboardController::class, 'purgeOrphans']);
         $group->get('/backups', [BackupAdminController::class, 'index']);
         $group->post('/backups', [BackupAdminController::class, 'store']);
@@ -88,6 +96,7 @@ return static function (App $app): void {
     })->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/session', [AppController::class, 'session'])->add(new RequireAuthMiddleware(true));
+    $app->patch('/api/profile', [ProfileController::class, 'update'])->add(new RequireAuthMiddleware(true));
 
     $app->get('/app', [AppController::class, 'shell'])->add(new RequireAuthMiddleware(false));
     $app->get('/app/page/{id}', [AppController::class, 'page'])->add(new RequireAuthMiddleware(false));
@@ -118,6 +127,7 @@ return static function (App $app): void {
         $group->delete('/{id}/share-access', [ShareController::class, 'leave']);
         $group->get('/{id}/content', [NoteController::class, 'show']);
         $group->put('/{id}/content', [NoteController::class, 'update']);
+        $group->post('/{id}/ai/rewrite', [NoteAiController::class, 'rewrite']);
         $group->get('/{id}/versions', [NoteController::class, 'versions']);
         $group->get('/{id}/versions/{vid}', [NoteController::class, 'showVersion']);
         $group->post('/{id}/versions/{vid}/restore', [NoteController::class, 'restoreVersion']);
@@ -194,6 +204,7 @@ return static function (App $app): void {
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));
     $app->get('/api/search/nearby', [SearchController::class, 'nearby'])->add(new RequireAuthMiddleware(true));
+    $app->get('/api/geocode/search', [GeocodeController::class, 'search'])->add(new RequireAuthMiddleware(true));
 
     // Kartenkacheln zur Standortauswahl - server-seitig geholt (FR-NOTE-27).
     $app->get('/api/map-tiles/{z}/{x}/{y}', [MapTileController::class, 'show'])

@@ -4,6 +4,7 @@ import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { sanitizeNoteDoc } from './editor/sanitize.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
+import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
 import {
   acquireNoteEditLock,
   cacheNoteContent,
@@ -87,9 +88,17 @@ export function noteEditorPage() {
     historyError: '',
     historyVersions: [],
     canRestoreVersions: !Boolean(window.__CURRENT_PAGE_IS_SHARED__),
-    selectedVersionId: null,
-    selectedVersion: null,
-    selectedVersionLoading: false,
+    historyLeftId: '',
+    historyRightId: 'current',
+    historyLeftDocument: null,
+    historyRightDocument: null,
+    historyCurrentDocument: null,
+    historyDocumentCache: {},
+    historyLeftLoading: false,
+    historyRightLoading: false,
+    historyLeftRequest: 0,
+    historyRightRequest: 0,
+    historyDiffRows: [],
     restoringVersion: false,
     compressionOpen: false,
     compressionQuality: 82,
@@ -97,6 +106,14 @@ export function noteEditorPage() {
     compressionBusy: false,
     compressionError: '',
     compressionResult: null,
+    aiOpen: false,
+    aiBusy: false,
+    aiApplying: false,
+    aiError: '',
+    aiSuggestion: null,
+    aiPreview: '',
+    aiRequestRevision: null,
+    aiMode: 'normal',
 
     async init() {
       const pageRoot = this.$root;
@@ -415,6 +432,82 @@ export function noteEditorPage() {
       window.location.reload();
     },
 
+    openAiRewriteDialog() {
+      this.aiError = '';
+      this.aiSuggestion = null;
+      this.aiPreview = '';
+      this.aiRequestRevision = null;
+      this.aiOpen = true;
+    },
+
+    closeAiRewriteDialog() {
+      if (this.aiBusy || this.aiApplying) {
+        return;
+      }
+      this.aiOpen = false;
+      this.aiError = '';
+    },
+
+    resetAiSuggestion() {
+      this.aiSuggestion = null;
+      this.aiPreview = '';
+      this.aiError = '';
+      this.aiRequestRevision = null;
+    },
+
+    async requestAiRewrite() {
+      if (!editor || this.aiBusy) {
+        return;
+      }
+      if (!navigator.onLine) {
+        this.aiError = 'Die KI-Überarbeitung ist offline nicht verfügbar.';
+        return;
+      }
+      if (this.status === 'conflict' || this.status === 'invalid' || this.pendingSave || this.pendingImageUploads > 0) {
+        this.aiError = 'Bitte warte, bis die Notiz vollständig und ohne Konflikt gespeichert ist.';
+        return;
+      }
+
+      this.aiBusy = true;
+      this.aiError = '';
+      this.aiSuggestion = null;
+      this.aiPreview = '';
+      this.aiRequestRevision = this.editorRevision;
+      try {
+        const data = await apiFetch(`/api/pages/${this.pageId}/ai/rewrite`, {
+          method: 'POST',
+          body: JSON.stringify({ content: editor.getJSON(), mode: this.aiMode }),
+        });
+        this.aiSuggestion = data.content;
+        this.aiPreview = data.preview || '';
+      } catch (error) {
+        this.aiError = error.message || 'Der KI-Vorschlag konnte nicht erstellt werden.';
+      } finally {
+        this.aiBusy = false;
+      }
+    },
+
+    async applyAiRewrite() {
+      if (!editor || !this.aiSuggestion || this.aiApplying) {
+        return;
+      }
+      if (this.editorRevision !== this.aiRequestRevision) {
+        this.aiError = 'Die Notiz wurde inzwischen geändert. Bitte erstelle einen neuen Vorschlag.';
+        this.aiSuggestion = null;
+        return;
+      }
+
+      this.aiApplying = true;
+      this.aiError = '';
+      try {
+        editor.commands.setContent(this.aiSuggestion, { emitUpdate: true });
+        await this.saveNow({ forceSnapshot: true });
+        this.aiOpen = false;
+      } finally {
+        this.aiApplying = false;
+      }
+    },
+
     onChange(json) {
       this.editorRevision += 1;
       this.status = 'unsaved';
@@ -538,13 +631,26 @@ export function noteEditorPage() {
     async openHistory() {
       this.historyOpen = true;
       this.historyError = '';
-      this.selectedVersionId = null;
-      this.selectedVersion = null;
+      this.historyLeftId = '';
+      this.historyRightId = 'current';
+      this.historyLeftDocument = null;
+      this.historyRightDocument = null;
+      this.historyDiffRows = [];
+      this.historyDocumentCache = {};
+      this.historyCurrentDocument = editor
+        ? (typeof structuredClone === 'function'
+          ? structuredClone(editor.getJSON())
+          : JSON.parse(JSON.stringify(editor.getJSON())))
+        : null;
       this.historyLoading = true;
       try {
         const data = await apiFetch(`/api/pages/${this.pageId}/versions`);
         this.historyVersions = data.versions || [];
         this.canRestoreVersions = this.canEditPage && data.can_restore === true;
+        if (this.historyVersions.length > 0) {
+          this.historyLeftId = String(this.historyVersions[0].id);
+          await Promise.all([this.loadHistorySide('left'), this.loadHistorySide('right')]);
+        }
       } catch (e) {
         this.historyError = e.message || 'Der Versionsverlauf konnte nicht geladen werden.';
         this.historyVersions = [];
@@ -557,53 +663,75 @@ export function noteEditorPage() {
       if (this.restoringVersion) {
         return;
       }
+      this.historyLeftRequest += 1;
+      this.historyRightRequest += 1;
       this.historyOpen = false;
-      this.selectedVersionId = null;
-      this.selectedVersion = null;
+      this.historyLeftId = '';
+      this.historyRightId = 'current';
+      this.historyLeftDocument = null;
+      this.historyRightDocument = null;
+      this.historyCurrentDocument = null;
+      this.historyDocumentCache = {};
+      this.historyDiffRows = [];
       this.historyError = '';
     },
 
-    async selectVersion(versionId) {
-      this.selectedVersionId = versionId;
-      this.selectedVersion = null;
-      this.selectedVersionLoading = true;
+    selectHistoryLeft() {
+      void this.loadHistorySide('left');
+    },
+
+    selectHistoryRight() {
+      void this.loadHistorySide('right');
+    },
+
+    async loadHistorySide(side) {
+      const isLeft = side === 'left';
+      const id = isLeft ? this.historyLeftId : this.historyRightId;
+      const requestKey = isLeft ? 'historyLeftRequest' : 'historyRightRequest';
+      const loadingKey = isLeft ? 'historyLeftLoading' : 'historyRightLoading';
+      const documentKey = isLeft ? 'historyLeftDocument' : 'historyRightDocument';
+      const request = this[requestKey] + 1;
+      this[requestKey] = request;
+      this[loadingKey] = true;
+      this[documentKey] = null;
       this.historyError = '';
       try {
-        this.selectedVersion = await apiFetch(`/api/pages/${this.pageId}/versions/${versionId}`);
+        let document = null;
+        if (id === 'current') {
+          document = this.historyCurrentDocument;
+        } else if (id) {
+          document = this.historyDocumentCache[id] || null;
+          if (!document) {
+            const version = await apiFetch(`/api/pages/${this.pageId}/versions/${id}`);
+            document = version.content;
+            this.historyDocumentCache = { ...this.historyDocumentCache, [id]: document };
+          }
+        }
+        if (this.historyOpen && this[requestKey] === request && id === (isLeft ? this.historyLeftId : this.historyRightId)) {
+          this[documentKey] = document;
+          this.updateHistoryDiff();
+        }
       } catch (e) {
-        this.historyError = e.message || 'Die Version konnte nicht geladen werden.';
+        if (this[requestKey] === request) {
+          this.historyError = e.message || 'Die Version konnte nicht geladen werden.';
+        }
       } finally {
-        this.selectedVersionLoading = false;
+        if (this[requestKey] === request) {
+          this[loadingKey] = false;
+        }
       }
     },
 
-    versionPreviewText() {
-      if (!this.selectedVersion?.content) {
-        return '';
-      }
-      return this.extractPreview(this.selectedVersion.content);
+    updateHistoryDiff() {
+      const rows = this.historyLeftDocument && this.historyRightDocument
+        ? diffNoteDocuments(this.historyLeftDocument, this.historyRightDocument)
+        : [];
+      this.historyDiffRows = rows.map((row, index) => ({ ...row, key: `${index}:${row.type}:${row.signature}` }));
     },
 
-    extractPreview(doc) {
-      const parts = [];
-      const walk = (node) => {
-        if (!node || typeof node !== 'object') {
-          return;
-        }
-        if (node.type === 'text' && typeof node.text === 'string') {
-          parts.push(node.text);
-        }
-        if (Array.isArray(node.content)) {
-          for (const child of node.content) {
-            walk(child);
-          }
-          if (['paragraph', 'heading', 'listItem', 'taskItem', 'blockquote'].includes(node.type)) {
-            parts.push('\n');
-          }
-        }
-      };
-      walk(doc);
-      return parts.join('').replace(/\n{3,}/g, '\n\n').trim() || '(leerer Inhalt)';
+    historyCurrentLabel() {
+      const local = ['unsaved', 'saving', 'offline'].includes(this.status) ? ' · lokal geändert' : '';
+      return `Aktuelle Fassung${local}`;
     },
 
     versionLabel(version) {
@@ -617,8 +745,28 @@ export function noteEditorPage() {
       return version.created_by_name ? `${date} · ${version.created_by_name}` : date;
     },
 
-    isSelectedVersion(versionId) {
-      return this.selectedVersionId === versionId;
+    versionIdValue(version) {
+      return String(version.id);
+    },
+
+    historyDiffRowClass(row) {
+      return `note-history-diff-row is-${row.type}${row.kind === 'code' ? ' is-code' : ''}`;
+    },
+
+    historyDiffSummary() {
+      const added = this.historyDiffRows.filter((row) => row.type === 'added').length;
+      const removed = this.historyDiffRows.filter((row) => row.type === 'removed').length;
+      if (added === 0 && removed === 0) {
+        return 'Keine Unterschiede';
+      }
+      return `${added} hinzugefügt · ${removed} entfernt`;
+    },
+
+    historyDocumentPreview(side) {
+      const document = side === 'left' ? this.historyLeftDocument : this.historyRightDocument;
+      if (!document) return '';
+      const text = documentToDiffBlocks(document).map((block) => block.text).join('\n\n');
+      return text || '(leerer Inhalt)';
     },
 
     async ensureRestoreReady() {
@@ -676,19 +824,23 @@ export function noteEditorPage() {
     },
 
     async restoreSelectedVersion() {
-      if (!this.canRestoreVersions || !this.selectedVersionId || this.restoringVersion) {
+      if (!this.canRestoreVersions || !this.historyLeftId || !this.historyLeftDocument || this.restoringVersion) {
         return;
       }
-      if (!window.confirm('Aktuellen Inhalt durch diese Version ersetzen? Der aktuelle Stand wird als Snapshot gesichert.')) {
+      const targetVersionId = this.historyLeftId;
+      const target = this.historyVersions.find((item) => String(item.id) === targetVersionId);
+      const targetLabel = target ? this.versionLabel(target) : 'die ausgewählte Fassung';
+      if (!window.confirm(`Aktuellen Inhalt durch ${targetLabel} ersetzen? Der aktuelle Stand wird als Snapshot gesichert.`)) {
         return;
       }
 
       this.restoringVersion = true;
       this.historyError = '';
+      let restored = false;
       editor?.setEditable(false);
       try {
         await this.ensureRestoreReady();
-        const result = await apiFetch(`/api/pages/${this.pageId}/versions/${this.selectedVersionId}/restore`, {
+        const result = await apiFetch(`/api/pages/${this.pageId}/versions/${targetVersionId}/restore`, {
           method: 'POST',
           body: JSON.stringify({ version: this.version }),
         });
@@ -703,7 +855,7 @@ export function noteEditorPage() {
           /* Der nächste Abruf holt den wiederhergestellten Stand nach. */
         }
         this.clearLocalCache();
-        this.closeHistory();
+        restored = true;
       } catch (e) {
         const current = e?.payload?.current;
         if (e?.status === 409 && current?.content) {
@@ -725,6 +877,9 @@ export function noteEditorPage() {
       } finally {
         this.restoringVersion = false;
         editor?.setEditable(this.canEditPage);
+      }
+      if (restored) {
+        this.closeHistory();
       }
     },
 
@@ -1501,6 +1656,7 @@ export function noteEditorPage() {
     },
 
     destroy() {
+      this.destroyPageLocation();
       if (this.visibilityHandler) {
         document.removeEventListener('visibilitychange', this.visibilityHandler);
       }

@@ -35,7 +35,7 @@
             <span>Umkreis</span>
             <span x-text="nearbyRadiusLabel()"></span>
         </label>
-        <input id="nearby-radius" x-model.number="nearbyRadiusKm" @input="updateNearbyRadius" type="range" min="0.1" max="50" step="0.1" class="mt-2 w-full">
+        <input id="nearby-radius" x-model.number="nearbyRadiusKm" @input="updateNearbyRadius" @change="saveNearbyRadiusPreference" type="range" min="0.1" max="50" step="0.1" class="mt-2 w-full">
 
         <p x-show="nearbyError" x-cloak x-text="nearbyError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
 

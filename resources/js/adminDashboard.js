@@ -46,6 +46,10 @@ export function adminDashboard() {
     voiceLogPrompt: '',
     voiceMaxSeconds: 300,
     voiceMaxMb: 25,
+    noteAiEnabled: false,
+    noteAiHasApiKey: false,
+    noteAiModel: '',
+    noteAiPrompt: '',
 
     async init() {
       await this.refresh();
@@ -63,6 +67,7 @@ export function adminDashboard() {
         this.maxAttachmentMb = Number(data.max_attachment_mb || 10);
         this.offlineAttachmentKb = Number(data.offline_attachment_max_kb ?? 250);
         this.applyVoiceSettings(data.voice || {});
+        this.applyNoteAiSettings(data.note_ai || {});
       } catch (error) {
         this.error = error.message || 'Die Übersicht konnte nicht geladen werden.';
       } finally {
@@ -136,6 +141,50 @@ export function adminDashboard() {
           method: 'PATCH',
           body: JSON.stringify({ postprocess_prompt: '', log_prompt: '' }),
         });
+        this.message = 'Die Standardanweisung wurde wiederhergestellt.';
+      });
+    },
+
+    applyNoteAiSettings(settings) {
+      this.noteAiEnabled = Boolean(settings.enabled);
+      this.noteAiHasApiKey = Boolean(settings.has_api_key);
+      this.noteAiModel = settings.model || '';
+      this.noteAiPrompt = settings.prompt || '';
+    },
+
+    noteAiStatusLabel() {
+      if (!this.noteAiEnabled) {
+        return 'ausgeschaltet';
+      }
+
+      return this.noteAiHasApiKey ? 'aktiv' : 'freigeschaltet, aber ohne OPENAI_KEY unwirksam';
+    },
+
+    async saveNoteAiSettings() {
+      await this.run(async () => {
+        const data = await apiFetch('/api/admin/settings/note-ai', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            enabled: this.noteAiEnabled,
+            model: this.noteAiModel,
+            prompt: this.noteAiPrompt,
+          }),
+        });
+        this.applyNoteAiSettings(data.note_ai || {});
+        this.message = 'Einstellungen für die KI-Textüberarbeitung gespeichert.';
+      });
+    },
+
+    async resetNoteAiPrompt() {
+      if (!window.confirm('Die Anweisung für die Textüberarbeitung auf die Standardfassung zurücksetzen?')) {
+        return;
+      }
+      await this.run(async () => {
+        const data = await apiFetch('/api/admin/settings/note-ai', {
+          method: 'PATCH',
+          body: JSON.stringify({ prompt: '' }),
+        });
+        this.applyNoteAiSettings(data.note_ai || {});
         this.message = 'Die Standardanweisung wurde wiederhergestellt.';
       });
     },

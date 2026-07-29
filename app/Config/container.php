@@ -11,6 +11,7 @@ use App\Domain\Backup\BackupLayout;
 use App\Domain\Backup\BackupService;
 use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Export\NotebookExportService;
+use App\Domain\Geo\ForwardGeocoder;
 use App\Domain\Geo\MapTileProxy;
 use App\Domain\Geo\NearbySearchService;
 use App\Domain\Geo\ReverseGeocoder;
@@ -21,6 +22,7 @@ use App\Domain\Log\LogService;
 use App\Domain\NotebookService;
 use App\Domain\Notes\AttachmentService;
 use App\Domain\Notes\ImageCompressionService;
+use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\Notes\ProseMirrorValidator;
@@ -286,6 +288,13 @@ return static function (string $rootPath): DI\Container {
             Env::get('GEOCODER_LANGUAGE', 'de') ?? 'de',
         ),
 
+        ForwardGeocoder::class => static fn (LoggerInterface $logger): ForwardGeocoder => new ForwardGeocoder(
+            $logger,
+            Env::get('GEOCODER_SEARCH_URL', ForwardGeocoder::DEFAULT_URL) ?? ForwardGeocoder::DEFAULT_URL,
+            Env::get('APP_URL', '') ?? '',
+            Env::get('GEOCODER_LANGUAGE', 'de') ?? 'de',
+        ),
+
         // Kartenkacheln für die Standortauswahl - server-seitig geholt und
         // zwischengespeichert, damit der Browser des Nutzers nie direkt mit
         // dem Kartendienst spricht (FR-NOTE-27).
@@ -391,6 +400,24 @@ return static function (string $rootPath): DI\Container {
             Env::get('VOICE_LANGUAGE', 'de') ?? 'de',
             Env::int('VOICE_MAX_SECONDS', VoiceNoteService::DEFAULT_MAX_SECONDS),
             Env::int('VOICE_MAX_MB', VoiceNoteService::MAX_UPLOAD_MB),
+        ),
+
+        NoteRewriteService::class => static fn (
+            PageService $pages,
+            ProseMirrorValidator $validator,
+            MarkdownConverter $markdown,
+            OpenAiClient $client,
+            VoiceNoteService $voice,
+            SettingsRepository $settings,
+            AuditLogRepository $auditLog,
+        ): NoteRewriteService => new NoteRewriteService(
+            $pages,
+            $validator,
+            $markdown,
+            $client,
+            $voice->settings(),
+            $settings,
+            $auditLog,
         ),
 
         RateLimiter::class => static fn (PDO $pdo): RateLimiter

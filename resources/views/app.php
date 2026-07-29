@@ -87,7 +87,7 @@
 
                 <div x-show="searchQuery.trim() === '' && workspaceTab === 'location'" x-cloak>
                     <div class="flex items-center justify-between gap-3 py-4">
-                        <p class="text-sm" style="color: var(--color-text-muted);">Seiten im Umkreis von 10 km, nach Entfernung sortiert.</p>
+                        <p class="text-sm" style="color: var(--color-text-muted);">Seiten im Umkreis von <span x-text="nearbyResultsRadiusLabel()"></span>, nach Entfernung sortiert.</p>
                         <button type="button" @click="openNearbyDialog" class="btn btn-quiet shrink-0">Anderen Ort wählen</button>
                     </div>
                     <p x-show="nearbyLoading || nearbyLocating" class="py-6 text-sm" style="color: var(--color-text-muted);">Aktueller Standort wird ermittelt…</p>

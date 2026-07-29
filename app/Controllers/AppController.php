@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\Import\ZipImportService;
+use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\PageService;
 use App\Domain\Voice\VoiceNoteService;
@@ -22,6 +23,7 @@ final class AppController
         private readonly PageAttachmentService $attachments,
         private readonly ZipImportService $import,
         private readonly VoiceNoteService $voice,
+        private readonly NoteRewriteService $rewriter,
     ) {
     }
 
@@ -51,7 +53,11 @@ final class AppController
 
         return JsonResponse::json($response, [
             'csrf_token' => (string) $request->getAttribute('csrf_token'),
-            'user' => ['id' => $user->id, 'is_admin' => $user->isAdmin],
+            'user' => [
+                'id' => $user->id,
+                'is_admin' => $user->isAdmin,
+                'nearby_search_radius_km' => $user->nearbySearchRadiusKm,
+            ],
             'storage' => $this->pages->workspaceStats($user),
             'offline' => [
                 'attachment_max_bytes' => $this->attachments->offlineAttachmentMaxBytes(),
@@ -91,7 +97,7 @@ final class AppController
      * Die Aufnahmeknöpfe werden serverseitig ein- oder ausgeblendet, damit sie
      * ohne freigeschaltete Funktion gar nicht erst im Markup stehen.
      *
-     * @return array{voiceEnabled: bool, voiceMaxSeconds: int}
+     * @return array{voiceEnabled: bool, voiceMaxSeconds: int, aiEnabled: bool}
      */
     private function voiceViewData(): array
     {
@@ -100,6 +106,7 @@ final class AppController
         return [
             'voiceEnabled' => $settings->isUsable(),
             'voiceMaxSeconds' => $settings->maxSeconds,
+            'aiEnabled' => $this->rewriter->isUsable(),
         ];
     }
 }

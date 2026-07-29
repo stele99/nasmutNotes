@@ -623,6 +623,7 @@ export function logPage() {
     },
 
     destroy() {
+      this.destroyPageLocation();
       this.cancelVoice();
     },
   };
