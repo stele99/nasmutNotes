@@ -11,6 +11,8 @@ use App\Domain\Backup\BackupLayout;
 use App\Domain\Backup\BackupService;
 use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Export\NotebookExportService;
+use App\Domain\Geo\MapTileProxy;
+use App\Domain\Geo\NearbySearchService;
 use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\Import\ArchiveChunkStore;
 use App\Domain\Import\MarkdownConverter;
@@ -284,6 +286,24 @@ return static function (string $rootPath): DI\Container {
             Env::get('GEOCODER_LANGUAGE', 'de') ?? 'de',
         ),
 
+        // Kartenkacheln für die Standortauswahl - server-seitig geholt und
+        // zwischengespeichert, damit der Browser des Nutzers nie direkt mit
+        // dem Kartendienst spricht (FR-NOTE-27).
+        MapTileProxy::class => static function (LoggerInterface $logger) use ($rootPath): MapTileProxy {
+            return new MapTileProxy(
+                $logger,
+                $rootPath . '/' . trim(Env::get('MAP_TILE_CACHE_PATH', 'var/cache/tiles') ?? 'var/cache/tiles', '/'),
+                Env::get('MAP_TILE_URL_TEMPLATE', MapTileProxy::DEFAULT_URL_TEMPLATE) ?? MapTileProxy::DEFAULT_URL_TEMPLATE,
+                Env::get('APP_URL', '') ?? '',
+            );
+        },
+
+        NearbySearchService::class => static fn (
+            PageService $pages,
+            PageRepository $pageRepository,
+            LogRepository $log,
+        ): NearbySearchService => new NearbySearchService($pages, $pageRepository, $log),
+
         PageService::class => static fn (
             PageRepository $pages,
             WorkspaceRepository $workspaces,
@@ -302,6 +322,7 @@ return static function (string $rootPath): DI\Container {
             PageAttachmentRepository $files,
             CategoryRepository $categories,
             TaskRepository $tasks,
+            LogRepository $log,
             SettingsRepository $settings,
             UploadStorage $storage,
         ): PageCopyService => new PageCopyService(
@@ -314,6 +335,7 @@ return static function (string $rootPath): DI\Container {
             $files,
             $categories,
             $tasks,
+            $log,
             $settings,
             $storage,
             Env::int('DEFAULT_STORAGE_QUOTA_MB', 0),

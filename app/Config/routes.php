@@ -16,6 +16,7 @@ use App\Controllers\HomeController;
 use App\Controllers\ImportController;
 use App\Controllers\InviteController;
 use App\Controllers\LogController;
+use App\Controllers\MapTileController;
 use App\Controllers\NotebookController;
 use App\Controllers\NoteController;
 use App\Controllers\PageAttachmentController;
@@ -192,4 +193,9 @@ return static function (App $app): void {
     })->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));
+    $app->get('/api/search/nearby', [SearchController::class, 'nearby'])->add(new RequireAuthMiddleware(true));
+
+    // Kartenkacheln zur Standortauswahl - server-seitig geholt (FR-NOTE-27).
+    $app->get('/api/map-tiles/{z}/{x}/{y}', [MapTileController::class, 'show'])
+        ->add(new RequireAuthMiddleware(true));
 };

@@ -147,6 +147,30 @@ final class PageRepository
     }
 
     /**
+     * Alle nicht gelöschten Seiten des Workspaces mit einem Aufnahmeort -
+     * Grundlage der Umkreissuche (FR-NOTE-27). Absichtlich ohne
+     * Entfernungsberechnung in SQL: SQLite kennt keine Trigonometrie ohne
+     * eigens registrierte Funktion, und die Zahl der Seiten mit Ort bleibt für
+     * einen persönlichen Workspace klein genug für PHP.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function pagesWithLocation(int $workspaceId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, title, type, location_lat, location_lon, location_label, updated_at
+               FROM pages
+              WHERE workspace_id = :workspace_id
+                AND deleted_at IS NULL
+                AND location_lat IS NOT NULL
+                AND location_lon IS NOT NULL'
+        );
+        $stmt->execute(['workspace_id' => $workspaceId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
      * Kurzinfos für die Seitenliste: Textanfang und letzter Bearbeiter einer
      * Notiz bzw. Aufgabenzahl einer Task-Seite. Bewusst zwei Sammelabfragen
      * statt einer Abfrage je Seite.

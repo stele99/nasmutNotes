@@ -10,8 +10,19 @@
             <span class="min-w-0 truncate" x-text="pageTitle"></span>
         </span>
         <div class="ml-auto flex shrink-0 items-center gap-2">
+            <span x-show="isShared" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
+                <span x-icon="share-2"></span>
+                Geteilt · <span x-text="permissionLabel()"></span>
+            </span>
+            <span x-show="ownedAndShared()" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
+                <span x-icon="share-2"></span>Geteilt
+            </span>
+            <?php include __DIR__ . '/partials/page_writers.php'; ?>
             <button x-show="canEditPage" type="button" @click="openColumnDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Spalten verwalten" aria-label="Spalten verwalten">
                 <span x-icon="table"></span><span class="hidden lg:inline">Spalten</span>
+            </button>
+            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
+                <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>
         </div>
     </div>

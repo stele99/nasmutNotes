@@ -33,6 +33,32 @@
                 <h1 class="mb-8 text-4xl font-semibold tracking-tight sm:text-5xl"><?= e((string) $page['title']) ?></h1>
                 <?php if ($page['type'] === 'note'): ?>
                     <div class="public-note-content"><?= $note_html ?></div>
+                <?php elseif ($page['type'] === 'log'): ?>
+                    <div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border);">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr style="color: var(--color-text-muted);">
+                                    <th class="px-3 py-2 text-left">Zeitpunkt</th>
+                                    <?php foreach ($log_columns as $column): ?>
+                                        <th class="px-3 py-2 text-left"><?= e((string) $column['name']) ?></th>
+                                    <?php endforeach; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($log_entries as $entry): ?>
+                                    <tr class="border-t" style="border-color: var(--color-border);">
+                                        <td class="whitespace-nowrap px-3 py-2 font-medium"><?= e(str_replace('T', ' ', substr((string) $entry['occurred_at'], 0, 16))) ?></td>
+                                        <?php foreach ($log_columns as $column): ?>
+                                            <td class="px-3 py-2"><?= e((string) ($entry['values'][$column['id']] ?? '')) ?></td>
+                                        <?php endforeach; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                                <?php if ($log_entries === []): ?>
+                                    <tr><td class="px-3 py-6 text-center" style="color: var(--color-text-muted);" colspan="<?= count($log_columns) + 1 ?>">Noch keine Einträge.</td></tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php else: ?>
                     <div class="space-y-8">
                         <?php foreach ($categories as $category): ?>

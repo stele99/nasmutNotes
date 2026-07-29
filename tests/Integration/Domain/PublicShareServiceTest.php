@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain;
 
+use App\Domain\Log\LogService;
 use App\Domain\Notes\ProseMirrorHtmlRenderer;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageService;
@@ -11,6 +12,7 @@ use App\Domain\PublicShareService;
 use App\Domain\ShareService;
 use App\Domain\User;
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NoteContentRepository;
 use App\Repositories\PageAttachmentRepository;
@@ -31,6 +33,7 @@ final class PublicShareServiceTest extends TestCase
     private PDO $pdo;
     private PageService $pages;
     private ShareService $shares;
+    private LogService $log;
     private PublicShareService $publicShares;
     private User $owner;
 
@@ -40,14 +43,17 @@ final class PublicShareServiceTest extends TestCase
         $workspaces = new WorkspaceRepository($this->pdo);
         $pageRepository = new PageRepository($this->pdo);
         $shareRepository = new ShareRepository($this->pdo);
+        $logRepository = new LogRepository($this->pdo);
         $this->pages = new PageService($pageRepository, $workspaces, $shareRepository);
         $this->shares = new ShareService($this->pages, $shareRepository);
+        $this->log = new LogService($this->pdo, $this->pages, $pageRepository, $logRepository);
         $this->publicShares = new PublicShareService(
             $shareRepository,
             $pageRepository,
             new NoteContentRepository($this->pdo),
             new CategoryRepository($this->pdo),
             new TaskRepository($this->pdo),
+            $logRepository,
             new NoteAttachmentRepository($this->pdo),
             new PageAttachmentRepository($this->pdo),
             new UploadStorage(sys_get_temp_dir(), 'public-share-test-missing'),
@@ -92,6 +98,37 @@ final class PublicShareServiceTest extends TestCase
 
         $this->expectException(NotFoundException::class);
         $this->publicShares->view($share['token']);
+    }
+
+    public function testLogSharesRenderColumnsAndEntries(): void
+    {
+        $page = $this->pages->create($this->owner, 'log', 'Fahrtenbuch', null);
+        $pageId = (int) $page['id'];
+        // Die Vorgabespalte eines neuen Logbuchs entfernen, um nur die
+        // eigentliche Testspalte im Ergebnis zu erwarten.
+        foreach ($this->log->columns($this->owner, $pageId) as $defaultColumn) {
+            $this->log->deleteColumn($this->owner, (int) $defaultColumn['id']);
+        }
+        $column = (int) $this->log->createColumn($this->owner, $pageId, 'Ziel', 'text')['id'];
+        $this->log->createEntry($this->owner, $pageId, '2026-07-29T09:00:00+02:00', [$column => 'Kunde Meyer']);
+
+        $share = $this->shares->create($this->owner, $pageId, 'read');
+        $view = $this->publicShares->view($share['token']);
+
+        self::assertSame('log', $view['page']['type']);
+        self::assertCount(1, $view['log_columns']);
+        self::assertSame('Ziel', $view['log_columns'][0]['name']);
+        self::assertCount(1, $view['log_entries']);
+        self::assertSame('Kunde Meyer', $view['log_entries'][0]['values'][$column]);
+    }
+
+    public function testLogPagesCanBeSharedJustLikeTaskLists(): void
+    {
+        $page = $this->pages->create($this->owner, 'log', 'Einsätze', null);
+
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'write');
+
+        self::assertSame('write', $share['permission']);
     }
 
     public function testInvalidTokenIsNotFound(): void

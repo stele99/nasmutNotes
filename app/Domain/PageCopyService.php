@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
@@ -36,6 +37,7 @@ final class PageCopyService
         private readonly PageAttachmentRepository $files,
         private readonly CategoryRepository $categories,
         private readonly TaskRepository $tasks,
+        private readonly LogRepository $log,
         private readonly SettingsRepository $settings,
         private readonly UploadStorage $storage,
         private readonly int $defaultQuotaMb = 0,
@@ -62,7 +64,7 @@ final class PageCopyService
         }
 
         $source = $this->pages->findById((int) $resolvedShare['page_id']);
-        if ($source === null || $source['deleted_at'] !== null || !in_array($source['type'], ['note', 'task'], true)) {
+        if ($source === null || $source['deleted_at'] !== null || !in_array($source['type'], ['note', 'task', 'log'], true)) {
             throw new NotFoundException('Quellseite nicht gefunden.');
         }
 
@@ -82,6 +84,8 @@ final class PageCopyService
 
             if ($source['type'] === 'note') {
                 $this->copyNote($source, $copyId, $recipient, $writtenStorageNames);
+            } elseif ($source['type'] === 'log') {
+                $this->copyLog((int) $source['id'], $copyId, $recipient);
             } else {
                 $this->copyTasks((int) $source['id'], $copyId);
             }
@@ -89,7 +93,7 @@ final class PageCopyService
                 (int) $source['id'],
                 $copyId,
                 $recipient,
-                $source['type'] === 'task',
+                $source['type'] !== 'note',
                 $writtenStorageNames,
             );
 
@@ -172,6 +176,47 @@ final class PageCopyService
         $this->rewriteImageTokens($document, $tokenMap);
         $encoded = json_encode($document, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->noteContents->replaceForCopy($copyId, $encoded, (string) $content['content_text'], $recipient->id);
+    }
+
+    /**
+     * Kopiert Spalten, Einträge und Werte eines Logbuchs. Eine frisch
+     * angelegte Logbuch-Seite bekommt automatisch eine Textspalte
+     * (`PageRepository::create`) - für eine Kopie muss stattdessen genau der
+     * Spaltenbestand der Quelle entstehen, die Vorgabespalte wird deshalb
+     * zuerst wieder entfernt.
+     */
+    private function copyLog(int $sourcePageId, int $copyId, User $recipient): void
+    {
+        foreach ($this->log->columnsForPage($copyId) as $column) {
+            $this->log->deleteColumn((int) $column['id']);
+        }
+
+        $columnMap = [];
+        foreach ($this->log->columnsForPage($sourcePageId) as $column) {
+            $newColumn = $this->log->createColumn(
+                $copyId,
+                (string) $column['name'],
+                (string) $column['type'],
+                (int) $column['position'],
+            );
+            $columnMap[(int) $column['id']] = (int) $newColumn['id'];
+        }
+
+        foreach ($this->log->entriesForPage($sourcePageId, null, false) as $entry) {
+            $newEntryId = $this->log->createEntry($copyId, (string) $entry['occurred_at'], $recipient->id);
+            foreach ((array) ($entry['values'] ?? []) as $columnId => $value) {
+                $newColumnId = $columnMap[(int) $columnId] ?? null;
+                if ($newColumnId === null) {
+                    continue;
+                }
+                $this->log->setValue($newEntryId, $newColumnId, [
+                    'text' => $value['value_text'] !== null ? (string) $value['value_text'] : null,
+                    'number' => $value['value_number'] !== null ? (float) $value['value_number'] : null,
+                    'lat' => $value['value_lat'] !== null ? (float) $value['value_lat'] : null,
+                    'lon' => $value['value_lon'] !== null ? (float) $value['value_lon'] : null,
+                ]);
+            }
+        }
     }
 
     private function copyTasks(int $sourcePageId, int $copyId): void

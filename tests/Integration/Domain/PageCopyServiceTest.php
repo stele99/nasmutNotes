@@ -7,6 +7,7 @@ namespace Tests\Integration\Domain;
 use App\Domain\PageCopyService;
 use App\Domain\User;
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
@@ -34,6 +35,7 @@ final class PageCopyServiceTest extends TestCase
     private NotebookRepository $notebooks;
     private NoteAttachmentRepository $images;
     private PageAttachmentRepository $files;
+    private LogRepository $log;
     private User $owner;
     private User $recipient;
 
@@ -48,6 +50,7 @@ final class PageCopyServiceTest extends TestCase
         $this->notebooks = new NotebookRepository($this->pdo);
         $this->images = new NoteAttachmentRepository($this->pdo);
         $this->files = new PageAttachmentRepository($this->pdo);
+        $this->log = new LogRepository($this->pdo);
         $this->service = new PageCopyService(
             $this->pdo,
             $this->pages,
@@ -58,6 +61,7 @@ final class PageCopyServiceTest extends TestCase
             $this->files,
             new CategoryRepository($this->pdo),
             new TaskRepository($this->pdo),
+            $this->log,
             new SettingsRepository($this->pdo),
             $this->storage,
         );
@@ -178,6 +182,42 @@ final class PageCopyServiceTest extends TestCase
         self::assertSame('high', $copiedTasks[0]['priority']);
         self::assertNull($copiedTasks[0]['import_batch_id']);
         self::assertSame(1, (int) $copiedTasks[0]['version']);
+    }
+
+    public function testCopiesLogColumnsEntriesAndValuesWithoutTheDefaultColumnLeaking(): void
+    {
+        $source = $this->pages->create($this->workspaceId($this->owner), 'log', 'Fahrtenbuch', null);
+        $sourceId = (int) $source['id'];
+        // `PageRepository::create` legt für ein neues Logbuch automatisch eine
+        // Textspalte an; hier wird sie durch die eigentlichen Spalten ersetzt.
+        foreach ($this->log->columnsForPage($sourceId) as $defaultColumn) {
+            $this->log->deleteColumn((int) $defaultColumn['id']);
+        }
+        $place = $this->log->createColumn($sourceId, 'Ort', 'location', 0);
+        $hours = $this->log->createColumn($sourceId, 'Dauer', 'hours', 1);
+
+        $entryId = $this->log->createEntry($sourceId, '2026-07-29T09:00:00.000Z', $this->owner->id);
+        $this->log->setValue($entryId, (int) $place['id'], ['text' => 'Stuttgart', 'number' => null, 'lat' => 48.775846, 'lon' => 9.182932]);
+        $this->log->setValue($entryId, (int) $hours['id'], ['text' => null, 'number' => 2.5, 'lat' => null, 'lon' => null]);
+
+        $copy = $this->service->copyFromShare($this->recipient, ['page_id' => $sourceId, 'permission' => 'read_copy'], null);
+        $copyId = (int) $copy['id'];
+
+        $copiedColumns = $this->log->columnsForPage($copyId);
+        self::assertCount(2, $copiedColumns);
+        self::assertSame(['Ort', 'Dauer'], array_column($copiedColumns, 'name'));
+
+        $copiedEntries = $this->log->entriesForPage($copyId, null, false);
+        self::assertCount(1, $copiedEntries);
+        self::assertSame('2026-07-29T09:00:00.000Z', $copiedEntries[0]['occurred_at']);
+
+        $newPlaceId = (int) $copiedColumns[0]['id'];
+        $newHoursId = (int) $copiedColumns[1]['id'];
+        self::assertSame('Stuttgart', $copiedEntries[0]['values'][$newPlaceId]['value_text']);
+        self::assertSame(48.775846, (float) $copiedEntries[0]['values'][$newPlaceId]['value_lat']);
+        self::assertSame(2.5, (float) $copiedEntries[0]['values'][$newHoursId]['value_number']);
+        // Der Eintrag gehört jetzt dem Empfänger, nicht mehr dem ursprünglichen Ersteller.
+        self::assertSame($this->recipient->id, (int) $copiedEntries[0]['created_by']);
     }
 
     public function testRejectsNotebookOwnedByAnotherUserWithoutCreatingPage(): void

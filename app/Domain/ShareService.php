@@ -30,12 +30,6 @@ final class ShareService
             throw new ValidationException('Ungültige Freigabeart.');
         }
 
-        // Die öffentliche Ansicht kennt nur Notizen und Aufgabenlisten; ein
-        // freigegebenes Logbuch stünde dort leer da (FR-LOG-01).
-        if ($page['type'] === 'log') {
-            throw new ValidationException('Logbücher können derzeit nicht geteilt werden.');
-        }
-
         $token = bin2hex(random_bytes(32));
         $shareId = $this->shares->create(
             (int) $page['id'],

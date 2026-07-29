@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
+use App\Domain\Log\LogColumnType;
 use App\Domain\Notes\ProseMirrorHtmlRenderer;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NoteContentRepository;
 use App\Repositories\PageAttachmentRepository;
@@ -24,6 +26,7 @@ final class PublicShareService
         private readonly NoteContentRepository $notes,
         private readonly CategoryRepository $categories,
         private readonly TaskRepository $tasks,
+        private readonly LogRepository $log,
         private readonly NoteAttachmentRepository $images,
         private readonly PageAttachmentRepository $files,
         private readonly UploadStorage $storage,
@@ -61,6 +64,8 @@ final class PublicShareService
             'page' => ['id' => (int) $page['id'], 'type' => $page['type'], 'title' => $page['title']],
             'note_html' => null,
             'categories' => [],
+            'log_columns' => [],
+            'log_entries' => [],
             'attachments' => array_map(static fn (array $file): array => [
                 'id' => (int) $file['id'],
                 'name' => (string) $file['original_name'],
@@ -76,6 +81,23 @@ final class PublicShareService
             }
             $this->validator->validate($document);
             $data['note_html'] = $this->renderer->render($document, $token);
+        } elseif ($page['type'] === 'log') {
+            $data['log_columns'] = array_map(static fn (array $column): array => [
+                'id' => (int) $column['id'],
+                'name' => (string) $column['name'],
+                'is_numeric' => LogColumnType::from((string) $column['type'])->isNumeric(),
+            ], $this->log->columnsForPage((int) $page['id']));
+
+            $data['log_entries'] = array_map(static function (array $entry): array {
+                $values = [];
+                foreach ((array) ($entry['values'] ?? []) as $columnId => $value) {
+                    $values[(int) $columnId] = $value['value_text'] !== null
+                        ? (string) $value['value_text']
+                        : ($value['value_number'] !== null ? (string) $value['value_number'] : '');
+                }
+
+                return ['id' => (int) $entry['id'], 'occurred_at' => (string) $entry['occurred_at'], 'values' => $values];
+            }, $this->log->entriesForPage((int) $page['id'], null, false));
         } else {
             $data['categories'] = array_map(function (array $category): array {
                 $category['tasks'] = $this->tasks->listForCategory((int) $category['id']);

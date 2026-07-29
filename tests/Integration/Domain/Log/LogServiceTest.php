@@ -279,12 +279,14 @@ final class LogServiceTest extends TestCase
         );
     }
 
-    public function testLogsCannotBeSharedWhileTheirPublicViewIsMissing(): void
+    public function testLogsCanBeSharedJustLikeTaskLists(): void
     {
         $shares = new ShareService($this->pages, new ShareRepository($this->pdo));
 
-        $this->expectException(ValidationException::class);
-        $shares->create($this->user, $this->pageId, 'read');
+        $share = $shares->create($this->user, $this->pageId, 'read');
+
+        self::assertSame('read', $share['permission']);
+        self::assertSame($this->pageId, $share['page_id']);
     }
 
     public function testOtherPageTypesAreNotLogs(): void

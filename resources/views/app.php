@@ -61,20 +61,42 @@
                 <?php if (!empty($voiceEnabled)): ?>
                     <div class="mt-3 max-w-2xl"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
                 <?php endif; ?>
-                <form @submit.prevent="search" class="mt-4 flex max-w-md items-center gap-2 rounded-md border px-3 py-2.5" style="border-color: var(--color-border); background: var(--color-bg);">
-                    <span style="color: var(--color-text-muted);" x-icon="search"></span>
-                    <input x-model="searchQuery" @input="if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none">
-                    <button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button>
-                </form>
+                <div class="mt-4 flex max-w-md items-center gap-2">
+                    <form @submit.prevent="search" class="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 py-2.5" style="border-color: var(--color-border); background: var(--color-bg);">
+                        <span style="color: var(--color-text-muted);" x-icon="search"></span>
+                        <input x-model="searchQuery" @input="nearbyActive = false; if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none">
+                        <button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button>
+                    </form>
+                    <?php /* Umkreissuche (FR-NOTE-27): Seiten und Logbuch-Einträge mit
+                             Standort im gewählten Umkreis um einen Punkt auf der Karte. */ ?>
+                    <button type="button" @click="openNearbyDialog" class="icon-action shrink-0 border p-2.5" :style="nearbyActive ? 'color: var(--color-accent); border-color: var(--color-accent);' : 'border-color: var(--color-border);'" title="In der Nähe suchen" aria-label="In der Nähe suchen" x-icon="map-pin"></button>
+                </div>
             </div>
 
             <div class="mt-8 max-w-2xl sm:mt-16">
                 <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--color-border);">
-                    <h2 class="text-xl font-semibold" x-text="searchQuery.trim() !== '' ? 'Suchergebnisse' : 'Zuletzt bearbeitet'"></h2>
-                    <span class="text-sm" style="color: var(--color-text-muted);" x-text="searchQuery.trim() !== '' ? searchResultsLabel() : recentCountLabel()"></span>
+                    <h2 class="text-xl font-semibold" x-text="nearbyActive ? 'In der Nähe' : (searchQuery.trim() !== '' ? 'Suchergebnisse' : 'Zuletzt bearbeitet')"></h2>
+                    <span class="flex items-center gap-3">
+                        <span class="text-sm" style="color: var(--color-text-muted);" x-text="nearbyActive ? nearbyResultsLabel() : (searchQuery.trim() !== '' ? searchResultsLabel() : recentCountLabel())"></span>
+                        <button x-show="nearbyActive" x-cloak type="button" @click="clearNearby" class="icon-action" aria-label="Umkreissuche verlassen" title="Umkreissuche verlassen" x-icon="x"></button>
+                    </span>
                 </div>
-                <p x-show="searchLoading" x-cloak class="py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
-                <div x-show="!searchLoading" class="divide-y divide-[color:var(--color-border)]">
+                <div x-show="nearbyActive" x-cloak class="divide-y divide-[color:var(--color-border)]">
+                    <template x-for="item in nearbyResults" :key="nearbyResultKey(item)">
+                        <a href="#" @click.prevent="openNearbyResult(item)" class="flex items-start gap-3 py-4 hover:opacity-70">
+                            <span x-show="item.page_type === 'log'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
+                            <span x-show="item.page_type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-base font-medium" x-text="item.title"></p>
+                                <p class="mt-0.5 truncate text-sm" style="color: var(--color-text-muted);" x-text="nearbyResultSubtitle(item)"></p>
+                            </div>
+                            <span class="pt-0.5" style="color: var(--color-text-muted);" x-icon="chevron-right"></span>
+                        </a>
+                    </template>
+                    <p x-show="nearbyResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Seiten im Umkreis gefunden.</p>
+                </div>
+                <p x-show="!nearbyActive && searchLoading" x-cloak class="py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
+                <div x-show="!nearbyActive && !searchLoading" class="divide-y divide-[color:var(--color-border)]">
                         <template x-for="page in (searchQuery.trim() !== '' ? searchResults : recentPages())" :key="page.id">
                             <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
                                 <span x-show="page.type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
@@ -94,12 +116,13 @@
                          Rückfalloption, wenn kein IntersectionObserver zur Verfügung steht.
                          Die Suche liefert bereits das komplette Ergebnis, braucht also kein
                          Nachladen. */ ?>
-                <div x-ref="recentSentinel" x-show="searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
+                <div x-ref="recentSentinel" x-show="!nearbyActive && searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
                     <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Seiten laden</button>
                 </div>
-                <p x-show="!loading && searchQuery.trim() === '' && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>
-                <p x-show="!searchLoading && searchQuery.trim() !== '' && searchResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Treffer für „<span x-text="searchQuery"></span>“.</p>
+                <p x-show="!nearbyActive && !loading && searchQuery.trim() === '' && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>
+                <p x-show="!nearbyActive && !searchLoading && searchQuery.trim() !== '' && searchResults.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Keine Treffer für „<span x-text="searchQuery"></span>“.</p>
             </div>
+            <?php include __DIR__ . '/partials/nearby_search_dialog.php'; ?>
         </section>
     </main>
 </div>

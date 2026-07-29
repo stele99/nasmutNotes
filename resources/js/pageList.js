@@ -2,6 +2,7 @@ import { apiFetch } from './api.js';
 import { markNewPageForTitleEdit } from './newPageTitle.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
 import { captureLocationOnCreate } from './geo.js';
+import { nearbySearchMixin } from './nearbySearch.js';
 import {
   cacheDocument,
   cacheNotebooks,
@@ -104,6 +105,7 @@ const RECENT_PAGE_SIZE = 25;
 export function pageList() {
   return {
     ...voiceRecorderMixin(),
+    ...nearbySearchMixin(),
     voiceNoticeTimer: null,
     pages: [],
     // Für die Übersicht sortierte Kopie: Favoriten zuerst, dann nach
@@ -743,9 +745,11 @@ export function pageList() {
     clearSearch() {
       this.searchQuery = '';
       this.searchResults = [];
+      this.clearNearby();
     },
 
     async search() {
+      this.clearNearby();
       const query = this.searchQuery.trim();
       if (!query) {
         this.searchResults = [];
@@ -798,6 +802,7 @@ export function pageList() {
       this.recentObserver = null;
       window.clearTimeout(this.voiceNoticeTimer);
       this.cancelVoice();
+      this.destroyNearbyMap();
     },
   };
 }

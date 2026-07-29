@@ -223,6 +223,34 @@ final class LogRepository
         $stmt->execute(['entry_id' => $entryId, 'column_id' => $columnId]);
     }
 
+    /**
+     * Alle Ortsspalten-Werte des Workspaces mit Koordinaten - Grundlage der
+     * Umkreissuche (FR-NOTE-27), zusammen mit dem Seitentitel und dem
+     * Spaltennamen für die Anzeige.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function locatedValuesForWorkspace(int $workspaceId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT lv.entry_id, lv.value_text, lv.value_lat, lv.value_lon,
+                    le.page_id, le.occurred_at,
+                    lc.name AS column_name,
+                    p.title AS page_title
+               FROM log_values lv
+               JOIN log_entries le ON le.id = lv.entry_id
+               JOIN log_columns lc ON lc.id = lv.column_id
+               JOIN pages p ON p.id = le.page_id
+              WHERE p.workspace_id = :workspace_id
+                AND p.deleted_at IS NULL
+                AND lv.value_lat IS NOT NULL
+                AND lv.value_lon IS NOT NULL'
+        );
+        $stmt->execute(['workspace_id' => $workspaceId]);
+
+        return $stmt->fetchAll();
+    }
+
     public function countEntries(int $pageId): int
     {
         $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM log_entries WHERE page_id = :page_id');

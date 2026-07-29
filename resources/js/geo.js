@@ -133,7 +133,12 @@ export function locationLabel(location) {
   return parts.join(' · ');
 }
 
-/** Karte zum Nachschlagen; die App selbst bindet keinen Kartendienst ein. */
+/**
+ * Link zum Nachschlagen eines einzelnen Ortes bei OpenStreetMap (öffnet in
+ * einem neuen Tab). Die Umkreissuche (FR-NOTE-27) zeigt zusätzlich eine
+ * eingebettete Karte, deren Kacheln aber über den Server laufen - siehe
+ * `nearbySearch.js` und `MapTileProxy`.
+ */
 export function locationMapUrl(location) {
   if (!location) {
     return '';
