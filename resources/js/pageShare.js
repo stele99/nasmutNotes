@@ -24,6 +24,18 @@ export function pageShare() {
       return this.currentPermission === 'write' ? 'schreibend' : 'lesend';
     },
 
+    sharedPageDateLabel(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return 'unbekannt';
+      }
+
+      return new Intl.DateTimeFormat('de-DE', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date);
+    },
+
     async init() {
       const pageRoot = this.$root;
       if (pageRoot?.dataset.pageId) {

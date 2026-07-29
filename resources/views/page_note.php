@@ -42,7 +42,8 @@
             <div class="min-w-0">
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
-                <?php include __DIR__ . '/partials/page_location.php'; ?>
+                 <?php include __DIR__ . '/partials/page_location.php'; ?>
+                 <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
             </div>
             <div class="flex shrink-0 items-start gap-3">
                 <div class="text-left text-xs md:text-right md:text-sm" style="color: var(--color-text-muted);">

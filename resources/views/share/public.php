@@ -31,6 +31,10 @@
         <?php else: ?>
             <article>
                 <h1 class="mb-8 text-4xl font-semibold tracking-tight sm:text-5xl"><?= e((string) $page['title']) ?></h1>
+                <p class="-mt-5 mb-6 flex flex-wrap gap-x-3 gap-y-1 text-xs" style="color: var(--color-text-muted);">
+                    <span>Zuletzt geändert: <?= e((new DateTimeImmutable((string) $page['updated_at']))->format('d.m.Y H:i')) ?></span>
+                    <span>Owner: <?= e((string) ($page['owner_name'] ?? 'Unbekannt')) ?></span>
+                </p>
                 <?php if ($page['type'] === 'note'): ?>
                     <div class="public-note-content"><?= $note_html ?></div>
                 <?php elseif ($page['type'] === 'log'): ?>

@@ -103,10 +103,13 @@ final class ShareRepository
     {
         $stmt = $this->pdo->prepare(
             'SELECT pages.*,
-                    share_links.permission AS share_permission
+                    share_links.permission AS share_permission,
+                    owner.name AS owner_name
              FROM shared_page_access
              JOIN share_links ON share_links.id = shared_page_access.share_link_id
              JOIN pages ON pages.id = share_links.page_id
+             JOIN workspaces owner_workspace ON owner_workspace.id = pages.workspace_id
+             JOIN users owner ON owner.id = owner_workspace.user_id
              WHERE shared_page_access.user_id = :user_id
                AND pages.id = :page_id
                AND pages.deleted_at IS NULL

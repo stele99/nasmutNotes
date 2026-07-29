@@ -61,7 +61,13 @@ final class PublicShareService
 
         $data = [
             'share' => $share,
-            'page' => ['id' => (int) $page['id'], 'type' => $page['type'], 'title' => $page['title']],
+            'page' => [
+                'id' => (int) $page['id'],
+                'type' => $page['type'],
+                'title' => $page['title'],
+                'updated_at' => (string) ($page['updated_at'] ?? ''),
+                'owner_name' => ($page['owner_name'] ?? null) !== null ? (string) $page['owner_name'] : null,
+            ],
             'note_html' => null,
             'categories' => [],
             'log_columns' => [],

@@ -33,7 +33,8 @@
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
                 <p class="mt-2 text-sm" style="color: var(--color-text-muted);" x-text="entryCountLabel()"></p>
-                <?php include __DIR__ . '/partials/page_location.php'; ?>
+                 <?php include __DIR__ . '/partials/page_location.php'; ?>
+                 <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
             </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2">
                 <button x-show="canEditPage" type="button" @click="openNewEntry" class="btn btn-primary">

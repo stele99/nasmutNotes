@@ -85,9 +85,12 @@ final class PageRepository
     public function findByIdForWorkspace(int $id, int $workspaceId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT pages.*, notebooks.name AS notebook_name, notebooks.icon AS notebook_icon, notebooks.color AS notebook_color
+            'SELECT pages.*, notebooks.name AS notebook_name, notebooks.icon AS notebook_icon, notebooks.color AS notebook_color,
+                    owner.name AS owner_name
                FROM pages
           LEFT JOIN notebooks ON notebooks.id = pages.notebook_id
+          LEFT JOIN workspaces owner_workspace ON owner_workspace.id = pages.workspace_id
+          LEFT JOIN users owner ON owner.id = owner_workspace.user_id
               WHERE pages.id = :id AND pages.workspace_id = :workspace_id'
         );
         $stmt->execute(['id' => $id, 'workspace_id' => $workspaceId]);
@@ -99,7 +102,13 @@ final class PageRepository
     /** @return array<string, mixed>|null */
     public function findById(int $id): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM pages WHERE id = :id');
+        $stmt = $this->pdo->prepare(
+            'SELECT pages.*, owner.name AS owner_name
+               FROM pages
+          LEFT JOIN workspaces owner_workspace ON owner_workspace.id = pages.workspace_id
+          LEFT JOIN users owner ON owner.id = owner_workspace.user_id
+              WHERE pages.id = :id'
+        );
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
 
