@@ -206,11 +206,14 @@ final class NoteRewriteService
         string &$editableText,
     ): string {
         $type = (string) ($node['type'] ?? '');
-        if (in_array($type, ['codeBlock', 'table', 'taskList', 'horizontalRule'], true)) {
+        if (in_array($type, ['codeBlock', 'table', 'taskList', 'horizontalRule', 'image'], true)) {
             return $this->placeholder($node, 'block', $placeholders, $prefix);
         }
-        if ($type === 'image') {
-            return $this->placeholder($node, 'inline', $placeholders, $prefix);
+        if (
+            in_array($type, ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList'], true)
+            && $this->containsProtectedInlineContent($node)
+        ) {
+            return $this->placeholder($node, 'block', $placeholders, $prefix);
         }
 
         if ($type === 'text') {
@@ -273,6 +276,26 @@ final class NoteRewriteService
         }
 
         return implode("\n", $lines);
+    }
+
+    /** @param array<string, mixed> $node */
+    private function containsProtectedInlineContent(array $node): bool
+    {
+        if (($node['type'] ?? null) === 'image') {
+            return true;
+        }
+        foreach ((array) ($node['marks'] ?? []) as $mark) {
+            if (is_array($mark) && in_array($mark['type'] ?? null, ['link', 'code', 'underline'], true)) {
+                return true;
+            }
+        }
+        foreach ((array) ($node['content'] ?? []) as $child) {
+            if (is_array($child) && $this->containsProtectedInlineContent($child)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

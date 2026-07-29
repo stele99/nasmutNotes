@@ -72,7 +72,7 @@ final class NoteRewriteServiceTest extends TestCase
             preg_match_all('/NASMUTKEEP(?:BLOCK|INLINE)[a-f0-9]+\d{4}/', $source, $matches);
             self::assertCount(3, $matches[0]);
 
-            return "## Überblick\n\nDer übrige Text wurde verbessert.\n\n{$matches[0][0]}\n\nBesuche {$matches[0][1]} heute.\n\n{$matches[0][2]}";
+            return "## Überblick\n\nDer übrige Text wurde verbessert.\n\n{$matches[0][0]}\n\n{$matches[0][1]}\n\n{$matches[0][2]}";
         });
 
         $result = $service->rewrite($this->user, $this->pageId, [
