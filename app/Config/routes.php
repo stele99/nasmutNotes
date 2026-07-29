@@ -24,6 +24,7 @@ use App\Controllers\SearchController;
 use App\Controllers\ShareController;
 use App\Controllers\TaskController;
 use App\Controllers\UserInviteController;
+use App\Controllers\VoiceNoteController;
 use App\Middleware\RequireAdminMiddleware;
 use App\Middleware\RequireAuthMiddleware;
 use Slim\App;
@@ -68,6 +69,7 @@ return static function (App $app): void {
             '/settings/offline-attachment',
             [AdminDashboardController::class, 'updateOfflineAttachmentLimit'],
         );
+        $group->patch('/settings/voice', [AdminDashboardController::class, 'updateVoiceSettings']);
         $group->post('/attachments/purge-orphans', [AdminDashboardController::class, 'purgeOrphans']);
         $group->get('/backups', [BackupAdminController::class, 'index']);
         $group->post('/backups', [BackupAdminController::class, 'store']);
@@ -166,6 +168,12 @@ return static function (App $app): void {
     $app->group('/api/export', function ($group): void {
         $group->get('/notebooks', [ExportController::class, 'notebooks']);
         $group->get('/workspace', [ExportController::class, 'workspace']);
+    })->add(new RequireAuthMiddleware(true));
+
+    $app->group('/api/voice', function ($group): void {
+        $group->get('/config', [VoiceNoteController::class, 'config']);
+        $group->post('/transcribe', [VoiceNoteController::class, 'transcribe']);
+        $group->post('/notes', [VoiceNoteController::class, 'store']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));

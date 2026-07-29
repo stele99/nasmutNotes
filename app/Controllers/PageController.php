@@ -93,6 +93,7 @@ final class PageController
             (string) ($body['title'] ?? ''),
             isset($body['icon']) ? (string) $body['icon'] : null,
             $notebookId,
+            is_array($body['location'] ?? null) ? $body['location'] : null,
         );
 
         return JsonResponse::json($response, $this->serialize($page), 201);
@@ -178,6 +179,28 @@ final class PageController
     }
 
     /**
+     * Aufnahmeort einer Seite; fehlt er, liefert die Antwort null statt eines
+     * halb gefüllten Objekts (FR-NOTE-25).
+     *
+     * @param array<string, mixed> $page
+     * @return array{lat: float, lon: float, accuracy: ?float, label: ?string, captured_at: ?string}|null
+     */
+    public static function serializeLocation(array $page): ?array
+    {
+        if (($page['location_lat'] ?? null) === null || ($page['location_lon'] ?? null) === null) {
+            return null;
+        }
+
+        return [
+            'lat' => (float) $page['location_lat'],
+            'lon' => (float) $page['location_lon'],
+            'accuracy' => ($page['location_accuracy'] ?? null) !== null ? (float) $page['location_accuracy'] : null,
+            'label' => ($page['location_label'] ?? null) !== null ? (string) $page['location_label'] : null,
+            'captured_at' => ($page['location_at'] ?? null) !== null ? (string) $page['location_at'] : null,
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $page
      * @return array<string, mixed>
      */
@@ -195,6 +218,7 @@ final class PageController
             'notebook_name' => ($page['is_shared'] ?? false) === true ? null : ($page['notebook_name'] ?? null),
             'notebook_icon' => ($page['is_shared'] ?? false) === true ? null : ($page['notebook_icon'] ?? null),
             'notebook_color' => ($page['is_shared'] ?? false) === true ? null : ($page['notebook_color'] ?? null),
+            'location' => self::serializeLocation($page),
             'deleted_at' => $page['deleted_at'],
             'created_at' => $page['created_at'],
             'updated_at' => $page['updated_at'],

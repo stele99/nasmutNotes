@@ -223,6 +223,8 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-NOTE-21 | Die **maximale Größe je Anhang** legt der Admin fest (Default 10 MB, Grenzen 1–2048 MB); `MAX_ATTACHMENT_MB` dient nur als Anfangswert. Anhänge und eingebettete Bilder zählen gemeinsam auf das Speicherkontingent des Seiteneigentümers (FR-ADM-06). | M |
 | FR-NOTE-22 | Der Zugriff auf einen Anhang wird immer über die Seite geprüft: Wer die Seite nicht sehen darf, erhält HTTP 404; Löschen setzt Schreibrecht voraus. Dateinamen werden von Pfadanteilen und Steuerzeichen befreit und auf 150 Zeichen gekürzt. | M |
 | FR-NOTE-23 | Der Bild-Betrachter (FR-NOTE-16) unterstützt auf Touchgeräten Pinch-to-Zoom (bis 4×), Verschieben im gezoomten Zustand und Doppeltipp zum Ein-/Auszoomen. | S |
+| FR-NOTE-25 | Eine Notiz kann **optional festhalten, wo sie entstanden ist**. Wann das geschieht, legt der Nutzer je Gerät im Einstellungen-Dialog fest: **„Nur auf Klick"** (Vorgabe) — die Notiz entsteht ohne Ort, unter der Überschrift steht „Standort hinzufügen" — oder **„Immer automatisch"**, dann wird der Ort schon beim Anlegen mitgeschickt, auch bei der Sprachnotiz (FR-VOICE-01). Ein gesetzter Ort lässt sich jederzeit **verschieben oder entfernen**: Der Dialog bietet den aktuellen Standort des Geräts sowie die Eingabe von Koordinaten oder eines kopierten Kartenlinks (OpenStreetMap, Google Maps, `geo:`). Gespeichert werden Breite, Länge, gemeldete Genauigkeit und Zeitpunkt an der Seite (Migration 0025). Jeder Fehlschlag der Ortung — abgelehnt, kein Signal, Zeitüberschreitung nach 8 Sekunden — bleibt beim Anlegen folgenlos; beim ausdrücklichen Setzen wird er gemeldet. Beim Anlegen verwirft der Server unbrauchbare Koordinaten stillschweigend, bei einer Eingabe lehnt er sie ab. Die Notizseite verlinkt den Ort auf OpenStreetMap; eine Karte wird **nicht** eingebunden. Der Ort gehört zur Seite: Freigaben ändern ihn nicht. Aufgabenlisten führen keinen Ort. | S |
+| FR-NOTE-26 | Zu den Koordinaten wird die **Anschrift ermittelt** und an der Seite gespeichert (Migration 0026), damit das Anzeigen einer Notiz keine weitere Anfrage auslöst. Die Suche läuft **serverseitig** über Nominatim (`GEOCODER_URL`, abschaltbar durch einen leeren Wert): So bleibt die IP-Adresse des Nutzers dem Kartendienst unbekannt und die CSP muss nicht gelockert werden. Angezeigt wird die Anschrift, dahinter die Koordinaten auf **zwei Nachkommastellen** gekürzt — gespeichert bleiben sie vollständig. Findet die Suche nichts oder ist sie nicht erreichbar, bleibt es bei den Koordinaten; der Ort selbst geht dadurch nie verloren. | S |
 
 ### 5.5 Task-Seiten
 
@@ -330,6 +332,18 @@ Ergebnis: 5 Tasks; der dritte ohne Listenmarkierung, der vierte direkt als erled
 | FR-IMP-23 | Nach dem Import zeigt die Oberfläche einen **Bericht**: Zahl der Notizen, Bilder und Dateianhänge sowie jede übersprungene oder gescheiterte Datei mit Begründung, entfernte Verweise auf nicht mitgelieferte Bilder und Dateien ohne Bezug zu einer Notiz. Eine Notiz, die nicht vollständig angelegt werden kann, wird zurückgerollt statt leer stehen zu lassen; der Import der übrigen läuft weiter. | S |
 | FR-IMP-24 | Das Archiv ist auf `IMPORT_MAX_ARCHIVE_MB` begrenzt (Vorgabe 500 MB), zusätzlich auf 20.000 Einträge, 2 GB entpackten Inhalt und 2 MB je Notiz. Der Import wird im Audit-Log vermerkt. | M |
 | FR-IMP-25 | Die Oberfläche überträgt das Archiv **in Teilen**: Der Server nennt die Teilgröße (höchstens 4 MB, abgeleitet aus `upload_max_filesize`/`post_max_size`), der Client schneidet die Datei und sendet die Teile der Reihe nach; erst danach wird importiert. Damit spielt die PHP-Konfiguration für den Import keine Rolle mehr. Eine Upload-Sitzung gehört genau einem Nutzer, nimmt Teile nur in der geschnittenen Reihenfolge und nicht mehr Daten als angekündigt an, liegt außerhalb des Web-Roots unter `IMPORT_TMP_PATH` und verfällt nach 6 Stunden; abgebrochene Uploads werden sofort verworfen. Der Upload in **einer** Anfrage bleibt als `POST /api/import/archive` bestehen. | S |
+
+### 5.10 Sprachnotizen (Diktat) *(neu in v3.3)*
+
+| ID | Anforderung | Prio |
+|---|---|---|
+| FR-VOICE-01 | Übersicht und Seitenleiste bieten einen **Aufnahmeknopf** („Sprachnotiz"), die Werkzeugleiste einer Notizseite ein **Mikrofon** für das Diktat in die geöffnete Notiz. Die Aufnahme läuft im Browser über `MediaRecorder`; ein Feld zeigt die laufende Dauer und bietet „Fertig" und „Verwerfen". Am konfigurierten Zeitlimit endet die Aufnahme selbsttätig. Ohne Mikrofonerlaubnis, ohne HTTPS oder ohne `MediaRecorder` bleibt der Knopf ohne Funktion und meldet den Grund. | S |
+| FR-VOICE-02 | Die Aufnahme wird an den Server geschickt und dort über die **OpenAI-Transkription** (Vorgabe `gpt-4o-mini-transcribe`) in Text gewandelt. Der Client spricht **nie** direkt mit dem Anbieter; der Schlüssel bleibt auf dem Server. Die Audiodatei liegt nur für die Dauer der Anfrage unter `VOICE_TMP_PATH` und wird danach gelöscht. Beim Diktat in eine offene Notiz wird der Text an der Einfügemarke eingesetzt und über den Autosave gespeichert. | S |
+| FR-VOICE-03 | Ein **zweites Modell** (Vorgabe `gpt-4o-mini`) bereitet das Roh-Transkript auf: Erkennungsfehler und Füllwörter raus, Satzzeichen und Absätze rein, Aufzählungen als Markdown. Es liefert zusätzlich eine **kurze Überschrift**. Das Markdown wird serverseitig in das ProseMirror-JSON des Editors übersetzt (derselbe Weg wie beim Import, FR-IMP-20). Die Nachbearbeitung ist abschaltbar; dann entsteht die Notiz aus dem Rohtext, die Überschrift aus dessen erstem Satz. | S |
+| FR-VOICE-04 | Aus dem Inhalt wird das **passende Notizbuch** abgeleitet: Das Modell wählt aus den vorhandenen Notizbüchern des Workspaces. Zugeordnet wird nur bei Namensgleichheit (ohne Rücksicht auf Groß-/Kleinschreibung); ein erfundener Name legt **kein** neues Notizbuch an, die Notiz bleibt dann unzugeordnet. | S |
+| FR-VOICE-05 | Alle Parameter sind im **Admin-Dashboard** änderbar: Freischaltung, beide Modelle, Sprache, Ein/Aus der Nachbearbeitung, deren Anweisungstext, maximale Aufnahmedauer und -größe sowie die Adresse des Dienstes. Sie liegen in `app_settings`; die Umgebungsvariablen sind nur Anfangswerte. Der **API-Schlüssel** steht ausschließlich in der Umgebung (`OPENAI_KEY`) — er gehört zum Deployment und liegt damit auch nicht in Sicherungen des Workspaces. Das Dashboard zeigt nur, ob er vorhanden ist, und seine letzten vier Zeichen. Änderungen werden im Audit-Log vermerkt. | M |
+| FR-VOICE-06 | Ohne Schlüssel oder ohne Freischaltung rendert der Server die Aufnahmeknöpfe gar nicht erst. Aufnahmen sind auf `VOICE_MAX_MB` (höchstens 25 MB, Grenze des Dienstes) und auf die zulässigen Audioformate begrenzt; je Nutzer sind 20 Transkriptionen in 5 Minuten erlaubt. Eine leere Aufnahme legt keine Notiz an. | M |
+| FR-VOICE-07 | Störungen des Anbieters (nicht erreichbar, Schlüssel abgelehnt, unlesbare Antwort) liefern HTTP 502 mit dem Code `VOICE_SERVICE_FAILED` statt eines Serverfehlers; die Meldung enthält nie den Schlüssel. Das Anlegen der Notiz erfolgt erst nach erfolgreicher Transkription — eine gescheiterte Aufnahme hinterlässt keine leere Seite. | M |
 
 ---
 
@@ -554,7 +568,7 @@ users ──1:n── audit_log
 
 **sessions** — `id`, `user_id` (FK), `token_hash`, `user_agent`, `ip_hash`, `created_at`, `last_seen_at`, `expires_at`
 
-**pages** — `id`, `workspace_id` (FK), `type` (`note`\|`task`), `title`, `icon`, `is_favorite`, `sort_order`, `default_view` (`board`\|`list`), `deleted_at`, `created_at`, `updated_at`
+**pages** — `id`, `workspace_id` (FK), `type` (`note`\|`task`), `title`, `icon`, `is_favorite`, `sort_order`, `default_view` (`board`\|`list`), `deleted_at`, `created_at`, `updated_at`, `location_lat`, `location_lon`, `location_accuracy`, `location_at` (*neu, Migration 0025, FR-NOTE-25*), `location_label` (*neu, Migration 0026, ermittelte Anschrift, FR-NOTE-26*)
 
 **note_contents** — `page_id` (PK, FK), `content` (ProseMirror-JSON), `content_text` (Reintext für FTS), `updated_at`
 
@@ -617,6 +631,16 @@ users ──1:n── audit_log
 | `IMPORT_TMP_PATH` | `var/tmp/import` | Ablage der Teile eines laufenden Uploads, außerhalb des Web-Roots |
 | `SEARCH_RESULT_LIMIT` | `20` | Ergebnisse pro Suchanfrage |
 | `RATE_LIMIT_ENABLED` | `true` | Rate Limiting aktivieren |
+| `OPENAI_KEY` | `sk-…` | API-Schlüssel für die Sprachnotizen. **Einzige Quelle** — nicht im Admin-Dashboard änderbar (FR-VOICE-05). Fehlt er, bleibt die Funktion aus |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Adresse des Dienstes; im Admin-Dashboard änderbar |
+| `VOICE_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | Anfangswert des Transkriptionsmodells; im Admin-Dashboard änderbar |
+| `VOICE_POSTPROCESS_MODEL` | `gpt-4o-mini` | Anfangswert des Modells für die Nachbearbeitung; im Admin-Dashboard änderbar |
+| `VOICE_LANGUAGE` | `de` | Zweistelliger Sprachcode der Diktate; leer überlässt die Erkennung dem Modell |
+| `VOICE_MAX_SECONDS` | `300` | Anfangswert der maximalen Aufnahmedauer; im Admin-Dashboard änderbar |
+| `VOICE_MAX_MB` | `25` | Anfangswert der maximalen Aufnahmegröße (Obergrenze des Dienstes: 25) |
+| `VOICE_TMP_PATH` | `var/tmp/voice` | Ablage der Aufnahme während der Transkription, außerhalb des Web-Roots; wird sofort danach gelöscht |
+| `GEOCODER_URL` | `https://nominatim.openstreetmap.org/reverse` | Adresssuche zum Aufnahmeort (FR-NOTE-26); ein leerer Wert schaltet sie ab, dann bleibt es bei den Koordinaten |
+| `GEOCODER_LANGUAGE` | `de` | Sprache der ermittelten Anschrift |
 | `BACKUP_PATH` | `/var/backups/notes` | Zielverzeichnis für Sicherungen |
 | `LOG_LEVEL` | `info` | Monolog-Level |
 
@@ -649,8 +673,8 @@ users ──1:n── audit_log
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/api/pages` | Seiten des Workspaces |
-| POST | `/api/pages` | Seite anlegen (`type`, `title`) |
-| PATCH | `/api/pages/{id}` | Titel, Icon, Favorit, Sortierung, Ansicht |
+| POST | `/api/pages` | Seite anlegen (`type`, `title`, optional `location` mit `lat`/`lon`/`accuracy`, FR-NOTE-25) |
+| PATCH | `/api/pages/{id}` | Titel, Icon, Favorit, Sortierung, Ansicht, `location` (setzen/verschieben; `null` entfernt, FR-NOTE-25) |
 | DELETE | `/api/pages/{id}` | Soft-Delete |
 | POST | `/api/pages/{id}/restore` | Aus Papierkorb wiederherstellen |
 | DELETE | `/api/pages/{id}/purge` | Endgültig löschen |
@@ -698,6 +722,10 @@ users ──1:n── audit_log
 | **DELETE** | **`/api/pages/trash`** | **Papierkorb vollständig leeren** |
 | **PATCH** | **`/api/admin/settings/max-attachment`** | **Obergrenze je Anhang setzen (Admin)** |
 | **PATCH** | **`/api/admin/settings/offline-attachment`** | **Offline-Limit je Anhang in KB setzen (Admin, FR-OFFLINE-06)** |
+| **PATCH** | **`/api/admin/settings/voice`** | **Sprachnotizen konfigurieren: Freischaltung, Modelle, Sprache, Anweisung, Grenzen (Admin, FR-VOICE-05)** |
+| **GET** | **`/api/voice/config`** | **Zustand der Sprachnotizen für die Oberfläche (`enabled`, `max_seconds`, `max_bytes`)** |
+| **POST** | **`/api/voice/transcribe`** | **Aufnahme transkribieren, ohne zu speichern (multipart, Feld `audio`); liefert Transkript, aufbereiteten Text als ProseMirror-Dokument, Überschriftsvorschlag und Notizbuch (FR-VOICE-02/03)** |
+| **POST** | **`/api/voice/notes`** | **Aus einer Aufnahme direkt eine Notiz anlegen (multipart, Feld `audio`, optional `lat`/`lon`/`accuracy`); liefert die neue Seite (FR-VOICE-01–04, FR-NOTE-25)** |
 | **GET** | **`/api/session`** | **Frisches CSRF-Token und Offline-Einstellungen (u. a. `attachment_max_bytes`)** |
 | **POST** | **`/api/import/archive`** | **ZIP mit Markdown-Notizen in einer Anfrage importieren (multipart, Feld `file`); liefert den Bericht aus FR-IMP-23** |
 | **POST** | **`/api/import/archive/parts`** | **Geteilten Upload beginnen (`file_name`, `size`); liefert `upload_id` und `chunk_size`** |
@@ -913,6 +941,7 @@ users ──1:n── audit_log
 
 | Version | Datum | Änderung |
 |---|---|---|
+| 3.3 | 2026-07-29 | **Sprachnotizen** (Kap. 5.10, FR-VOICE-01–07, API 10.2): Aufnahme im Browser über `MediaRecorder`, serverseitige Transkription über OpenAI (`gpt-4o-mini-transcribe`), optionale Nachbearbeitung durch ein zweites Modell mit Überschrift und abgeleitetem Notizbuch (`VoiceNoteService`, `OpenAiClient`, `VoiceNoteController`); sämtliche Parameter im Admin-Dashboard, der Schlüssel ausschließlich in `OPENAI_KEY`. Zusätzlich der optionale **Aufnahmeort** von Notizen (FR-NOTE-25/26, Migrationen 0025 und 0026): je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar über Koordinaten oder Kartenlink, mit serverseitig ermittelter Anschrift über Nominatim (`ReverseGeocoder`) |
 | 3.2 | 2026-07-27 | Neue Freigabeart „Lesen und Kopieren" (`read_copy`, Migration 0024): eigenständige, nicht indexierbare öffentliche Ansicht ohne Workspace-Oberfläche für Nur-Lesen- und Lesen/Kopieren-Links (`PublicShareController`/`PublicShareService`, Notizinhalt als sanitisiertes HTML über `ProseMirrorHtmlRenderer`); angemeldete Nutzer erzeugen daraus eine unabhängige Kopie samt Bildern und Dateianhängen im eigenen Workspace/Notizbuch (`PageCopyService`, `POST /s/{token}/copy`, FR-SHR-16); Lesen/Schreiben-Links verlangen jetzt zwingend eine Anmeldung, der Login-Rückkanal führt danach über einen signierten `return`-Pfad zurück zur Freigabe (FR-SHR-03/06/08, `OAuthFlight`); Sicherheitskorrektur: Task-Board-Änderungen prüfen nun serverseitig das Schreibrecht (`assertCanWrite`); der Service Worker cacht `/s/`-Antworten nicht mehr, da Share-Tokens Bearer-Credentials sind (NFR-SEC-16); zusätzlich Pinch-Zoom/Verschieben/Doppeltipp im Bild-Betrachter (FR-NOTE-23) und eine mobile Wisch-Geste zwischen Notizbuch- und Seitenliste |
 | 1.0 | 2026-07-24 | Erstfassung |
 | 2.0 | 2026-07-24 | Technologie-Stack mit aktuellen Versionen (Kap. 3); Volltextsuche als eigenes Kapitel inkl. FTS5-Schema (Kap. 6); Task-Bulk-Import per Textfeld (Kap. 5.6, API 10.3, AK-14 bis AK-23); ergänzt: Papierkorb, Duplizieren, Export, Versionskonflikte, Sessions-Tabelle, Rate-Limiting, Backup/Restore, Lieferumfang |

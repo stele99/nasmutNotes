@@ -1,4 +1,4 @@
-<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
+<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>">
     <div class="note-sticky-header page-toolbar flex items-center gap-2">
         <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
@@ -42,6 +42,19 @@
             <div class="min-w-0">
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
+                <?php /* Aufnahmeort (FR-NOTE-25). Der Link führt zu OpenStreetMap; die
+                         App selbst bindet keine Karte ein. Gesetzt wird er auf Klick,
+                         sofern in den Einstellungen nicht die automatische Erfassung
+                         gewählt ist. */ ?>
+                <div class="mt-2 flex flex-wrap items-center gap-2 text-xs" style="color: var(--color-text-muted);">
+                    <a x-show="pageLocation" x-cloak :href="locationMapUrl()" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 hover:underline" title="Aufnahmeort auf der Karte öffnen">
+                        <span x-icon="map-pin"></span><span x-text="locationLabel()"></span>
+                    </a>
+                    <button x-show="pageLocation && canEditLocation()" x-cloak type="button" @click="openLocationDialog" class="hover:underline" title="Standort ändern oder entfernen">Ändern</button>
+                    <button x-show="!pageLocation && canEditLocation()" x-cloak type="button" @click="openLocationDialog" class="inline-flex items-center gap-1.5 hover:underline" title="Standort zu dieser Notiz hinzufügen">
+                        <span x-icon="map-pin"></span>Standort hinzufügen
+                    </button>
+                </div>
             </div>
             <div class="flex shrink-0 items-start gap-3">
                 <div class="text-left text-xs md:text-right md:text-sm" style="color: var(--color-text-muted);">
@@ -117,6 +130,14 @@
             <button type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
             <button type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
             <button type="button" @click.prevent="pickAttachment" class="toolbar-button" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
+            <?php /* Diktat: Der aufbereitete Text wird an der Einfügemarke eingesetzt
+                     (FR-VOICE-02). Derselbe Knopf beendet die Aufnahme wieder. */ ?>
+            <?php if (!empty($voiceEnabled)): ?>
+                <button type="button" x-show="voiceSupported && canEditPage" x-cloak @click.prevent="toggleVoice" :disabled="voiceStatus === 'processing'" class="toolbar-button" :class="voiceStatus === 'recording' ? 'is-recording' : ''" :title="voiceStatus === 'recording' ? 'Aufnahme beenden' : 'Diktat einfügen'" aria-label="Diktat einfügen">
+                    <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
+                    <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
+                </button>
+            <?php endif; ?>
             <input x-ref="imageInput" type="file" accept="image/*" class="hidden" @change="insertPickedImage">
             <input x-ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="insertPickedImage">
             <input x-ref="attachmentInput" type="file" multiple class="hidden" @change="uploadAttachment">
@@ -131,12 +152,57 @@
             <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+        <?php if (!empty($voiceEnabled)): ?>
+            <div class="mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+        <?php endif; ?>
         <div class="prose-editor" x-ref="editor"></div>
         <div x-show="linkMenuOpen" x-cloak @click.outside="closeLinkMenu" @keydown.escape.window="closeLinkMenu" class="link-action-menu" :style="linkMenuStyle">
             <button type="button" @click="openActiveLink" class="link-action-button">Öffnen</button>
             <button x-show="canEditPage" type="button" @click="editActiveLink" class="link-action-button">Bearbeiten</button>
         </div>
         <p x-show="updatedAt" class="mt-12 pb-2 text-center text-xs" style="color: var(--color-text-muted);" x-text="lastEditedLabel()"></p>
+    </div>
+
+    <?php /* Standort setzen, verschieben oder entfernen (FR-NOTE-25). Ohne
+             eingebundene Karte: Der aktuelle Ort kommt vom Gerät, jeder andere
+             über Koordinaten oder einen kopierten Kartenlink. */ ?>
+    <div
+        x-show="locationDialogOpen"
+        x-cloak
+        class="fixed inset-0 z-[100] flex items-center justify-center p-5"
+        style="background-color: rgb(0 0 0 / 0.45);"
+        @click.self="closeLocationDialog"
+        @keydown.escape.window="closeLocationDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="location-dialog-title"
+    >
+        <form @submit.prevent="applyLocationInput" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 id="location-dialog-title" class="text-xl font-semibold">Standort</h2>
+                    <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Wo diese Notiz entstanden ist.</p>
+                </div>
+                <button type="button" @click="closeLocationDialog" :disabled="locationBusy" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+            </div>
+
+            <button type="button" @click="useCurrentLocation" :disabled="locationBusy || !locationSupported" class="btn btn-secondary mt-5 w-full">
+                <span x-icon="map-pin"></span><span x-text="locationBusy ? 'Einen Moment…' : 'Aktuellen Standort verwenden'"></span>
+            </button>
+            <p x-show="!locationSupported" x-cloak class="mt-2 text-xs" style="color: var(--color-danger);">Dieser Browser bietet keine Ortung an.</p>
+
+            <label for="location-input" class="mt-6 block text-sm font-medium">Anderer Ort</label>
+            <input id="location-input" x-model="locationInput" :disabled="locationBusy" type="text" placeholder="48.7758, 9.1829" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Koordinaten eingeben oder einen Link von OpenStreetMap bzw. Google Maps einfügen.</p>
+
+            <p x-show="locationError" x-cloak x-text="locationError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+
+            <div class="mt-6 flex flex-wrap justify-end gap-2">
+                <button x-show="pageLocation" x-cloak type="button" @click="removeLocation" :disabled="locationBusy" class="btn btn-quiet mr-auto" style="color: var(--color-danger);">Entfernen</button>
+                <button type="button" @click="closeLocationDialog" :disabled="locationBusy" class="btn btn-quiet">Abbrechen</button>
+                <button type="submit" :disabled="locationBusy" class="btn btn-primary">Übernehmen</button>
+            </div>
+        </form>
     </div>
 
     <?php /* PDF-Anhänge öffnen überlagert im Browser-Viewer (FR-NOTE-20). */ ?>

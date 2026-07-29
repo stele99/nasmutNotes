@@ -594,6 +594,51 @@ button:disabled,
   text-decoration: line-through;
 }
 
+/* Laufende Sprachaufnahme: derselbe Knopf beendet sie wieder, deshalb muss der
+   Zustand auf einen Blick erkennbar sein. */
+.toolbar-button.is-recording,
+.toolbar-button.is-recording:hover {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
+/* Anzeige der Sprachaufnahme (Dauer, Fortschritt, Fehler). */
+.voice-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.voice-dot {
+  background: var(--color-danger);
+  border-radius: 999px;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 0.625rem;
+  width: 0.625rem;
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-dot {
+    animation: none;
+  }
+}
+
 /* Kapitel-Reiter der Task-Seite (Desktop). Der aktive Reiter sitzt bündig auf
    der Trennlinie darunter, wie bei Browser-Tabs. */
 .tab-button {

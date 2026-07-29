@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Domain\Import\ZipImportService;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\PageService;
+use App\Domain\Voice\VoiceNoteService;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
 use App\Support\Renderer;
@@ -20,13 +21,19 @@ final class AppController
         private readonly Renderer $renderer,
         private readonly PageAttachmentService $attachments,
         private readonly ZipImportService $import,
+        private readonly VoiceNoteService $voice,
     ) {
     }
 
     public function shell(Request $request, Response $response): Response
     {
         $user = CurrentUser::require($request);
-        $html = $this->renderer->page($request, 'app', ['isAdmin' => $user->isAdmin], 'Workspace');
+        $html = $this->renderer->page(
+            $request,
+            'app',
+            ['isAdmin' => $user->isAdmin, ...$this->voiceViewData()],
+            'Workspace',
+        );
         $response->getBody()->write($html);
 
         return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
@@ -56,6 +63,10 @@ final class AppController
                 'max_request_bytes' => $this->import->maxUploadBytes(),
                 'chunk_size' => $this->import->chunkSize(),
             ],
+            'voice' => [
+                'enabled' => $this->voice->isUsable(),
+                'max_seconds' => $this->voice->settings()->maxSeconds,
+            ],
         ])->withHeader('Cache-Control', 'private, no-store');
     }
 
@@ -68,11 +79,27 @@ final class AppController
         $html = $this->renderer->page(
             $request,
             'page',
-            ['isAdmin' => $user->isAdmin, 'page' => $page],
+            ['isAdmin' => $user->isAdmin, 'page' => $page, ...$this->voiceViewData()],
             $page['title'],
         );
         $response->getBody()->write($html);
 
         return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+    }
+
+    /**
+     * Die Aufnahmeknöpfe werden serverseitig ein- oder ausgeblendet, damit sie
+     * ohne freigeschaltete Funktion gar nicht erst im Markup stehen.
+     *
+     * @return array{voiceEnabled: bool, voiceMaxSeconds: int}
+     */
+    private function voiceViewData(): array
+    {
+        $settings = $this->voice->settings();
+
+        return [
+            'voiceEnabled' => $settings->isUsable(),
+            'voiceMaxSeconds' => $settings->maxSeconds,
+        ];
     }
 }

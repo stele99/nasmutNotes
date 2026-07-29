@@ -39,14 +39,24 @@
                     <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">Mein Workspace</h1>
                 </div>
                 <p class="mt-2 hidden max-w-2xl text-lg sm:block" style="color: var(--color-text-muted);">Notizen, Aufgaben und Ideen an einem Ort.</p>
-                <div class="mt-5 flex flex-row gap-3 sm:mt-8">
+                <div class="mt-5 flex flex-row flex-wrap gap-3 sm:mt-8">
                     <button type="button" @click="createPage('note')" class="btn btn-primary flex-1 sm:flex-none">
                         <span x-icon="plus"></span>Neue Notiz
                     </button>
                     <button type="button" @click="createPage('task')" class="btn btn-secondary flex-1 sm:flex-none">
                         <span x-icon="list-todo"></span>Neue Aufgabenliste
                     </button>
+                    <?php /* Sprachnotiz: Aufnehmen, transkribieren lassen und als fertige
+                             Notiz mit Überschrift und Notizbuch anlegen (FR-VOICE-01..04). */ ?>
+                    <?php if (!empty($voiceEnabled)): ?>
+                        <button type="button" x-show="voiceSupported" x-cloak @click="startVoice" :disabled="isVoiceBusy()" class="btn btn-secondary flex-1 sm:flex-none">
+                            <span x-icon="mic"></span>Sprachnotiz
+                        </button>
+                    <?php endif; ?>
                 </div>
+                <?php if (!empty($voiceEnabled)): ?>
+                    <div class="mt-3 max-w-2xl"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+                <?php endif; ?>
                 <form @submit.prevent="search" class="mt-4 flex max-w-md items-center gap-2 rounded-md border px-3 py-2.5" style="border-color: var(--color-border); background: var(--color-bg);">
                     <span style="color: var(--color-text-muted);" x-icon="search"></span>
                     <input x-model="searchQuery" @input="if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none">

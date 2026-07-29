@@ -19,6 +19,7 @@ import {
 } from './runtime.js';
 import { onInstallStateChange, promptInstall } from '../install.js';
 import { apiFetch } from '../api.js';
+import { getLocationMode, isLocationSupported, setLocationMode } from '../geo.js';
 
 const LARGE_LIMITS = [5000, 10000, 'all'];
 
@@ -76,6 +77,10 @@ export function offlineSettings() {
     workspaceFileCount: 0,
     workspaceStorageLabel: '–',
     workspaceTopItems: [],
+    // Standort neuer Notizen: je Gerät, in der Vorgabe erst auf Klick
+    // (FR-NOTE-25).
+    locationSupported: isLocationSupported(),
+    locationMode: getLocationMode(),
 
     async init() {
       await this.refreshStats();
@@ -209,6 +214,19 @@ export function offlineSettings() {
       this.installMessage = accepted
         ? 'Die App wurde installiert.'
         : 'Installation wurde nicht abgeschlossen.';
+    },
+
+    /**
+     * `manual`: Der Ort kommt erst, wenn er auf der Notiz angefordert wird.
+     * `auto`: Schon beim Anlegen fragt der Browser danach (FR-NOTE-25).
+     */
+    selectLocationMode(mode) {
+      this.locationMode = mode;
+      setLocationMode(mode);
+    },
+
+    isLocationMode(mode) {
+      return this.locationMode === mode;
     },
 
     async compressOwnImages() {

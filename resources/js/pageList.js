@@ -1,5 +1,7 @@
 import { apiFetch } from './api.js';
 import { markNewPageForTitleEdit } from './newPageTitle.js';
+import { voiceFormData, voiceRecorderMixin } from './voice.js';
+import { captureLocationOnCreate } from './geo.js';
 import {
   cacheDocument,
   cacheNotebooks,
@@ -87,6 +89,8 @@ const RECENT_PAGE_SIZE = 25;
 
 export function pageList() {
   return {
+    ...voiceRecorderMixin(),
+    voiceNoticeTimer: null,
     pages: [],
     // Für die Übersicht sortierte Kopie: Favoriten zuerst, dann nach
     // Änderungsdatum. Die Seitenleiste nutzt weiterhin `pages`.
@@ -366,18 +370,58 @@ export function pageList() {
       if (this.activeCollection === 'shared' || this.activeCollection === 'favorites' || this.activeCollection === 'trash') {
         return;
       }
+      // Der Aufnahmeort gehört zur Notiz; Aufgabenlisten führen keinen
+      // (FR-NOTE-25). In der Vorgabe „manuell" bleibt er hier leer und wird
+      // erst auf der Notiz per Klick gesetzt.
+      const location = type === 'note' ? await captureLocationOnCreate() : null;
       const page = await apiFetch('/api/pages', {
         method: 'POST',
         body: JSON.stringify({
           type,
           title,
           notebook_id: this.activeCollection === 'notebook' ? this.activeNotebookId : null,
+          location,
         }),
       });
       this.notifyPagesChanged();
       // Der Vorschlagstitel soll auf der neuen Seite gleich überschreibbar sein.
       markNewPageForTitleEdit(page.id);
       await this.navigate(page);
+    },
+
+    /**
+     * Aufnahme -> Notiz: Der Server transkribiert, lässt Überschrift und
+     * Notizbuch ableiten und legt die Notiz an (FR-VOICE-02..04). Danach steht
+     * sie fertig da, deshalb wird direkt dorthin gewechselt.
+     */
+    async handleVoiceRecording(recording) {
+      const body = voiceFormData(recording);
+      const location = await captureLocationOnCreate();
+      if (location) {
+        body.append('lat', String(location.lat));
+        body.append('lon', String(location.lon));
+        body.append('accuracy', String(location.accuracy ?? ''));
+      }
+
+      const data = await apiFetch('/api/voice/notes', { method: 'POST', body });
+
+      this.notifyPagesChanged();
+      this.showVoiceNotice(data.notebook_name
+        ? `„${data.page.title}" wurde in „${data.notebook_name}" angelegt.`
+        : `„${data.page.title}" wurde angelegt.`);
+      await this.navigate(data.page);
+    },
+
+    /**
+     * Nach dem Wechsel auf die neue Seite bleibt der Hinweis in der Seitenleiste
+     * stehen - er verschwindet deshalb von selbst.
+     */
+    showVoiceNotice(message) {
+      this.voiceNotice = message;
+      window.clearTimeout(this.voiceNoticeTimer);
+      this.voiceNoticeTimer = window.setTimeout(() => {
+        this.voiceNotice = '';
+      }, 8000);
     },
 
     async rename(page) {
@@ -724,6 +768,8 @@ export function pageList() {
     destroy() {
       this.recentObserver?.disconnect();
       this.recentObserver = null;
+      window.clearTimeout(this.voiceNoticeTimer);
+      this.cancelVoice();
     },
   };
 }

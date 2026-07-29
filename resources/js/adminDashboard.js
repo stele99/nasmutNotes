@@ -32,6 +32,19 @@ export function adminDashboard() {
     busy: false,
     error: '',
     message: '',
+    // Sprachnotizen: flache Felder statt eines verschachtelten Objekts, damit
+    // x-model im CSP-Build ohne Ausdruckspfade auskommt.
+    voiceEnabled: false,
+    voiceHasApiKey: false,
+    voiceApiKeyHint: '',
+    voiceBaseUrl: '',
+    voiceTranscribeModel: '',
+    voiceLanguage: '',
+    voicePostprocessEnabled: true,
+    voicePostprocessModel: '',
+    voicePrompt: '',
+    voiceMaxSeconds: 300,
+    voiceMaxMb: 25,
 
     async init() {
       await this.refresh();
@@ -48,6 +61,7 @@ export function adminDashboard() {
         this.defaultQuota = Number(data.default_quota_mb || 0);
         this.maxAttachmentMb = Number(data.max_attachment_mb || 10);
         this.offlineAttachmentKb = Number(data.offline_attachment_max_kb ?? 250);
+        this.applyVoiceSettings(data.voice || {});
       } catch (error) {
         this.error = error.message || 'Die Übersicht konnte nicht geladen werden.';
       } finally {
@@ -57,6 +71,70 @@ export function adminDashboard() {
 
     formatBytes(bytes) {
       return formatBytes(bytes);
+    },
+
+    /** Der Schlüssel selbst kommt nie zurück - nur der Hinweis auf sein Ende. */
+    applyVoiceSettings(voice) {
+      this.voiceEnabled = Boolean(voice.enabled);
+      this.voiceHasApiKey = Boolean(voice.has_api_key);
+      this.voiceApiKeyHint = voice.api_key_hint || '';
+      this.voiceBaseUrl = voice.base_url || '';
+      this.voiceTranscribeModel = voice.transcribe_model || '';
+      this.voiceLanguage = voice.language || '';
+      this.voicePostprocessEnabled = voice.postprocess_enabled !== false;
+      this.voicePostprocessModel = voice.postprocess_model || '';
+      this.voicePrompt = voice.postprocess_prompt || '';
+      this.voiceMaxSeconds = Number(voice.max_seconds || 300);
+      this.voiceMaxMb = Number(voice.max_mb || 25);
+    },
+
+    voiceStatusLabel() {
+      if (!this.voiceEnabled) {
+        return 'ausgeschaltet';
+      }
+
+      return this.voiceHasApiKey ? 'aktiv' : 'freigeschaltet, aber ohne OPENAI_KEY unwirksam';
+    },
+
+    voiceApiKeyLabel() {
+      return this.voiceHasApiKey
+        ? `aus der Serverkonfiguration übernommen (${this.voiceApiKeyHint})`
+        : 'fehlt – OPENAI_KEY in der .env des Servers setzen';
+    },
+
+    async saveVoiceSettings() {
+      const payload = {
+        enabled: this.voiceEnabled,
+        base_url: this.voiceBaseUrl,
+        transcribe_model: this.voiceTranscribeModel,
+        language: this.voiceLanguage,
+        postprocess_enabled: this.voicePostprocessEnabled,
+        postprocess_model: this.voicePostprocessModel,
+        postprocess_prompt: this.voicePrompt,
+        max_seconds: Number(this.voiceMaxSeconds),
+        max_mb: Number(this.voiceMaxMb),
+      };
+      await this.run(async () => {
+        await apiFetch('/api/admin/settings/voice', {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        this.message = 'Einstellungen für Sprachnotizen gespeichert.';
+      });
+    },
+
+    async resetVoicePrompt() {
+      if (!window.confirm('Die Anweisung an das Modell auf die Standardfassung zurücksetzen?')) {
+        return;
+      }
+
+      await this.run(async () => {
+        await apiFetch('/api/admin/settings/voice', {
+          method: 'PATCH',
+          body: JSON.stringify({ postprocess_prompt: '' }),
+        });
+        this.message = 'Die Standardanweisung wurde wiederhergestellt.';
+      });
     },
 
     usageLabel(user) {

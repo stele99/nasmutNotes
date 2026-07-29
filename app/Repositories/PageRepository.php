@@ -18,13 +18,24 @@ final class PageRepository
     {
     }
 
-    /** @return array<string, mixed> */
-    public function create(int $workspaceId, string $type, string $title, ?string $icon, ?int $notebookId = null): array
-    {
+    /**
+     * @param array{lat: float, lon: float, accuracy: ?float, label?: ?string}|null $location Aufnahmeort (FR-NOTE-25).
+     * @return array<string, mixed>
+     */
+    public function create(
+        int $workspaceId,
+        string $type,
+        string $title,
+        ?string $icon,
+        ?int $notebookId = null,
+        ?array $location = null,
+    ): array {
         $now = gmdate('Y-m-d\TH:i:s.v\Z');
         $stmt = $this->pdo->prepare(
-            'INSERT INTO pages (workspace_id, type, title, icon, notebook_id, created_at, updated_at)
-             VALUES (:workspace_id, :type, :title, :icon, :notebook_id, :now, :now)'
+            'INSERT INTO pages (workspace_id, type, title, icon, notebook_id, created_at, updated_at,
+                                location_lat, location_lon, location_accuracy, location_label, location_at)
+             VALUES (:workspace_id, :type, :title, :icon, :notebook_id, :now, :now,
+                     :location_lat, :location_lon, :location_accuracy, :location_label, :location_at)'
         );
         $stmt->execute([
             'workspace_id' => $workspaceId,
@@ -33,6 +44,11 @@ final class PageRepository
             'icon' => $icon,
             'notebook_id' => $notebookId,
             'now' => $now,
+            'location_lat' => $location['lat'] ?? null,
+            'location_lon' => $location['lon'] ?? null,
+            'location_accuracy' => $location['accuracy'] ?? null,
+            'location_label' => $location['label'] ?? null,
+            'location_at' => $location === null ? null : $now,
         ]);
 
         $id = (int) $this->pdo->lastInsertId();
@@ -220,7 +236,10 @@ final class PageRepository
             return;
         }
 
-        $allowed = ['title', 'icon', 'is_favorite', 'sort_order', 'default_view', 'notebook_id'];
+        $allowed = [
+            'title', 'icon', 'is_favorite', 'sort_order', 'default_view', 'notebook_id',
+            'location_lat', 'location_lon', 'location_accuracy', 'location_label', 'location_at',
+        ];
         $set = [];
         $params = ['id' => $id];
 

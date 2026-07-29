@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain;
 
+use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\PageRepository;
@@ -11,7 +12,12 @@ use App\Repositories\WorkspaceRepository;
 use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Tests\Support\InMemoryDatabaseTrait;
 
 final class PageServiceTest extends TestCase
@@ -208,5 +214,109 @@ final class PageServiceTest extends TestCase
 
         self::assertSame('Renamed', $updated['title']);
         self::assertSame(1, (int) $updated['is_favorite']);
+    }
+
+    public function testStoresOptionalLocationWithAccuracyAndTimestamp(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Mit Ort', null, null, [
+            'lat' => '48.775846',
+            'lon' => '9.182932',
+            'accuracy' => '12.5',
+        ]);
+
+        self::assertSame(48.775846, (float) $page['location_lat']);
+        self::assertSame(9.182932, (float) $page['location_lon']);
+        self::assertSame(12.5, (float) $page['location_accuracy']);
+        self::assertNotNull($page['location_at']);
+    }
+
+    public function testUnusableLocationIsDroppedInsteadOfFailing(): void
+    {
+        $outOfRange = $this->pages->create($this->userA, 'note', 'Falscher Ort', null, null, [
+            'lat' => 95.0,
+            'lon' => 9.18,
+        ]);
+        $incomplete = $this->pages->create($this->userA, 'note', 'Halber Ort', null, null, ['lat' => 48.77]);
+        $garbage = $this->pages->create($this->userA, 'note', 'Unsinn', null, null, ['lat' => 'x', 'lon' => 'y']);
+
+        foreach ([$outOfRange, $incomplete, $garbage] as $page) {
+            self::assertNull($page['location_lat']);
+            self::assertNull($page['location_lon']);
+            self::assertNull($page['location_at']);
+        }
+    }
+
+    public function testLocationIsOmittedWhenNotOffered(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Ohne Ort', null);
+
+        self::assertNull($page['location_lat']);
+        self::assertNull($page['location_at']);
+    }
+
+    public function testLocationCanBeAddedMovedAndRemovedAfterwards(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Erst ohne Ort', null);
+        $pageId = (int) $page['id'];
+
+        $added = $this->pages->update($this->userA, $pageId, [
+            'location' => ['lat' => 48.775846, 'lon' => 9.182932, 'accuracy' => 25],
+        ]);
+        self::assertSame(48.775846, (float) $added['location_lat']);
+        self::assertNotNull($added['location_at']);
+
+        $moved = $this->pages->update($this->userA, $pageId, [
+            'location' => ['lat' => 52.516275, 'lon' => 13.377704],
+        ]);
+        self::assertSame(52.516275, (float) $moved['location_lat']);
+        self::assertSame(13.377704, (float) $moved['location_lon']);
+        // Ein Ort ohne gemeldete Genauigkeit überschreibt die alte Angabe.
+        self::assertNull($moved['location_accuracy']);
+
+        $removed = $this->pages->update($this->userA, $pageId, ['location' => null]);
+        self::assertNull($removed['location_lat']);
+        self::assertNull($removed['location_lon']);
+        self::assertNull($removed['location_at']);
+    }
+
+    public function testAnInvalidLocationIsRejectedOnUpdateInsteadOfBeingDropped(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Mit Ort', null);
+
+        $this->expectException(ValidationException::class);
+        $this->pages->update($this->userA, (int) $page['id'], [
+            'location' => ['lat' => 'Stuttgart', 'lon' => 'Mitte'],
+        ]);
+    }
+
+    public function testStoresTheAddressFoundForTheCoordinates(): void
+    {
+        $pages = new PageService(
+            new PageRepository($this->pdo),
+            new WorkspaceRepository($this->pdo),
+            null,
+            null,
+            new ReverseGeocoder(
+                new NullLogger(),
+                ReverseGeocoder::DEFAULT_URL,
+                'https://notes.example.com',
+                'de',
+                new Client([
+                    'handler' => HandlerStack::create(new MockHandler([
+                        new Response(200, ['Content-Type' => 'application/json'], (string) json_encode([
+                            'address' => ['road' => 'Marienplatz', 'postcode' => '80331', 'city' => 'München'],
+                        ])),
+                    ])),
+                    'http_errors' => false,
+                ]),
+            ),
+        );
+
+        $page = $pages->create($this->userA, 'note', 'Mit Anschrift', null, null, [
+            'lat' => 48.137,
+            'lon' => 11.575,
+        ]);
+
+        self::assertSame('Marienplatz, 80331 München', $page['location_label']);
     }
 }

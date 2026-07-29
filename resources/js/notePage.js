@@ -2,6 +2,14 @@ import { apiFetch } from './api.js';
 import { createEditor } from './editor/index.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { sanitizeNoteDoc } from './editor/sanitize.js';
+import { voiceFormData, voiceRecorderMixin } from './voice.js';
+import {
+  isLocationSupported,
+  locationLabel,
+  locationMapUrl,
+  parseLocationInput,
+  requestLocation,
+} from './geo.js';
 import {
   acquireNoteEditLock,
   cacheNoteContent,
@@ -29,6 +37,7 @@ export function noteEditorPage() {
   const pendingUploads = new Set();
 
   return {
+    ...voiceRecorderMixin(),
     status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
     version: 0,
     pageId: null,
@@ -49,6 +58,13 @@ export function noteEditorPage() {
     savingPageTitle: false,
     updatedAt: null,
     lastEditorName: null,
+    pageLocation: null,
+    pageIsShared: Boolean(window.__CURRENT_PAGE_IS_SHARED__),
+    locationSupported: isLocationSupported(),
+    locationDialogOpen: false,
+    locationInput: '',
+    locationBusy: false,
+    locationError: '',
     visibilityHandler: null,
     beforeUnloadHandler: null,
     keyDownHandler: null,
@@ -103,8 +119,12 @@ export function noteEditorPage() {
         : Boolean(window.__CURRENT_PAGE_CAN_EDIT__);
       const isShared = pageRoot?.dataset.pageIsShared === '1'
         || Boolean(window.__CURRENT_PAGE_IS_SHARED__);
+      // Eigene Kopie: `isShared` im Markup gehört der übergeordneten
+      // pageShare-Komponente und steht dieser hier nicht zur Verfügung.
+      this.pageIsShared = isShared;
       this.canRestoreVersions = this.canEditPage && !isShared;
       this.savedPageTitle = this.pageTitle;
+      this.pageLocation = this.readLocationFrom(pageRoot);
 
       if (!this.pageId) {
         this.status = 'offline';
@@ -723,6 +743,125 @@ export function noteEditorPage() {
       }
     },
 
+    /**
+     * Aufnahmeort aus dem servergerenderten Markup (FR-NOTE-25). Fehlt eine der
+     * Koordinaten, gilt die Notiz als ohne Ort angelegt.
+     */
+    readLocationFrom(pageRoot) {
+      const lat = Number.parseFloat(pageRoot?.dataset.pageLat ?? '');
+      const lon = Number.parseFloat(pageRoot?.dataset.pageLon ?? '');
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return null;
+      }
+      const accuracy = Number.parseFloat(pageRoot?.dataset.pageAccuracy ?? '');
+
+      return {
+        lat,
+        lon,
+        accuracy: Number.isFinite(accuracy) ? accuracy : null,
+        label: pageRoot?.dataset.pageAddress || null,
+      };
+    },
+
+    locationLabel() {
+      return locationLabel(this.pageLocation);
+    },
+
+    locationMapUrl() {
+      return locationMapUrl(this.pageLocation);
+    },
+
+    /** Der Ort gehört zur Seite, nicht zum Inhalt - Freigaben ändern ihn nicht. */
+    canEditLocation() {
+      return this.canEditPage && !this.pageIsShared;
+    },
+
+    /**
+     * Der Ort wird auf Klick gesetzt (FR-NOTE-25). Der Dialog bietet den
+     * aktuellen Standort und - um ihn auf einen anderen zu verschieben - die
+     * Eingabe von Koordinaten oder eines kopierten Kartenlinks.
+     */
+    openLocationDialog() {
+      if (!this.canEditPage || this.pageIsShared) {
+        return;
+      }
+      this.locationError = '';
+      this.locationInput = this.pageLocation
+        ? `${this.pageLocation.lat}, ${this.pageLocation.lon}`
+        : '';
+      this.locationDialogOpen = true;
+    },
+
+    closeLocationDialog() {
+      this.locationDialogOpen = false;
+      this.locationBusy = false;
+      this.locationError = '';
+    },
+
+    async useCurrentLocation() {
+      if (!this.locationSupported) {
+        this.locationError = 'Dieser Browser bietet keine Ortung an.';
+        return;
+      }
+
+      this.locationBusy = true;
+      this.locationError = '';
+      try {
+        const location = await requestLocation();
+        if (!location) {
+          this.locationError = 'Der Standort konnte nicht ermittelt werden. '
+            + 'Vielleicht ist die Ortung abgelehnt oder gerade kein Signal da.';
+          return;
+        }
+        await this.saveLocation(location);
+      } finally {
+        this.locationBusy = false;
+      }
+    },
+
+    async applyLocationInput() {
+      const location = parseLocationInput(this.locationInput);
+      if (!location) {
+        this.locationError = 'Bitte Koordinaten wie „48.7758, 9.1829" oder einen Kartenlink einfügen.';
+        return;
+      }
+
+      this.locationBusy = true;
+      try {
+        await this.saveLocation(location);
+      } finally {
+        this.locationBusy = false;
+      }
+    },
+
+    async removeLocation() {
+      this.locationBusy = true;
+      try {
+        await this.saveLocation(null);
+      } finally {
+        this.locationBusy = false;
+      }
+    },
+
+    async saveLocation(location) {
+      if (!navigator.onLine) {
+        this.locationError = 'Der Standort kann nur mit Internetverbindung geändert werden.';
+        return;
+      }
+
+      this.locationError = '';
+      try {
+        const page = await apiFetch(`/api/pages/${this.pageId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ location }),
+        });
+        this.pageLocation = page.location || null;
+        this.closeLocationDialog();
+      } catch (error) {
+        this.locationError = error.message || 'Der Standort konnte nicht gespeichert werden.';
+      }
+    },
+
     statusLabel() {
       if (this.pendingImageUploads > 0) {
         return this.pendingImageUploads === 1 ? 'Bild wird hochgeladen…' : 'Bilder werden hochgeladen…';
@@ -764,6 +903,46 @@ export function noteEditorPage() {
       );
 
       return request;
+    },
+
+    /**
+     * Diktat in die offene Notiz: Der aufbereitete Text wird an der
+     * Einfügemarke eingesetzt (FR-VOICE-02). Gespeichert wird er wie jede
+     * andere Änderung über den Autosave.
+     */
+    async handleVoiceRecording(recording) {
+      if (!this.canEditPage || !editor) {
+        throw new Error('Diese Notiz ist schreibgeschützt.');
+      }
+
+      const data = await apiFetch('/api/voice/transcribe', {
+        method: 'POST',
+        body: voiceFormData(recording),
+      });
+
+      const nodes = Array.isArray(data.document?.content) ? data.document.content : [];
+      if (nodes.length === 0) {
+        throw new Error('In der Aufnahme wurde kein Text erkannt.');
+      }
+
+      editor.chain().focus().insertContent(nodes).run();
+      this.applyVoiceTitle(data.title);
+    },
+
+    /**
+     * Die aus der Aufnahme gebildete Überschrift überschreibt nur den
+     * Vorschlagstitel einer noch unbenannten Notiz - selbst vergebene Titel
+     * bleiben unangetastet (FR-VOICE-03).
+     */
+    applyVoiceTitle(title) {
+      const suggestion = String(title || '').trim();
+      const current = String(this.pageTitle || '').trim();
+      if (suggestion === '' || (current !== '' && current !== 'Neue Notiz')) {
+        return;
+      }
+
+      this.pageTitle = suggestion;
+      void this.savePageTitle();
     },
 
     handleImageUploadError(error) {
@@ -1484,6 +1663,8 @@ export function noteEditorPage() {
         this.releaseEditLock();
         this.releaseEditLock = null;
       }
+      // Ohne das bliebe das Mikrofon nach dem Seitenwechsel aktiv.
+      this.cancelVoice();
       clearTimeout(this.saveTimer);
       editor?.destroy();
       editor = null;

@@ -13,6 +13,8 @@ Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
 - Freigabe von Notiz- und Task-Seiten per Link in drei Stufen: Nur lesen, Lesen und Kopieren (öffentliche Ansicht, angemeldete Nutzer erzeugen eine unabhängige Kopie samt Bildern/Anhängen) sowie Lesen und Schreiben (Anmeldung erforderlich, gemeinsame Bearbeitung im Workspace)
 - Notizseiten mit TipTap-Editor, Autosave, Screenshot-Paste/Drag-and-drop, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
 - Task-Seiten mit Kategorien und Tasks (Anlegen, Bearbeiten, Verschieben, Duplizieren, Löschen mit Verschieben/Kaskade)
+- Sprachnotizen: Aufnahme im Browser, serverseitige Transkription über OpenAI, optionale Aufbereitung durch ein zweites Modell samt Überschrift und abgeleitetem Notizbuch; Diktat auch in eine geöffnete Notiz. Alle Parameter im Admin-Dashboard, der Schlüssel nur in `OPENAI_KEY`
+- Optionaler Aufnahmeort von Notizen: je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar, mit serverseitig ermittelter Anschrift
 - Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff
 - Automatisierte Tests (PHPUnit) und PHPStan Level 8 für `app/`, `bin/console.php`, `tests/`
 
@@ -185,6 +187,10 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 | `INVITE_TTL_DAYS` | Standard-Gültigkeit neu erzeugter Invites |
 | `SESSION_LIFETIME_DAYS` | Session-Ablauf bei Inaktivität |
 | `RATE_LIMIT_ENABLED` | Rate-Limiting global aktivieren/deaktivieren |
+| `OPENAI_KEY` | API-Schlüssel für die Sprachnotizen. **Einzige Quelle** – bewusst nicht im Admin-Dashboard änderbar. Fehlt er, bleibt die Funktion aus |
+| `VOICE_TRANSCRIBE_MODEL` / `VOICE_POSTPROCESS_MODEL` / `VOICE_LANGUAGE` / `VOICE_MAX_SECONDS` / `VOICE_MAX_MB` / `OPENAI_BASE_URL` | Anfangswerte der Sprachnotizen; maßgeblich ist das Admin-Dashboard |
+| `VOICE_TMP_PATH` | Ablage der Aufnahme während der Transkription; wird sofort danach gelöscht |
+| `GEOCODER_URL` / `GEOCODER_LANGUAGE` | Adresssuche zum Aufnahmeort (Vorgabe: Nominatim). Leerer `GEOCODER_URL` schaltet sie ab |
 | `LOG_LEVEL` | Monolog-Level (`debug`, `info`, `warning`, `error`) |
 | `VITE_DEV_SERVER` | Nur `APP_ENV=development`: URL des Vite-Dev-Servers |
 

@@ -26,7 +26,15 @@
         <div x-show="activeCollection !== 'trash'" class="flex gap-2">
             <button type="button" @click="createPage('note')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1"><span x-icon="plus"></span>Notiz</button>
             <button type="button" @click="createPage('task')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1"><span x-icon="plus"></span>Aufgaben</button>
+            <?php /* Das Notizbuch der Sprachnotiz leitet der Dienst aus dem Inhalt ab -
+                     der Knopf hängt deshalb nicht an der gewählten Sammlung. */ ?>
+            <?php if (!empty($voiceEnabled)): ?>
+                <button type="button" x-show="voiceSupported" x-cloak @click="startVoice" :disabled="isVoiceBusy()" class="btn btn-quiet shrink-0" title="Sprachnotiz aufnehmen" aria-label="Sprachnotiz aufnehmen"><span x-icon="mic"></span></button>
+            <?php endif; ?>
         </div>
+        <?php if (!empty($voiceEnabled)): ?>
+            <?php include __DIR__ . '/voice_panel.php'; ?>
+        <?php endif; ?>
         <p x-show="activeCollection === 'shared' || activeCollection === 'favorites'" class="text-xs" style="color: var(--color-text-muted);">In dieser Sammlung können keine Seiten angelegt werden.</p>
         <div x-show="activeCollection === 'trash'" x-cloak>
             <p class="text-xs" style="color: var(--color-text-muted);">Gelöschte Seiten bleiben <span x-text="trashRetentionDays"></span> Tage erhalten.</p>

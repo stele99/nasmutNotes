@@ -11,6 +11,7 @@ use App\Domain\Backup\BackupLayout;
 use App\Domain\Backup\BackupService;
 use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Export\NotebookExportService;
+use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\Import\ArchiveChunkStore;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Import\ZipImportService;
@@ -23,6 +24,8 @@ use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageCopyService;
 use App\Domain\PageService;
 use App\Domain\SessionService;
+use App\Domain\Voice\OpenAiClient;
+use App\Domain\Voice\VoiceNoteService;
 use App\Repositories\AdminRepository;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
@@ -268,12 +271,22 @@ return static function (string $rootPath): DI\Container {
 
         ShareRepository::class => static fn (PDO $pdo): ShareRepository => new ShareRepository($pdo),
 
+        // Adresssuche zum Aufnahmeort (FR-NOTE-26). Ein leerer GEOCODER_URL
+        // schaltet sie ab; dann bleibt es bei den Koordinaten.
+        ReverseGeocoder::class => static fn (LoggerInterface $logger): ReverseGeocoder => new ReverseGeocoder(
+            $logger,
+            Env::get('GEOCODER_URL', ReverseGeocoder::DEFAULT_URL) ?? ReverseGeocoder::DEFAULT_URL,
+            Env::get('APP_URL', '') ?? '',
+            Env::get('GEOCODER_LANGUAGE', 'de') ?? 'de',
+        ),
+
         PageService::class => static fn (
             PageRepository $pages,
             WorkspaceRepository $workspaces,
             ShareRepository $shares,
             NotebookService $notebooks,
-        ): PageService => new PageService($pages, $workspaces, $shares, $notebooks),
+            ReverseGeocoder $geocoder,
+        ): PageService => new PageService($pages, $workspaces, $shares, $notebooks, $geocoder),
 
         PageCopyService::class => static fn (
             PDO $pdo,
@@ -309,6 +322,40 @@ return static function (string $rootPath): DI\Container {
         ): NotebookService => new NotebookService($pdo, $notebooks, $workspaces),
 
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
+
+        OpenAiClient::class => static fn (): OpenAiClient => new OpenAiClient(),
+
+        // Sprachnotizen: Der .env liefert nur Anfangswerte, maßgeblich sind die
+        // im Admin-Dashboard gepflegten Einstellungen (FR-VOICE-05).
+        VoiceNoteService::class => static fn (
+            SettingsRepository $settings,
+            OpenAiClient $client,
+            PageService $pages,
+            NoteService $notes,
+            NotebookService $notebooks,
+            MarkdownConverter $markdown,
+            AuditLogRepository $auditLog,
+        ): VoiceNoteService => new VoiceNoteService(
+            $settings,
+            $client,
+            $pages,
+            $notes,
+            $notebooks,
+            $markdown,
+            $auditLog,
+            $rootPath . '/' . trim(Env::get('VOICE_TMP_PATH', 'var/tmp/voice') ?? 'var/tmp/voice', '/'),
+            // Das Geheimnis kommt nur aus der Umgebung; OPENAI_API_KEY bleibt als
+            // gebräuchlicher Zweitname zulässig.
+            Env::get('OPENAI_KEY') ?: (Env::get('OPENAI_API_KEY', '') ?? ''),
+            Env::get('OPENAI_BASE_URL', VoiceNoteService::DEFAULT_BASE_URL) ?? VoiceNoteService::DEFAULT_BASE_URL,
+            Env::get('VOICE_TRANSCRIBE_MODEL', VoiceNoteService::DEFAULT_TRANSCRIBE_MODEL)
+                ?? VoiceNoteService::DEFAULT_TRANSCRIBE_MODEL,
+            Env::get('VOICE_POSTPROCESS_MODEL', VoiceNoteService::DEFAULT_POSTPROCESS_MODEL)
+                ?? VoiceNoteService::DEFAULT_POSTPROCESS_MODEL,
+            Env::get('VOICE_LANGUAGE', 'de') ?? 'de',
+            Env::int('VOICE_MAX_SECONDS', VoiceNoteService::DEFAULT_MAX_SECONDS),
+            Env::int('VOICE_MAX_MB', VoiceNoteService::MAX_UPLOAD_MB),
+        ),
 
         RateLimiter::class => static fn (PDO $pdo): RateLimiter
             => new RateLimiter($pdo, Env::bool('RATE_LIMIT_ENABLED', true)),

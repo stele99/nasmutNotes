@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
+use App\Domain\Geo\ReverseGeocoder;
 use App\Repositories\PageRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\WorkspaceRepository;
@@ -21,6 +22,7 @@ final class PageService
         private readonly WorkspaceRepository $workspaces,
         private readonly ?ShareRepository $shares = null,
         private readonly ?NotebookService $notebooks = null,
+        private readonly ?ReverseGeocoder $geocoder = null,
     ) {
     }
 
@@ -49,9 +51,18 @@ final class PageService
         return $this->pages->workspaceStats($this->workspaceIdFor($user));
     }
 
-    /** @return array<string, mixed> */
-    public function create(User $user, string $type, string $title, ?string $icon, ?int $notebookId = null): array
-    {
+    /**
+     * @param array<string, mixed>|null $location Rohdaten des Browsers; ungeprüft übergeben.
+     * @return array<string, mixed>
+     */
+    public function create(
+        User $user,
+        string $type,
+        string $title,
+        ?string $icon,
+        ?int $notebookId = null,
+        ?array $location = null,
+    ): array {
         if (!in_array($type, self::TYPES, true)) {
             throw new ValidationException('Ungültiger Seitentyp.');
         }
@@ -62,7 +73,52 @@ final class PageService
         $workspaceId = $this->workspaceIdFor($user);
         $this->validateNotebookId($notebookId, $workspaceId);
 
-        return $this->pages->create($workspaceId, $type, $title, $icon, $notebookId);
+        return $this->pages->create(
+            $workspaceId,
+            $type,
+            $title,
+            $icon,
+            $notebookId,
+            $this->withAddress(self::validatedLocation($location)),
+        );
+    }
+
+    /**
+     * Ergänzt die Anschrift zum Koordinatenpaar (FR-NOTE-26). Findet die Suche
+     * nichts oder ist sie abgeschaltet, bleibt der Ort ohne Beschriftung.
+     *
+     * @param array{lat: float, lon: float, accuracy: ?float}|null $location
+     * @return array{lat: float, lon: float, accuracy: ?float, label: ?string}|null
+     */
+    private function withAddress(?array $location): ?array
+    {
+        if ($location === null) {
+            return null;
+        }
+
+        return [...$location, 'label' => $this->geocoder?->lookup($location['lat'], $location['lon'])];
+    }
+
+    /**
+     * Der Aufnahmeort ist freiwillig: Unbrauchbare Werte führen deshalb nicht
+     * zum Fehler, sie werden schlicht verworfen (FR-NOTE-25).
+     *
+     * @param array<string, mixed>|null $location
+     * @return array{lat: float, lon: float, accuracy: ?float}|null
+     */
+    public static function validatedLocation(?array $location): ?array
+    {
+        $lat = isset($location['lat']) && is_numeric($location['lat']) ? (float) $location['lat'] : null;
+        $lon = isset($location['lon']) && is_numeric($location['lon']) ? (float) $location['lon'] : null;
+        if ($lat === null || $lon === null || abs($lat) > 90 || abs($lon) > 180) {
+            return null;
+        }
+
+        $accuracy = isset($location['accuracy']) && is_numeric($location['accuracy'])
+            ? max(0.0, (float) $location['accuracy'])
+            : null;
+
+        return ['lat' => $lat, 'lon' => $lon, 'accuracy' => $accuracy];
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -216,7 +272,7 @@ final class PageService
         }
 
         if (($page['is_shared'] ?? false) === true) {
-            foreach (['is_favorite', 'sort_order', 'default_view', 'notebook_id'] as $field) {
+            foreach (['is_favorite', 'sort_order', 'default_view', 'notebook_id', 'location'] as $field) {
                 if (array_key_exists($field, $input)) {
                     throw new ForbiddenException('Geteilte Seiten können nicht verwaltet werden.');
                 }
@@ -251,6 +307,29 @@ final class PageService
             $notebookId = $notebookId !== null ? (int) $notebookId : null;
             $this->validateNotebookId($notebookId, $this->workspaceIdFor($user));
             $fields['notebook_id'] = $notebookId;
+        }
+        // Der Ort lässt sich nachträglich setzen, verschieben und wieder
+        // entfernen (FR-NOTE-25). `null` löscht ihn, ein unbrauchbarer Wert
+        // wird - anders als beim Anlegen - als Fehler gemeldet: Hier hat der
+        // Nutzer ihn ausdrücklich eingegeben.
+        if (array_key_exists('location', $input)) {
+            $location = null;
+            if ($input['location'] !== null) {
+                if (!is_array($input['location'])) {
+                    throw new ValidationException('Ungültiger Standort.');
+                }
+                $location = self::validatedLocation($input['location']);
+                if ($location === null) {
+                    throw new ValidationException('Ungültige Koordinaten.');
+                }
+                $location = $this->withAddress($location);
+            }
+
+            $fields['location_lat'] = $location['lat'] ?? null;
+            $fields['location_lon'] = $location['lon'] ?? null;
+            $fields['location_accuracy'] = $location['accuracy'] ?? null;
+            $fields['location_label'] = $location['label'] ?? null;
+            $fields['location_at'] = $location === null ? null : gmdate('Y-m-d\TH:i:s.v\Z');
         }
 
         $this->pages->updateFields((int) $page['id'], $fields);

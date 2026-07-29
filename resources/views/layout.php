@@ -17,6 +17,11 @@
     <meta name="format-detection" content="telephone=no">
     <title><?= e($title ?? 'Notizen & Tasks') ?></title>
     <meta name="csrf-token" content="<?= e($csrfToken ?? '') ?>">
+    <?php /* Grenzwerte der Sprachaufnahme; die Knöpfe selbst rendert erst der
+             Server, wenn die Funktion freigeschaltet ist (FR-VOICE-05). */ ?>
+    <?php if (!empty($voiceEnabled)): ?>
+        <script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__VOICE__ = { enabled: true, maxSeconds: <?= (int) ($voiceMaxSeconds ?? 300) ?> };</script>
+    <?php endif; ?>
     <?= $vite->tags('app.js', $cspNonce ?? null) ?>
 </head>
 <body class="min-h-screen antialiased">

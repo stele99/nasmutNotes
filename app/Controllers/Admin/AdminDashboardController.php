@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Domain\AdminService;
+use App\Domain\Voice\VoiceNoteService;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
 use App\Support\RateLimiter;
@@ -23,6 +24,7 @@ final class AdminDashboardController
         private readonly AdminService $admin,
         private readonly Renderer $renderer,
         private readonly RateLimiter $rateLimiter,
+        private readonly VoiceNoteService $voice,
     ) {
     }
 
@@ -36,7 +38,19 @@ final class AdminDashboardController
 
     public function overview(Request $request, Response $response): Response
     {
-        return JsonResponse::json($response, $this->admin->overview());
+        return JsonResponse::json($response, array_merge($this->admin->overview(), [
+            'voice' => $this->voice->settings()->toAdminArray(),
+        ]));
+    }
+
+    /** Sprachnotizen: Freischaltung, Modelle und Anweisung (FR-VOICE-05). */
+    public function updateVoiceSettings(Request $request, Response $response): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        $settings = $this->voice->updateSettings($admin, $body, RequestIp::hash($request));
+
+        return JsonResponse::json($response, ['voice' => $settings->toAdminArray()]);
     }
 
     /** @param array<string, string> $args */
