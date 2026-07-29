@@ -45,6 +45,7 @@
             </button>
             <div class="mt-2 flex items-center gap-2">
                 <button type="button" @click="openDialog" class="icon-action" aria-label="Offline und Einstellungen" title="Offline und Einstellungen" x-icon="settings"></button>
+                <button type="button" @click="infoDialogOpen = true" class="icon-action" aria-label="Datenschutz und Hinweise" title="Datenschutz und Hinweise" x-icon="info"></button>
                 <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" x-icon="shield"></a><?php endif; ?>
                 <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" x-icon="log-out"></button>
             </div>

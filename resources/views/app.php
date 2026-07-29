@@ -21,6 +21,7 @@
     </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
     <?php include __DIR__ . '/partials/notebook_dialog.php'; ?>
+    <?php include __DIR__ . '/partials/info_dialog.php'; ?>
     <main class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto">
         <?php /* Die Übersicht ist mobil der Einstieg und hat keine eigene
                  Kopfzeile; der Weg zu den Notizbüchern liegt deshalb hier als

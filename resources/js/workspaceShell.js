@@ -113,6 +113,7 @@ export function workspaceShell() {
     activeNotebookId: null,
     dropTargetNotebookId: null,
     notebookDialogOpen: false,
+    infoDialogOpen: false,
     notebookDialogMode: 'create',
     notebookDialogNotebookId: null,
     openNotebookMenuId: null,
