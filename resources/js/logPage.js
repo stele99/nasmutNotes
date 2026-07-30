@@ -12,6 +12,9 @@ import { pageLocationMixin } from './pageLocation.js';
 const DATE_TIME_FORMAT = new Intl.DateTimeFormat('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const NUMBER_FORMAT = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 });
 const MONEY_FORMAT = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+/** Höchste Sternzahl einer Bewertungsspalte - Gegenstück zu LogColumnType::RATING_MAX. */
+const RATING_MAX = 5;
+const RATING_STARS = Array.from({ length: RATING_MAX }, (unused, index) => index + 1);
 
 /** Ortszeit im Format, das ein `datetime-local`-Feld erwartet. */
 function toLocalInput(value) {
@@ -222,6 +225,9 @@ export function logPage() {
       if (column.type === 'number') {
         return value.number === null ? '' : NUMBER_FORMAT.format(value.number);
       }
+      if (column.type === 'rating') {
+        return value.number === null ? '' : this.ratingStars(value.number);
+      }
       if (column.type === 'location') {
         return value.text || this.coordinateLabel(value);
       }
@@ -341,7 +347,9 @@ export function logPage() {
 
     /** Der Wert, wie er im Eingabefeld stehen soll. */
     editableValue(column, value) {
-      if (column.is_numeric) {
+      // Die Bewertung zählt nicht als Zahlenspalte (keine Summe), wird aber
+      // wie eine bearbeitet: Im Feld steht die Sternzahl, nicht ihr Text.
+      if (column.is_numeric || column.type === 'rating') {
         return value.number === null ? '' : String(value.number);
       }
       if (column.type === 'location') {
@@ -401,6 +409,61 @@ export function logPage() {
 
     isLocationColumn(column) {
       return column.type === 'location';
+    },
+
+    // -------------------------------------------------------- Bewertung
+
+    isRatingColumn(column) {
+      return column.type === 'rating';
+    },
+
+    /** Die anklickbaren Sterne des Eintragsdialogs. */
+    ratingChoices() {
+      return RATING_STARS;
+    },
+
+    ratingStars(stars) {
+      const filled = Math.max(0, Math.min(RATING_MAX, Math.round(Number(stars) || 0)));
+
+      return '★'.repeat(filled) + '☆'.repeat(RATING_MAX - filled);
+    },
+
+    /** Leer heißt „nicht bewertet" - das ist etwas anderes als null Sterne. */
+    ratingOf(column) {
+      const raw = this.valueInput(column);
+
+      return raw === '' || raw === null ? null : Number(raw);
+    },
+
+    isRatingFilled(column, star) {
+      const current = this.ratingOf(column);
+
+      return current !== null && star <= current;
+    },
+
+    /**
+     * Ein erneuter Klick auf den zuletzt gesetzten Stern nimmt ihn zurück:
+     * einmal auf den ersten Stern ergibt null Sterne, ein zweites Mal löscht
+     * die Bewertung ganz.
+     */
+    setRating(column, star) {
+      if (this.entryBusy) {
+        return;
+      }
+      const current = this.ratingOf(column);
+      this.setValueInput(column, String(current === star ? star - 1 : star));
+    },
+
+    clearRating(column) {
+      if (!this.entryBusy) {
+        this.setValueInput(column, '');
+      }
+    },
+
+    ratingLabel(column) {
+      const current = this.ratingOf(column);
+
+      return current === null ? 'Nicht bewertet' : `${current} von ${RATING_MAX} Sternen`;
     },
 
     hasLocationColumn() {

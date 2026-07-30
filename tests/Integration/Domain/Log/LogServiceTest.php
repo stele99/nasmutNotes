@@ -323,6 +323,46 @@ final class LogServiceTest extends TestCase
         self::assertSame($this->pageId, $share['page_id']);
     }
 
+    public function testRatingsKeepTheirStarCountAndTheirStars(): void
+    {
+        $rating = $this->column('Bewertung', 'rating');
+
+        $entry = $this->entry('2026-07-29T09:00:00+02:00', [$rating => 4]);
+
+        // Die Zahl trägt die Sortierung, die Sterne stehen für Export und
+        // öffentliche Ansicht daneben.
+        self::assertSame(4.0, (float) $entry['values'][$rating]['value_number']);
+        self::assertSame('★★★★☆', $entry['values'][$rating]['value_text']);
+    }
+
+    public function testZeroStarsIsARatingButAnEmptyValueIsNone(): void
+    {
+        $rating = $this->column('Bewertung', 'rating');
+
+        $rated = $this->entry('2026-07-29T09:00:00+02:00', [$rating => 0]);
+        self::assertSame(0.0, (float) $rated['values'][$rating]['value_number']);
+        self::assertSame('☆☆☆☆☆', $rated['values'][$rating]['value_text']);
+
+        $unrated = $this->entry('2026-07-29T10:00:00+02:00', [$rating => '']);
+        self::assertArrayNotHasKey($rating, $unrated['values']);
+    }
+
+    public function testRatingsBeyondFiveStarsAreRejected(): void
+    {
+        $rating = $this->column('Bewertung', 'rating');
+
+        $this->expectException(ValidationException::class);
+        $this->entry('2026-07-29T09:00:00+02:00', [$rating => 6]);
+    }
+
+    public function testRatingsMustBeWholeStars(): void
+    {
+        $rating = $this->column('Bewertung', 'rating');
+
+        $this->expectException(ValidationException::class);
+        $this->entry('2026-07-29T09:00:00+02:00', [$rating => '3,5']);
+    }
+
     public function testOtherPageTypesAreNotLogs(): void
     {
         $note = $this->pages->create($this->user, 'note', 'Keine Liste', null);

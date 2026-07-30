@@ -305,8 +305,37 @@ final class LogService
             LogColumnType::Time => $this->timeValue($value),
             LogColumnType::Location => $this->locationValue($value),
             LogColumnType::Hours, LogColumnType::Number, LogColumnType::Money => $this->numberValue($type, $value),
+            LogColumnType::Rating => $this->ratingValue($value),
             LogColumnType::User => null,
         };
+    }
+
+    /**
+     * Bewertung als ganze Sternzahl von 0 bis 5 (FR-LOG-03). Die Zahl trägt
+     * die Sortierung, die Sterne stehen zusätzlich als Text daneben - so
+     * lesen Export und öffentliche Ansicht sie ohne eigene Umrechnung, genau
+     * wie bei der Uhrzeit.
+     *
+     * @return array{text: ?string, number: ?float, lat: ?float, lon: ?float}
+     */
+    private function ratingValue(mixed $value): array
+    {
+        $raw = is_scalar($value) ? trim((string) $value) : '';
+        if ($raw === '' || preg_match('/^\d+$/', $raw) !== 1) {
+            throw new ValidationException('Eine Bewertung braucht eine ganze Zahl von 0 bis 5.');
+        }
+
+        $stars = (int) $raw;
+        if ($stars > LogColumnType::RATING_MAX) {
+            throw new ValidationException('Eine Bewertung geht höchstens bis 5 Sterne.');
+        }
+
+        return [
+            'text' => LogColumnType::ratingStars($stars),
+            'number' => (float) $stars,
+            'lat' => null,
+            'lon' => null,
+        ];
     }
 
     /** @return array{text: ?string, number: ?float, lat: ?float, lon: ?float} */

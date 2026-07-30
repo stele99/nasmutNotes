@@ -18,7 +18,11 @@ enum LogColumnType: string
     case Hours = 'hours';
     case Number = 'number';
     case Money = 'money';
+    case Rating = 'rating';
     case User = 'user';
+
+    /** Höchste Sternzahl einer Bewertungsspalte; 0 heißt „keine Sterne". */
+    public const int RATING_MAX = 5;
 
     public static function fromInput(mixed $value): self
     {
@@ -30,7 +34,11 @@ enum LogColumnType: string
         return $type;
     }
 
-    /** Zahlenspalten lassen sich summieren und numerisch sortieren. */
+    /**
+     * Zahlenspalten lassen sich summieren und numerisch sortieren. Die
+     * Bewertung zählt bewusst nicht dazu: Sie liegt zwar als Zahl vor und
+     * sortiert danach, eine Summe von Sternen ergibt aber keinen Sinn.
+     */
     public function isNumeric(): bool
     {
         return match ($this) {
@@ -49,6 +57,7 @@ enum LogColumnType: string
             self::Hours => 'stunden',
             self::Number => 'zahl',
             self::Money => 'betrag',
+            self::Rating => 'bewertung 0-5',
             self::User => 'benutzer',
         };
     }
@@ -62,7 +71,14 @@ enum LogColumnType: string
             self::Hours => 'Stunden',
             self::Number => 'Zahl',
             self::Money => 'Betrag',
+            self::Rating => 'Bewertung',
             self::User => 'User',
         };
+    }
+
+    /** Sterne, wie sie in Export und öffentlicher Ansicht stehen. */
+    public static function ratingStars(int $stars): string
+    {
+        return str_repeat('★', $stars) . str_repeat('☆', self::RATING_MAX - $stars);
     }
 }

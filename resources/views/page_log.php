@@ -140,7 +140,18 @@
                     <div class="mt-5">
                         <label class="block text-sm font-medium" x-text="column.name"></label>
                         <p x-show="column.type === 'user'" class="mt-2 text-sm" style="color: var(--color-text-muted);">Wird beim Anlegen automatisch eingetragen.</p>
-                        <div x-show="column.type !== 'user'" class="mt-2 flex gap-2">
+                        <?php /* Bewertung: anklickbare Sterne statt Eingabefeld. Ein
+                                 erneuter Klick auf den gesetzten Stern zählt zurück. */ ?>
+                        <div x-show="isRatingColumn(column)" x-cloak class="mt-2 flex items-center gap-2">
+                            <div class="flex items-center gap-1" role="group" :aria-label="column.name">
+                                <template x-for="star in ratingChoices()" :key="star">
+                                    <button type="button" @click="setRating(column, star)" :disabled="entryBusy" class="log-rating-star" :class="isRatingFilled(column, star) ? 'is-filled' : ''" :aria-pressed="isRatingFilled(column, star)" :aria-label="star + ' von 5 Sternen'" x-text="isRatingFilled(column, star) ? '★' : '☆'"></button>
+                                </template>
+                            </div>
+                            <span class="text-xs" style="color: var(--color-text-muted);" x-text="ratingLabel(column)"></span>
+                            <button type="button" x-show="ratingOf(column) !== null" x-cloak @click="clearRating(column)" :disabled="entryBusy" class="icon-action ml-auto shrink-0 p-1" title="Bewertung entfernen" aria-label="Bewertung entfernen" x-icon="x"></button>
+                        </div>
+                        <div x-show="column.type !== 'user' && !isRatingColumn(column)" class="mt-2 flex gap-2">
                             <input
                                 :value="valueInput(column)"
                                 @input="onValueInput(column, $event)"
