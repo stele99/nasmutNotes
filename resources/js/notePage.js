@@ -1068,6 +1068,20 @@ export function noteEditorPage() {
       return editor ? editor.getJSON() : null;
     },
 
+    /**
+     * Der CSP-Build von Alpine erlaubt kein `?.` im Template (eigener Parser,
+     * kein `new Function`) - die Optional-Chaining-Prüfung wandert deshalb
+     * hierher statt direkt in `x-text`.
+     */
+    serverConflictDocumentText() {
+      return this.conflictDocumentText(this.conflictContent ? this.conflictContent.content : null);
+    },
+
+    serverConflictVersionLabel() {
+      const version = this.conflictContent ? this.conflictContent.version : null;
+      return version ? `· Version ${version}` : '';
+    },
+
     async keepMyVersion() {
       if (this.offlineConflictId) {
         this.pendingSave = true;

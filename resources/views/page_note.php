@@ -471,10 +471,10 @@
                     <section class="min-w-0">
                         <p class="text-sm font-medium">
                             Serverfassung
-                            <span class="font-normal" style="color: var(--color-text-muted);" x-text="conflictContent?.version ? ('· Version ' + conflictContent.version) : ''"></span>
+                            <span class="font-normal" style="color: var(--color-text-muted);" x-text="serverConflictVersionLabel()"></span>
                         </p>
                         <div class="mt-2 min-h-44 max-h-96 overflow-auto rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
-                            <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" x-text="conflictDocumentText(conflictContent?.content)"></pre>
+                            <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" x-text="serverConflictDocumentText()"></pre>
                         </div>
                     </section>
                 </div>
