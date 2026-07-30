@@ -14,6 +14,7 @@ import {
 } from './noteCrypto.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
+import { pageTrashMixin } from './pageTrash.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
 import {
   acquireNoteEditLock,
@@ -48,6 +49,7 @@ export function noteEditorPage() {
   return {
     ...voiceRecorderMixin(),
     ...pageLocationMixin(),
+    ...pageTrashMixin(),
     status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
     version: 0,
     pageId: null,
@@ -1863,16 +1865,32 @@ export function noteEditorPage() {
         return;
       }
       this.editingPageTitle = true;
-      this.$nextTick(() => {
-        const input = this.$refs.titleInput;
-        if (!input) {
-          return;
-        }
-        input.focus();
-        // Strikter Vergleich: Alpine übergibt bei `@click="startEditingPageTitle"`
-        // das Event als erstes Argument, das darf nicht als „markieren" gelten.
-        if (selectAll === true) {
-          input.select();
+      // Strikter Vergleich: Alpine übergibt bei `@click="startEditingPageTitle"`
+      // das Event als erstes Argument, das darf nicht als „markieren" gelten.
+      this.$nextTick(() => this.focusPageTitle(selectAll === true));
+    },
+
+    /**
+     * Der eben aufgebaute Editor holt sich den Fokus mitunter erst im nächsten
+     * Frame zurück - dann stünde der Cursor im Text statt im Titel, obwohl die
+     * frisch angelegte Seite gerade ihren Vorschlagstitel zum Überschreiben
+     * anbietet. Ein einmaliger zweiter Versuch danach holt ihn zurück.
+     */
+    focusPageTitle(selectAll, retry = true) {
+      const input = this.$refs.titleInput;
+      if (!input) {
+        return;
+      }
+      input.focus();
+      if (selectAll) {
+        input.select();
+      }
+      if (!retry) {
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        if (this.editingPageTitle && document.activeElement !== input) {
+          this.focusPageTitle(selectAll, false);
         }
       });
     },

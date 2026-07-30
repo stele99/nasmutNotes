@@ -18,6 +18,9 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
+            <?php /* Löschen steht bewusst nur als Symbol da - der rote Papierkorb
+                     ist eindeutig genug und die Leiste ist schon gut gefüllt. */ ?>
+            <button x-show="!isShared && canEditPage" type="button" @click="trashPage" class="icon-action icon-action-danger flex items-center border p-2" style="border-color: var(--color-border); color: var(--color-danger);" title="In den Papierkorb" aria-label="In den Papierkorb" x-icon="trash"></button>
             <button x-show="canEditPage" type="button" @click="openColumnDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Spalten verwalten" aria-label="Spalten verwalten">
                 <span x-icon="table"></span><span class="hidden lg:inline">Spalten</span>
             </button>
@@ -28,28 +31,36 @@
     </div>
 
     <div class="pt-4 md:pt-10">
-        <div class="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
-            <div class="min-w-0">
-                <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
-                <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
-                <p class="mt-2 text-sm" style="color: var(--color-text-muted);" x-text="entryCountLabel()"></p>
-                 <?php include __DIR__ . '/partials/page_location.php'; ?>
-                 <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
-            </div>
-            <div class="flex shrink-0 flex-wrap items-center gap-2">
-                <button x-show="canEditPage" type="button" @click="openNewEntry" class="btn btn-primary">
-                    <span x-icon="plus"></span>Eintrag
-                </button>
-                <?php /* Diktierter Eintrag: Der Server verteilt das Gesagte auf die
-                         Spalten des Logbuchs (FR-LOG-08). */ ?>
-                <?php if (!empty($voiceEnabled)): ?>
-                    <button x-show="canEditPage && voiceSupported" x-cloak type="button" @click="toggleVoice" :disabled="voiceStatus === 'processing'" class="btn btn-secondary" :class="voiceStatus === 'recording' ? 'is-recording' : ''">
-                        <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
-                        <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
-                        <span x-text="voiceStatus === 'recording' ? voiceTimeLabel() : 'Diktieren'"></span>
+        <div class="mb-6">
+            <?php /* leading-tight: `truncate` blendet aus, was über die Zeilenhöhe
+                     hinausragt - bei 1.0 fiele die Unterlänge von „g" weg. */ ?>
+            <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+            <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
+            <p class="mt-2 text-sm" style="color: var(--color-text-muted);" x-text="entryCountLabel()"></p>
+            <?php /* Die Knöpfe stehen in der Standortzeile statt in einer eigenen
+                     Spalte daneben - so bleibt der Überschrift die volle Breite.
+                     Wird es eng, schrumpfen die Knöpfe auf ihr Symbol und der
+                     Standort auf „…", statt dass die Zeile umbricht. */ ?>
+            <div class="flex flex-nowrap items-center justify-between gap-x-3">
+                <div class="min-w-0 flex-1"><?php include __DIR__ . '/partials/page_location.php'; ?></div>
+                <div class="mt-2 flex shrink-0 items-center gap-2">
+                    <button x-show="canEditPage" type="button" @click="openNewEntry" class="btn btn-primary" title="Eintrag anlegen" aria-label="Eintrag anlegen">
+                        <span x-icon="plus"></span><span class="hidden sm:inline">Eintrag</span>
                     </button>
-                <?php endif; ?>
+                    <?php /* Diktierter Eintrag: Der Server verteilt das Gesagte auf die
+                             Spalten des Logbuchs (FR-LOG-08). Die laufende Aufnahme
+                             zeigt ihre Zeit auch auf schmalem Schirm - sie ist die
+                             einzige Rückmeldung, dass noch aufgenommen wird. */ ?>
+                    <?php if (!empty($voiceEnabled)): ?>
+                        <button x-show="canEditPage && voiceSupported" x-cloak type="button" @click="toggleVoice" :disabled="voiceStatus === 'processing'" class="btn btn-secondary" :class="voiceStatus === 'recording' ? 'is-recording' : ''" title="Eintrag diktieren" aria-label="Eintrag diktieren">
+                            <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
+                            <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
+                            <span :class="voiceStatus === 'recording' ? '' : 'hidden sm:inline'" x-text="voiceStatus === 'recording' ? voiceTimeLabel() : 'Diktieren'"></span>
+                        </button>
+                    <?php endif; ?>
+                </div>
             </div>
+            <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
         </div>
 
         <?php if (!empty($voiceEnabled)): ?>

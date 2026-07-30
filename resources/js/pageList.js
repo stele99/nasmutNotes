@@ -763,17 +763,30 @@ export function pageList() {
       this.recentObserver.observe(sentinel);
     },
 
+    /**
+     * Die Seiten der gewählten Sammlung ohne Suche. Favoriten filtert der
+     * Client, weil `refresh()` für sie keinen eigenen Serverfilter schickt.
+     */
+    collectionPages() {
+      return this.activeCollection === 'favorites'
+        ? this.pages.filter((page) => page.is_favorite)
+        : this.pages;
+    },
+
     filteredPages() {
-      const pages = this.searchQuery.trim() === '' ? this.pages : this.searchResults;
-      if (this.activeCollection === 'favorites') {
-        return pages.filter((page) => page.is_favorite);
+      // Treffer stehen für sich: Server- wie Offline-Suche liefern bereits
+      // nur die gewählte Sammlung (siehe search()). Ein zweiter Filter würde
+      // hier scheitern, weil die Treffer nur die Felder der Suche tragen.
+      if (this.searchQuery.trim() !== '') {
+        return this.searchResults;
       }
       // „Alle Notizen" wächst wie die Übersicht schrittweise nach, sortiert
       // rein nach Änderungsdatum (siehe orderedPages/recentLimit).
-      if (this.activeCollection === 'all' && this.searchQuery.trim() === '') {
+      if (this.activeCollection === 'all') {
         return this.recentPages();
       }
-      return pages;
+
+      return this.collectionPages();
     },
 
     /** Zweite Kartenzeile: Anriss der Notiz bzw. Aufgabenstand der Task-Seite. */
@@ -821,6 +834,15 @@ export function pageList() {
       return parts.join(' · ');
     },
 
+    /**
+     * Sammlungen, die die Suche einschränken. „Alle Notizen" und die
+     * Übersicht (`home`) suchen bewusst überall - wer den ganzen Workspace
+     * durchsuchen will, wählt vorne „Alle Notizen".
+     */
+    searchCollection() {
+      return ['notebook', 'unassigned', 'shared', 'favorites'].includes(this.activeCollection);
+    },
+
     clearSearch() {
       this.searchQuery = '';
       this.searchResults = [];
@@ -841,11 +863,22 @@ export function pageList() {
       this.searchLoading = true;
       try {
         if (!navigator.onLine) {
+          // Derselbe Ausschnitt wie online: die gewählte Sammlung.
           const q = query.toLowerCase();
-          this.searchResults = this.pages.filter((page) => String(page.title || '').toLowerCase().includes(q));
+          this.searchResults = this.collectionPages()
+            .filter((page) => String(page.title || '').toLowerCase().includes(q));
           return;
         }
-        const data = await apiFetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const parameters = new URLSearchParams({ q: query });
+        // Die Seitenleiste sucht in ihrer Sammlung; „Alle Notizen" und die
+        // Übersicht durchsuchen den ganzen Workspace.
+        if (this.searchCollection()) {
+          parameters.set('collection', this.activeCollection);
+          if (this.activeCollection === 'notebook' && this.activeNotebookId) {
+            parameters.set('notebook_id', String(this.activeNotebookId));
+          }
+        }
+        const data = await apiFetch(`/api/search?${parameters.toString()}`);
         this.searchResults = data.pages;
       } finally {
         this.searchLoading = false;

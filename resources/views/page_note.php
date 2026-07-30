@@ -26,6 +26,9 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
+            <?php /* Löschen steht bewusst nur als Symbol da - der rote Papierkorb
+                     ist eindeutig genug und die Leiste ist schon gut gefüllt. */ ?>
+            <button x-show="!isShared && canEditPage" type="button" @click="trashPage" class="icon-action icon-action-danger flex items-center border p-2" style="border-color: var(--color-border); color: var(--color-danger);" title="In den Papierkorb" aria-label="In den Papierkorb" x-icon="trash"></button>
             <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
                 <span x-icon="history"></span><span class="hidden lg:inline">Verlauf</span>
             </button>
@@ -53,7 +56,9 @@
     <div class="pt-4 md:pt-10">
         <div class="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-4" :class="(attachments.length > 0 || uploadingAttachment) ? 'mb-6 md:mb-10' : 'mb-3 md:mb-6'">
             <div class="min-w-0">
-                <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+                <?php /* leading-tight: siehe page_log.php - `truncate` schnitte
+                         sonst die Unterlängen ab. */ ?>
+                <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
                  <?php include __DIR__ . '/partials/page_location.php'; ?>
                  <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>

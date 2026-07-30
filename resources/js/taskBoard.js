@@ -2,6 +2,7 @@ import { apiFetch } from './api.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { cacheBoard, readCachedBoard } from './offline/runtime.js';
 import { pageLocationMixin } from './pageLocation.js';
+import { pageTrashMixin } from './pageTrash.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
 
 const POLL_INTERVAL_MS = 5000;
@@ -9,6 +10,7 @@ const POLL_INTERVAL_MS = 5000;
 export function taskBoard() {
   return {
     ...pageLocationMixin(),
+    ...pageTrashMixin(),
     ...voiceRecorderMixin(),
     pageId: null,
     categories: [],

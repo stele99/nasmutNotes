@@ -12,10 +12,35 @@ final class SearchRepository
     {
     }
 
-    /** @return array<int, array<string, mixed>> */
-    public function search(int $workspaceId, int $userId, string $query): array
-    {
+    /**
+     * Sucht im Workspace und in allen mit dem Nutzer geteilten Seiten. Die
+     * Seitenleiste schränkt zusätzlich auf ihre Sammlung ein - dort sucht man
+     * im gewählten Notizbuch, nicht im ganzen Workspace.
+     *
+     * @param ?string $collection `notebook`, `unassigned`, `shared` oder
+     *                            `favorites`; alles andere sucht überall.
+     * @return array<int, array<string, mixed>>
+     */
+    public function search(
+        int $workspaceId,
+        int $userId,
+        string $query,
+        ?string $collection = null,
+        ?int $notebookId = null,
+    ): array {
         $term = '%' . $query . '%';
+        $scope = match ($collection) {
+            // Ein Notizbuch gehört immer dem eigenen Workspace - geteilte
+            // Seiten liegen darin nie, deshalb fallen sie hier heraus.
+            'notebook' => $notebookId === null
+                ? ''
+                : ' AND p.workspace_id = :workspace_id AND p.notebook_id = :notebook_id',
+            'unassigned' => ' AND p.workspace_id = :workspace_id AND p.notebook_id IS NULL',
+            'shared' => ' AND sl.id IS NOT NULL',
+            'favorites' => ' AND p.is_favorite = 1',
+            default => '',
+        };
+
         $stmt = $this->pdo->prepare(
             'SELECT DISTINCT p.id,
                     p.title,
@@ -43,17 +68,22 @@ final class SearchRepository
                    OR t.title LIKE :term COLLATE NOCASE
                    OR t.description LIKE :term COLLATE NOCASE
                    OR lv.value_text LIKE :term COLLATE NOCASE
-               )
-             ORDER BY p.updated_at DESC
+               )'
+             . $scope
+             . ' ORDER BY p.updated_at DESC
              LIMIT 20'
         );
-        $stmt->execute([
+        $params = [
             'owner_workspace_id' => $workspaceId,
             'user_id' => $userId,
             'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
             'workspace_id' => $workspaceId,
             'term' => $term,
-        ]);
+        ];
+        if ($collection === 'notebook' && $notebookId !== null) {
+            $params['notebook_id'] = $notebookId;
+        }
+        $stmt->execute($params);
 
         return array_map(static function (array $page): array {
             $page['is_encrypted'] = (bool) $page['is_encrypted'];

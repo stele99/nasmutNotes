@@ -24,20 +24,20 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
+            <?php /* Löschen steht bewusst nur als Symbol da - der rote Papierkorb
+                     ist eindeutig genug und die Leiste ist schon gut gefüllt. */ ?>
+            <button x-show="!isShared && canEditPage" type="button" @click="trashPage" class="icon-action icon-action-danger flex items-center border p-2" style="border-color: var(--color-border); color: var(--color-danger);" title="In den Papierkorb" aria-label="In den Papierkorb" x-icon="trash"></button>
             <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
                 <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>
         </div>
     </div>
     <div class="pt-4 md:pt-10">
-    <div class="mb-8 flex min-w-0 items-center gap-3 sm:mb-14">
-        <span class="shrink-0" style="color: var(--color-text);" x-icon="list-todo"></span>
-        <div class="min-w-0 flex-1">
-            <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
-            <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-72 text-4xl font-semibold tracking-tight sm:text-5xl">
-             <?php include __DIR__ . '/partials/page_location.php'; ?>
-             <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
-        </div>
+    <div class="mb-8 min-w-0 sm:mb-14">
+        <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+        <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-72 text-4xl font-semibold tracking-tight sm:text-5xl">
+        <?php include __DIR__ . '/partials/page_location.php'; ?>
+        <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
     </div>
 
     <p x-show="offlineNotice" x-cloak x-text="offlineNotice" class="mb-6 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); color: var(--color-text-muted);"></p>

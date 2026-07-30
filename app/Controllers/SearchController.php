@@ -24,13 +24,26 @@ final class SearchController
 
     public function index(Request $request, Response $response): Response
     {
-        $query = trim((string) ($request->getQueryParams()['q'] ?? ''));
+        $params = $request->getQueryParams();
+        $query = trim((string) ($params['q'] ?? ''));
         if ($query === '' || mb_strlen($query) > 100) {
             throw new ValidationException('Der Suchbegriff muss 1-100 Zeichen lang sein.');
         }
 
+        // Die Seitenleiste sucht in ihrer Sammlung, die Übersicht überall.
+        $collection = is_string($params['collection'] ?? null) ? $params['collection'] : null;
+        $notebookId = isset($params['notebook_id']) && ctype_digit((string) $params['notebook_id'])
+            ? (int) $params['notebook_id']
+            : null;
+
         $user = CurrentUser::require($request);
-        $results = $this->search->search($this->pages->workspaceIdFor($user), $user->id, $query);
+        $results = $this->search->search(
+            $this->pages->workspaceIdFor($user),
+            $user->id,
+            $query,
+            $collection,
+            $notebookId,
+        );
 
         return JsonResponse::json($response, ['pages' => $results]);
     }

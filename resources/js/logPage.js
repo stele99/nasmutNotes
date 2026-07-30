@@ -3,6 +3,7 @@ import { voiceRecorderMixin, voiceFormData } from './voice.js';
 import { locationMapUrl, parseLocationInput, requestLocation } from './geo.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { pageLocationMixin } from './pageLocation.js';
+import { pageTrashMixin } from './pageTrash.js';
 
 /**
  * Logbuch-Seite (FR-LOG-01..09): Einträge mit Zeitpunkt und frei definierten
@@ -38,6 +39,7 @@ export function logPage() {
   return {
     ...voiceRecorderMixin(),
     ...pageLocationMixin(),
+    ...pageTrashMixin(),
     pageId: null,
     pageTitle: '',
     savedPageTitle: '',
