@@ -26,6 +26,13 @@ export function pageLocationMixin() {
     locationLocating: false,
     locationBusy: false,
     locationError: '',
+    /**
+     * Wofür die Auswahl gerade offen ist. `null` meint den Aufnahmeort der
+     * Seite. Seitentypen mit weiteren Ortsfeldern - das Logbuch mit seiner
+     * Ortsspalte - hinterlegen hier ihr eigenes Ziel und werten es in
+     * `applyPickedLocation()` aus; dieser Baustein liest den Wert nie.
+     */
+    locationPickerTarget: null,
 
     /**
      * Aufnahmeort aus dem servergerenderten Markup. Fehlt eine der Koordinaten,
@@ -72,13 +79,21 @@ export function pageLocationMixin() {
       if (!this.canEditLocation()) {
         return;
       }
+      this.openLocationPicker(this.pageLocation);
+    },
+
+    /**
+     * Öffnet die Auswahl auf einem beliebigen Startpunkt. Wird nur aus dem
+     * Skript heraus gerufen - anders als `openLocationDialog()`, das an einem
+     * `@click` hängt und dort das Ereignis als Argument bekäme.
+     */
+    openLocationPicker(start = null) {
+      this.locationPickerTarget = null;
       this.locationError = '';
       this.locationSearchQuery = '';
       this.locationSearchResults = [];
-      this.locationDraft = this.pageLocation ? { ...this.pageLocation } : null;
-      this.locationInput = this.pageLocation
-        ? `${this.pageLocation.lat}, ${this.pageLocation.lon}`
-        : '';
+      this.locationDraft = start ? { ...start } : null;
+      this.locationInput = start ? `${start.lat}, ${start.lon}` : '';
       this.locationDialogOpen = true;
       this.$nextTick(() => this.initLocationMap());
     },
@@ -195,13 +210,22 @@ export function pageLocationMixin() {
         const sameAsDraft = this.locationDraft
           && this.locationDraft.lat === location.lat
           && this.locationDraft.lon === location.lon;
-        await this.saveLocation({
+        await this.applyPickedLocation({
           ...location,
           accuracy: sameAsDraft ? this.locationDraft.accuracy : null,
         });
       } finally {
         this.locationBusy = false;
       }
+    },
+
+    /**
+     * Was mit dem gewählten Ort geschieht. Vorgabe ist der Aufnahmeort der
+     * Seite; Seitentypen mit weiteren Ortsfeldern überschreiben das (siehe
+     * `locationPickerTarget`).
+     */
+    async applyPickedLocation(location) {
+      await this.saveLocation(location);
     },
 
     async removeLocation() {

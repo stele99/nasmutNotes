@@ -134,7 +134,7 @@
                 </div>
 
                 <?php /* Nur die Liste „Zuletzt bearbeitet" wird schrittweise erweitert. */ ?>
-                <div x-ref="recentSentinel" x-show="searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
+                <div x-ref="recentSentinel" x-cloak x-show="workspaceTab === 'recent' && searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
                     <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Seiten laden</button>
                 </div>
                 <p x-show="workspaceTab === 'recent' && !loading && searchQuery.trim() === '' && pages.length === 0" class="py-8 text-base" style="color: var(--color-text-muted);">Deine ersten Seiten erscheinen hier.</p>

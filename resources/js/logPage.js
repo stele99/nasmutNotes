@@ -433,6 +433,45 @@ export function logPage() {
     },
 
     /**
+     * Ortsspalte über die Karte füllen (FR-LOG-05): dieselbe Auswahl wie beim
+     * Aufnahmeort der Seite - Adresssuche, Karte, aktueller Standort. Anders
+     * als jener hängt die Spalte am Eintrag, nicht an der Seite; geteilte
+     * Seiten mit Schreibrecht dürfen sie deshalb setzen.
+     */
+    openLocationPickerForColumn(column) {
+      if (!this.canEditPage || this.entryBusy) {
+        return;
+      }
+      const known = this.entryCoordinates[String(column.id)] || null;
+      this.openLocationPicker(known);
+      this.locationPickerTarget = column.id;
+    },
+
+    /**
+     * Ohne Ziel bleibt es beim Aufnahmeort der Seite (Vorgabe des Bausteins),
+     * mit Ziel wandert der Ort in die Ortsspalte des offenen Eintrags. Ein
+     * bereits eingetragener Ortsname bleibt stehen - die Koordinaten
+     * ersetzen ihn nicht, sondern präzisieren ihn (siehe payloadValue).
+     */
+    async applyPickedLocation(location) {
+      const columnId = this.locationPickerTarget;
+      if (columnId === null) {
+        await this.saveLocation(location);
+        return;
+      }
+
+      const column = this.columns.find((item) => item.id === columnId);
+      if (column) {
+        this.setValueInput(column, `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}`);
+        this.entryCoordinates = {
+          ...this.entryCoordinates,
+          [String(columnId)]: { lat: location.lat, lon: location.lon },
+        };
+      }
+      this.closeLocationDialog();
+    },
+
+    /**
      * Ortsspalten dürfen sowohl Koordinaten als auch einen Ortsnamen tragen;
      * erkennbare Koordinaten werden getrennt abgelegt, damit die Karte
      * verlinkt werden kann. Steht im Feld eine Anschrift, bleiben die zuvor

@@ -703,8 +703,17 @@ export function pageList() {
       }
     },
 
+    /**
+     * Rein datenseitig: Liegen mehr Seiten vor als gerade gezeigt werden?
+     * Ob überhaupt schrittweise geladen wird, entscheidet die jeweilige
+     * Ansicht - die Übersicht im Reiter „Zuletzt bearbeitet", die
+     * Seitenleiste in der Sammlung „Alle Notizen". Der Reiter gehört allein
+     * der Übersicht; in der Seitenleiste stellt ihn die Umkreissuche auf
+     * „location" (siehe nearbySearch.js), ohne ihn je zurückzusetzen - eine
+     * Abfrage darauf ließe das Nachladen dort dauerhaft stehen bleiben.
+     */
     hasMoreRecentPages() {
-      return this.workspaceTab === 'recent' && this.orderedPages.length > this.recentLimit;
+      return this.orderedPages.length > this.recentLimit;
     },
 
     loadMoreRecentPages() {

@@ -2,7 +2,9 @@
 <div
     x-show="locationDialogOpen"
     x-cloak
-    class="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5"
+    <?php /* Über den Eintragsdialog des Logbuchs (z-100), aus dem die
+             Ortsspalte diese Auswahl heraus öffnet. */ ?>
+    class="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-5"
     style="background-color: rgb(0 0 0 / 0.45);"
     @click.self="closeLocationDialog"
     @keydown.escape.window="closeLocationDialog"
@@ -47,7 +49,9 @@
         </div>
 
         <div class="flex flex-wrap justify-end gap-2 border-t px-5 py-4 sm:px-6" style="border-color: var(--color-border);">
-            <button x-show="pageLocation" x-cloak type="button" @click="removeLocation" :disabled="locationBusy" class="btn btn-quiet mr-auto" style="color: var(--color-danger);">Entfernen</button>
+            <?php /* „Entfernen" löscht den Aufnahmeort der Seite - bei einer
+                     Ortsspalte wäre das das falsche Ziel. */ ?>
+            <button x-show="pageLocation && locationPickerTarget === null" x-cloak type="button" @click="removeLocation" :disabled="locationBusy" class="btn btn-quiet mr-auto" style="color: var(--color-danger);">Entfernen</button>
             <button type="button" @click="closeLocationDialog" :disabled="locationBusy" class="btn btn-quiet">Abbrechen</button>
             <button type="submit" :disabled="locationBusy || !locationInput.trim()" class="btn btn-primary" x-text="locationBusy ? 'Speichert…' : 'Übernehmen'"></button>
         </div>

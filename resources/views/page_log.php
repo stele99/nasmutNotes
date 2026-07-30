@@ -123,7 +123,9 @@
 
     <?php /* Eintrag anlegen oder ändern. Datum und Uhrzeit sind frei änderbar
              (FR-LOG-09). */ ?>
-    <div x-show="entryDialogOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeEntryDialog" @keydown.escape.window="closeEntryDialog" role="dialog" aria-modal="true" aria-labelledby="log-entry-title">
+    <?php /* Escape gilt der obersten Ebene: Liegt die Standortauswahl darüber,
+             schließt sie sich zuerst - sonst verschwänden beide auf einmal. */ ?>
+    <div x-show="entryDialogOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeEntryDialog" @keydown.escape.window="locationDialogOpen || closeEntryDialog()" role="dialog" aria-modal="true" aria-labelledby="log-entry-title">
         <form @submit.prevent="saveEntry" class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4 border-b px-6 py-4" style="border-color: var(--color-border);">
                 <h2 id="log-entry-title" class="text-xl font-semibold" x-text="editingEntryId ? 'Eintrag bearbeiten' : 'Neuer Eintrag'"></h2>
@@ -151,6 +153,11 @@
                             >
                             <button x-show="isLocationColumn(column)" x-cloak type="button" @click="useCurrentLocationFor(column)" :disabled="entryBusy || isLocating(column)" class="btn btn-quiet shrink-0" title="Aktuellen Standort einsetzen" aria-label="Aktuellen Standort einsetzen">
                                 <span x-icon="map-pin"></span>
+                            </button>
+                            <?php /* Dieselbe Auswahl wie beim Aufnahmeort der Seite:
+                                     Adresssuche, Karte und aktueller Standort. */ ?>
+                            <button x-show="isLocationColumn(column)" x-cloak type="button" @click="openLocationPickerForColumn(column)" :disabled="entryBusy" class="btn btn-quiet shrink-0" title="Auf der Karte wählen" aria-label="Auf der Karte wählen">
+                                <span x-icon="map"></span>
                             </button>
                         </div>
                     </div>
