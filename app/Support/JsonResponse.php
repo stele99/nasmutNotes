@@ -10,7 +10,14 @@ final class JsonResponse
 {
     public static function json(Response $response, mixed $data, int $status = 200): Response
     {
-        $response->getBody()->write((string) json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $encoded = json_encode(
+            $data,
+            JSON_UNESCAPED_UNICODE
+                | JSON_UNESCAPED_SLASHES
+                | JSON_INVALID_UTF8_SUBSTITUTE
+                | JSON_THROW_ON_ERROR,
+        );
+        $response->getBody()->write($encoded);
 
         return $response
             ->withStatus($status)

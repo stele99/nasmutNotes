@@ -160,6 +160,41 @@ export async function getPage(id) {
   return req(s.get(id));
 }
 
+/** Remove every local copy belonging to a page after a confirmed delete. */
+export async function deletePageData(pageId) {
+  const database = await openDb();
+  const numericId = Number(pageId);
+  const names = [
+    'pages',
+    'note_contents',
+    'boards',
+    'documents',
+    'page_attachments',
+    'outbox',
+    'attachment_drafts',
+  ];
+  const tx = database.transaction(names, 'readwrite');
+  const done = txDone(tx);
+
+  tx.objectStore('pages').delete(numericId);
+  tx.objectStore('note_contents').delete(numericId);
+  tx.objectStore('boards').delete(numericId);
+  tx.objectStore('documents').delete(`/app/page/${numericId}`);
+  tx.objectStore('page_attachments').delete(numericId);
+
+  const outbox = tx.objectStore('outbox');
+  const outboxEntries = await req(outbox.getAll());
+  for (const entry of outboxEntries) {
+    if (Number(entry.page_id) === numericId) outbox.delete(entry.id);
+  }
+
+  const drafts = tx.objectStore('attachment_drafts');
+  const draftIds = await req(drafts.index('by_page').getAllKeys(numericId));
+  for (const id of draftIds) drafts.delete(id);
+
+  await done;
+}
+
 /** @param {Record<string, unknown>[]} notebooks */
 export async function putNotebooks(notebooks) {
   if (!Array.isArray(notebooks)) {

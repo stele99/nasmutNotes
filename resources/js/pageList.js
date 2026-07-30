@@ -13,6 +13,7 @@ import {
   getCachedPages,
   prefetchSelected,
   readCachedDocument,
+  removeCachedPage,
   syncOutbox,
 } from './offline/runtime.js';
 
@@ -495,10 +496,17 @@ export function pageList() {
       if (!confirm(`"${page.title}" in den Papierkorb verschieben?`)) {
         return;
       }
-      await apiFetch(`/api/pages/${page.id}`, { method: 'DELETE' });
-      this.notifyPagesChanged();
-      if (this.currentPageId === page.id) {
-        await this.navigateTo('/app');
+      const pageId = Number(page.id);
+      try {
+        await apiFetch(`/api/pages/${pageId}`, { method: 'DELETE' });
+        this.setPages(this.pages.filter((item) => Number(item.id) !== pageId));
+        await removeCachedPage(pageId);
+        this.notifyPagesChanged();
+        if (Number(this.currentPageId) === pageId) {
+          await this.navigateTo('/app');
+        }
+      } catch (error) {
+        window.alert(error.message || 'Die Seite konnte nicht gelöscht werden.');
       }
     },
 

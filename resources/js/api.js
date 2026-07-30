@@ -73,7 +73,20 @@ export async function apiFetch(url, options = {}, allowCsrfRetry = true) {
   }
 
   const contentType = response.headers.get('Content-Type') || '';
-  const data = contentType.includes('application/json') ? await response.json() : null;
+  const expectsJson = contentType.includes('application/json');
+  const responseText = await response.text();
+  let data = null;
+  if (expectsJson && responseText.trim() !== '') {
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      const error = new Error(`Der Server hat ungültiges JSON geliefert (${response.status}).`);
+      error.status = response.status;
+      error.payload = null;
+      error.retryAfter = response.headers.get('Retry-After');
+      throw error;
+    }
+  }
 
   if (!response.ok) {
     const method = (options.method || 'GET').toUpperCase();
@@ -93,6 +106,14 @@ export async function apiFetch(url, options = {}, allowCsrfRetry = true) {
     const error = new Error(message);
     error.status = response.status;
     error.payload = data;
+    error.retryAfter = response.headers.get('Retry-After');
+    throw error;
+  }
+
+  if (expectsJson && responseText.trim() === '') {
+    const error = new Error(`Der Server hat eine leere JSON-Antwort geliefert (${response.status}).`);
+    error.status = response.status;
+    error.payload = null;
     error.retryAfter = response.headers.get('Retry-After');
     throw error;
   }

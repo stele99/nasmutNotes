@@ -366,6 +366,22 @@ export async function getCachedPage(pageId) {
   return db.getPage(Number(pageId));
 }
 
+export async function removeCachedPage(pageId) {
+  const numericId = Number(pageId);
+  await db.deletePageData(numericId);
+  if (typeof caches !== 'undefined') {
+    const pageUrl = `/app/page/${numericId}`;
+    for (const cacheName of await caches.keys()) {
+      if (cacheName.startsWith(CACHE_PREFIX)) {
+        const cache = await caches.open(cacheName);
+        await cache.delete(pageUrl, { ignoreVary: true });
+      }
+    }
+  }
+  await refreshQueueState();
+  syncChannel?.postMessage({ type: 'queue-changed' });
+}
+
 /** @param {Record<string, unknown>[]} notebooks */
 export async function cacheNotebooks(notebooks) {
   if (!Array.isArray(notebooks)) {

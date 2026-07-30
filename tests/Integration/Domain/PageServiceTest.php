@@ -128,6 +128,23 @@ final class PageServiceTest extends TestCase
         self::assertSame(0, (int) $categoryQuery->fetchColumn());
     }
 
+    public function testEmptyTaskPageCanBeMovedToTrash(): void
+    {
+        $page = $this->pages->create($this->userA, 'task', 'Leere Aufgabenliste', null);
+        $pageId = (int) $page['id'];
+
+        $categoryQuery = $this->pdo->prepare('SELECT COUNT(*) FROM categories WHERE page_id = :page');
+        $categoryQuery->execute(['page' => $pageId]);
+        self::assertSame(0, (int) $categoryQuery->fetchColumn());
+
+        $this->pages->softDelete($this->userA, $pageId);
+
+        self::assertCount(0, $this->pages->list($this->userA, 'updated', null, false));
+        $trashed = $this->pages->list($this->userA, 'updated', null, true);
+        self::assertCount(1, $trashed);
+        self::assertSame($pageId, (int) $trashed[0]['id']);
+    }
+
     public function testTitleValidationRejectsEmptyAndTooLong(): void
     {
         $this->expectException(ValidationException::class);
