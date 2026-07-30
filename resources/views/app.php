@@ -37,7 +37,11 @@
             <div class="pt-10 sm:pt-2">
                 <div class="flex items-center gap-3 sm:gap-4">
                     <img src="/icon/logo-mark.svg" alt="" width="56" height="56" class="size-10 shrink-0 sm:size-14">
-                    <h1 class="text-3xl font-semibold tracking-tight sm:text-5xl">Mein Workspace</h1>
+                    <?php /* Ohne brauchbaren Vornamen (kein Name hinterlegt oder nur
+                             eine E-Mail-Adresse) bleibt es bei der neutralen Form.
+                             leading-tight, weil die Anrede die Überschrift länger
+                             macht und sie schmal nun leichter umbricht. */ ?>
+                    <h1 class="text-3xl font-semibold leading-tight tracking-tight sm:text-5xl"><?= !empty($firstName) ? e((string) $firstName) . ', dein Workspace' : 'Dein Workspace' ?></h1>
                 </div>
                 <p class="mt-2 hidden max-w-2xl text-lg sm:block" style="color: var(--color-text-muted);">Notizen, Aufgaben und Ideen an einem Ort.</p>
                 <div class="mt-5 flex flex-row flex-wrap gap-3 sm:mt-8">

@@ -716,6 +716,16 @@ button:disabled,
   color: var(--color-text);
 }
 
+/* Der Pfeil vor „ausgeblendete Notizbücher" soll zur 12px-Zeile passen.
+   Die Größe steht hier und nicht als `x-icon="chevron-right:size-3"`: Solche
+   Größenangaben erzeugt Tailwind nicht, weil sein Scanner `name:size-3` als
+   Variante liest und die unbekannte Variante verwirft - das Symbol behielte
+   dann seine Eigengröße von 24px. */
+.hidden-notebooks-toggle svg {
+  height: 12px;
+  width: 12px;
+}
+
 /* Bewertungsspalte: die Sterne sind Schriftzeichen, keine Symbole - deshalb
    über die Schriftgröße statt über eine Symbolgröße gesetzt. */
 .log-rating-star {

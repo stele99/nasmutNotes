@@ -54,6 +54,7 @@ final class NotebookController
             'color' => $notebook['color'],
             'icon' => $notebook['icon'],
             'sort_order' => (int) $notebook['sort_order'],
+            'is_hidden' => ((int) ($notebook['is_hidden'] ?? 0)) === 1,
             'page_count' => (int) $notebook['page_count'],
             'created_at' => $notebook['created_at'],
             'updated_at' => $notebook['updated_at'],

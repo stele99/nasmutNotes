@@ -199,6 +199,55 @@ final class NotebookServiceTest extends TestCase
         self::assertSame((int) $notebook['id'], (int) $this->pages->findOwned($this->userA, (int) $second['id'])['notebook_id']);
     }
 
+    public function testNotebooksCanBeHiddenAndShownAgain(): void
+    {
+        $notebook = $this->notebooks->create($this->userA, ['name' => 'Privat']);
+
+        self::assertFalse((bool) $notebook['is_hidden']);
+
+        $hidden = $this->notebooks->update($this->userA, (int) $notebook['id'], ['is_hidden' => true]);
+        self::assertTrue((bool) $hidden['is_hidden']);
+
+        $shown = $this->notebooks->update($this->userA, (int) $notebook['id'], ['is_hidden' => false]);
+        self::assertFalse((bool) $shown['is_hidden']);
+    }
+
+    /**
+     * Ausgeblendet wird allein die Zeile in der Notizbuchliste - die Seiten
+     * bleiben in der Seitenliste und im Notizbuch selbst erreichbar.
+     */
+    public function testHidingANotebookKeepsItsPagesListedAndReachable(): void
+    {
+        $notebook = $this->notebooks->create($this->userA, ['name' => 'Privat']);
+        $page = $this->pages->create($this->userA, 'note', 'Weiterhin da', null, (int) $notebook['id']);
+
+        $this->notebooks->update($this->userA, (int) $notebook['id'], ['is_hidden' => true]);
+
+        $allPages = array_map(
+            static fn (array $item): int => (int) $item['id'],
+            $this->pages->list($this->userA, 'updated', null, false),
+        );
+        self::assertContains((int) $page['id'], $allPages);
+
+        // Das Notizbuch bleibt auch als Sammlung abrufbar, es steht nur nicht
+        // mehr von selbst in der Liste.
+        $inNotebook = $this->pages->list($this->userA, 'updated', null, false, (int) $notebook['id']);
+        self::assertSame([(int) $page['id']], array_map(static fn (array $item): int => (int) $item['id'], $inNotebook));
+
+        // Die Liste selbst führt es weiter mit - die Oberfläche trennt danach.
+        $listed = $this->notebooks->list($this->userA);
+        self::assertCount(1, $listed);
+        self::assertTrue((bool) $listed[0]['is_hidden']);
+    }
+
+    public function testHiddenFlagRejectsValuesThatAreNotABoolean(): void
+    {
+        $notebook = $this->notebooks->create($this->userA, ['name' => 'Privat']);
+
+        $this->expectException(ValidationException::class);
+        $this->notebooks->update($this->userA, (int) $notebook['id'], ['is_hidden' => 'vielleicht']);
+    }
+
     private function makeUser(string $email): User
     {
         $stmt = $this->pdo->prepare(

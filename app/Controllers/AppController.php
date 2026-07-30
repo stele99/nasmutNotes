@@ -33,7 +33,11 @@ final class AppController
         $html = $this->renderer->page(
             $request,
             'app',
-            ['isAdmin' => $user->isAdmin, ...$this->voiceViewData()],
+            [
+                'isAdmin' => $user->isAdmin,
+                'firstName' => $user->firstName(),
+                ...$this->voiceViewData(),
+            ],
             'Workspace',
         );
         $response->getBody()->write($html);

@@ -20,6 +20,23 @@ final class User
     ) {
     }
 
+    /**
+     * Vorname für die persönliche Anrede. Google liefert den vollen Namen;
+     * fehlt er oder steht dort nur eine E-Mail-Adresse, gibt es keinen, mit
+     * dem sich jemand angesprochen fühlt - dann `null`.
+     */
+    public function firstName(): ?string
+    {
+        $name = trim($this->name);
+        if ($name === '' || str_contains($name, '@')) {
+            return null;
+        }
+
+        $first = explode(' ', $name)[0];
+
+        return $first !== '' ? $first : null;
+    }
+
     /** @param array<string, mixed> $row */
     public static function fromRow(array $row, bool $isAdmin): self
     {

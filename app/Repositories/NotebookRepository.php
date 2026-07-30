@@ -87,7 +87,7 @@ final class NotebookRepository
     /** @param array<string, mixed> $fields */
     public function updateFields(int $id, array $fields): void
     {
-        $allowed = ['name', 'name_key', 'sort_order', 'color', 'icon'];
+        $allowed = ['name', 'name_key', 'sort_order', 'color', 'icon', 'is_hidden'];
         $set = [];
         $params = ['id' => $id];
         foreach ($fields as $key => $value) {

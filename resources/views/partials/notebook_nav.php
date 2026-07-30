@@ -22,16 +22,28 @@
             <span>Notizbücher</span>
             <button type="button" @click="openNotebookDialog" class="icon-action -mr-1" aria-label="Notizbuch anlegen" title="Notizbuch anlegen" x-icon="plus"></button>
         </div>
-        <template x-for="notebook in notebooks" :key="notebook.id">
-            <div class="group relative flex items-center gap-1 rounded-md" :class="isActiveNotebook(notebook.id) ? 'notebook-item-active' : ''">
-                <button type="button" @click="selectCollection('notebook', notebook.id)" @dragenter.prevent="setDropTargetNotebook(notebook.id)" @dragover.prevent="setDropTargetNotebook(notebook.id)" @drop.prevent="dropPageOnNotebook(notebook.id, $event)" class="notebook-item min-w-0 flex-1" :class="{ 'is-drop-target': isNotebookDropTarget(notebook.id) }"><span class="notebook-appearance shrink-0" :style="notebookIconStyle(notebook)" x-cloak><span x-show="!notebook.icon || notebook.icon === 'book-open'" x-icon="book-open:size-5"></span><span x-show="notebook.icon === 'folder'" x-icon="folder:size-5"></span><span x-show="notebook.icon === 'briefcase'" x-icon="briefcase:size-5"></span><span x-show="notebook.icon === 'house'" x-icon="house:size-5"></span><span x-show="notebook.icon === 'plane'" x-icon="plane:size-5"></span><span x-show="notebook.icon === 'heart'" x-icon="heart:size-5"></span><span x-show="notebook.icon === 'lightbulb'" x-icon="lightbulb:size-5"></span><span x-show="notebook.icon === 'laptop'" x-icon="laptop:size-5"></span><span x-show="notebook.icon === 'wrench'" x-icon="wrench:size-5"></span><span x-show="notebook.icon === 'utensils'" x-icon="utensils:size-5"></span><span x-show="notebook.icon === 'graduation-cap'" x-icon="graduation-cap:size-5"></span><span x-show="notebook.icon === 'star'" x-icon="star:size-5"></span></span><span class="truncate" x-text="notebook.name"></span><span x-show="isNotebookDropTarget(notebook.id)" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span><span x-show="!isNotebookDropTarget(notebook.id)" class="ml-auto text-xs" style="color: var(--color-text-muted);" x-text="notebook.page_count"></span></button>
-                <button type="button" @click.stop="openNotebookMenu(notebook.id)" class="icon-action shrink-0" :aria-expanded="isNotebookMenuOpen(notebook.id)" aria-label="Notizbuchmenü öffnen" x-icon="more-horizontal"></button>
-                <div x-show="isNotebookMenuOpen(notebook.id)" x-cloak @click.outside="closeNotebookMenu" @keydown.escape.window="closeNotebookMenu" class="absolute right-1 top-full z-30 mt-1 min-w-36 rounded-md border p-1" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
-                    <button type="button" @click="openRenameNotebookDialog(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="pencil"></span>Umbenennen</button>
-                    <button type="button" @click="deleteNotebook(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-danger);"><span x-icon="trash"></span>Löschen</button>
-                </div>
-            </div>
+        <template x-for="notebook in visibleNotebooks()" :key="notebook.id">
+            <?php include __DIR__ . '/notebook_item.php'; ?>
         </template>
+
+        <?php /* Ausgeblendete Notizbücher stehen abgetrennt darunter und klappen
+                 erst auf Klick auf - sie sollen die Liste nicht wieder füllen. */ ?>
+        <div x-show="hasHiddenNotebooks()" x-cloak class="mt-4 border-t pt-2" style="border-color: var(--color-border);">
+            <?php /* Die Größe steht als Inline-Stil, damit sie nicht an einer erst
+                     zu erzeugenden Tailwind-Klasse hängt. */ ?>
+            <button type="button" @click="toggleHiddenNotebooks" class="hidden-notebooks-toggle flex w-full items-center gap-1 rounded-md px-2 py-0.5 leading-none hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-text-muted); font-size: 12px;" :aria-expanded="hiddenNotebooksOpen">
+                <span x-show="!hiddenNotebooksOpen" class="flex" x-icon="chevron-right"></span>
+                <span x-show="hiddenNotebooksOpen" x-cloak class="flex" x-icon="chevron-down"></span>
+                <span x-text="hiddenNotebooksLabel()"></span>
+            </button>
+            <?php /* Gedämpft, damit die eingeblendeten Notizbücher weiter die
+                     Liste tragen und diese hier als Nebengleis lesbar bleiben. */ ?>
+            <div x-show="hiddenNotebooksOpen" x-cloak class="mt-1 space-y-1 opacity-60 transition-opacity hover:opacity-100">
+                <template x-for="notebook in hiddenNotebooks()" :key="notebook.id">
+                    <?php include __DIR__ . '/notebook_item.php'; ?>
+                </template>
+            </div>
+        </div>
     </nav>
     <div class="p-3">
         <button type="button" @click="selectCollection('trash')" @dragenter.prevent="setTrashDropTarget" @dragover.prevent="setTrashDropTarget" @drop.prevent="dropPagesOnTrash($event)" class="notebook-item" :class="{ 'is-active': activeCollection === 'trash', 'is-drop-target': isTrashDropTarget() }" :aria-current="activeCollection === 'trash' ? 'page' : null"><span x-icon="trash"></span><span>Papierkorb</span><span x-show="isTrashDropTarget()" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span></button>

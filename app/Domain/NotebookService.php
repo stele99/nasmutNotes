@@ -88,6 +88,11 @@ final class NotebookService
         if (array_key_exists('icon', $input)) {
             $fields['icon'] = $this->validatedIcon($input['icon']);
         }
+        // Ausblenden betrifft allein die Notizbuchliste - die Seiten des
+        // Notizbuchs bleiben auffindbar und unter „Alle Notizen" sichtbar.
+        if (array_key_exists('is_hidden', $input)) {
+            $fields['is_hidden'] = $this->toFlag($input['is_hidden']);
+        }
         $this->notebooks->updateFields((int) $notebook['id'], $fields);
 
         return $this->requireOwned($notebookId, $workspaceId);
@@ -149,6 +154,15 @@ final class NotebookService
         if ($this->notebooks->findByNameKey($workspaceId, $nameKey) !== null) {
             throw new ValidationException('Ein Notizbuch mit diesem Namen existiert bereits.');
         }
+    }
+
+    private function toFlag(mixed $value): int
+    {
+        if (!is_bool($value) && !in_array($value, [0, 1, '0', '1'], true)) {
+            throw new ValidationException('Ungültiger Wert für „ausgeblendet".');
+        }
+
+        return (int) (bool) $value;
     }
 
     private function validatedColor(mixed $value): string

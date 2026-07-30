@@ -109,6 +109,7 @@ export function workspaceShell() {
     mobileView: 'content',
     mobileSwipe: null,
     notebooks: [],
+    hiddenNotebooksOpen: false,
     activeCollection: 'home',
     activeNotebookId: null,
     dropTargetNotebookId: null,
@@ -291,6 +292,59 @@ export function workspaceShell() {
       } catch (error) {
         console.warn('Notizbuecher konnten nicht geladen werden.', error);
         this.notebooks = await getCachedNotebooks();
+      }
+    },
+
+    // ------------------------------------------- Ausgeblendete Notizbücher
+
+    /**
+     * Ausgeblendet wird nur die Zeile in der Liste. Die Seiten des Notizbuchs
+     * bleiben auffindbar und stehen weiter unter „Alle Notizen" - deshalb
+     * filtert das hier und nirgends in den Seitenabfragen.
+     */
+    visibleNotebooks() {
+      return this.notebooks.filter((notebook) => !notebook.is_hidden);
+    },
+
+    hiddenNotebooks() {
+      return this.notebooks.filter((notebook) => notebook.is_hidden);
+    },
+
+    hasHiddenNotebooks() {
+      return this.hiddenNotebooks().length > 0;
+    },
+
+    toggleHiddenNotebooks() {
+      this.hiddenNotebooksOpen = !this.hiddenNotebooksOpen;
+    },
+
+    hiddenNotebooksLabel() {
+      const total = this.hiddenNotebooks().length;
+
+      return total === 1 ? '1 ausgeblendetes Notizbuch' : `${total} ausgeblendete Notizbücher`;
+    },
+
+    /**
+     * Ein ausgeblendetes Notizbuch, das gerade geöffnet ist, bliebe sonst als
+     * Sammlung stehen, ohne dass die Liste es noch zeigt - deshalb zurück auf
+     * die Übersicht.
+     */
+    async setNotebookHidden(notebook, hidden) {
+      if (!navigator.onLine) {
+        window.alert('Notizbücher können nur online aus- und eingeblendet werden.');
+        return;
+      }
+      this.closeNotebookMenu();
+      await apiFetch(`/api/notebooks/${notebook.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_hidden: hidden }),
+      });
+      await this.refreshNotebooks();
+      if (hidden) {
+        this.hiddenNotebooksOpen = false;
+        if (this.isActiveNotebook(notebook.id)) {
+          this.navigateHome();
+        }
       }
     },
 
