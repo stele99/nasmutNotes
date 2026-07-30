@@ -1,4 +1,4 @@
-<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>">
+<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>" data-page-encrypted="<?= !empty($page['is_encrypted']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>">
     <div class="note-sticky-header page-toolbar flex items-center gap-2">
         <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
@@ -26,15 +26,28 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
-            <button type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
+            <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
                 <span x-icon="history"></span><span class="hidden lg:inline">Verlauf</span>
             </button>
-            <button x-show="!isShared && canEditPage" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
+            <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
                 <span x-icon="image"></span><span class="hidden lg:inline">Komprimieren</span>
             </button>
             <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
                 <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>
+            <div x-show="!isShared && canEditPage" class="relative" @click.outside="encryptionMenuOpen = false">
+                <button type="button" @click="handleEncryptionButton" :disabled="!isEncrypted() && attachments.length > 0" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" :class="isEncrypted() ? 'note-encryption-active' : ''" style="border-color: var(--color-border);" :title="encryptionButtonLabel()" :aria-label="encryptionButtonLabel()" :aria-expanded="encryptionMenuOpen">
+                    <span x-show="!isEncrypted()" x-icon="lock-open"></span>
+                    <span x-show="isEncrypted()" x-cloak x-icon="lock"></span>
+                    <span class="hidden lg:inline" x-text="isEncrypted() ? (isCryptoUnlocked() ? 'Entsperrt' : 'Gesperrt') : 'Verschlüsseln'"></span>
+                </button>
+                <div x-show="encryptionMenuOpen" x-cloak class="note-encryption-menu" @keydown.escape.window="encryptionMenuOpen = false">
+                    <p class="px-3 py-2 text-xs font-medium" style="color: var(--color-text-muted);" x-text="encryptionButtonLabel()"></p>
+                    <button type="button" @click="lockEncryptedNote" class="note-encryption-menu-button"><span x-icon="lock"></span>Sperren</button>
+                    <button type="button" @click="openCryptoDialog('rewrap')" class="note-encryption-menu-button"><span x-icon="key-round"></span>Kennwort ändern</button>
+                    <button type="button" @click="openCryptoDialog('decrypt')" class="note-encryption-menu-button note-encryption-menu-danger"><span x-icon="lock-open"></span>Verschlüsselung aufheben</button>
+                </div>
+            </div>
         </div>
     </div>
     <div class="pt-4 md:pt-10">
@@ -56,7 +69,7 @@
                  Klick öffnet bzw. lädt herunter, das × entfernt den Anhang. Anhänge
                  über dem Offline-Limit sind ohne Netz als „nur online" markiert
                  (FR-OFFLINE-06). */ ?>
-        <div x-show="attachments.length > 0 || uploadingAttachment" x-cloak class="mb-6 flex flex-wrap items-center gap-2">
+        <div x-show="!isEncrypted() && (attachments.length > 0 || uploadingAttachment)" x-cloak class="mb-6 flex flex-wrap items-center gap-2">
             <template x-for="attachment in attachments" :key="attachment.id">
                 <span class="attachment-badge" :class="{ 'attachment-badge-offline': needsConnection(attachment) }">
                     <button type="button" class="attachment-badge-open" @click="openAttachment(attachment)" :title="attachmentLabel(attachment)">
@@ -88,7 +101,7 @@
             <span>Diese Seite wurde zwischenzeitlich anderswo geändert.</span>
             <div class="flex flex-wrap gap-3">
                 <button @click="useServerVersion()" :disabled="pendingSave" class="underline text-sm font-medium">Serverfassung übernehmen</button>
-                <button @click="keepMyVersion()" :disabled="pendingSave" class="underline text-sm font-medium">Meine Fassung behalten</button>
+                <button x-show="canKeepConflict()" @click="keepMyVersion()" :disabled="pendingSave" class="underline text-sm font-medium">Meine Fassung behalten</button>
             </div>
         </div>
 
@@ -100,7 +113,7 @@
             <span x-text="saveError"></span>
         </div>
 
-        <div x-show="canEditPage" class="note-sticky-toolbar editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
+        <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" aria-label="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" aria-label="Kursiv" x-icon="italic"></button>
             <button type="button" data-editor-command="strike" @click.prevent="toggleStrike" class="toolbar-button toolbar-text" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
@@ -116,19 +129,19 @@
             <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button" title="Tabelle einfügen" aria-label="Tabelle einfügen" x-icon="table"></button>
             <?php /* Auf dem Handy gibt es weder Drag & Drop noch bequemes Einfügen aus der
                      Zwischenablage - Bilder kommen dort über Dateiauswahl und Kamera. */ ?>
-            <button type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
-            <button type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
-            <button type="button" @click.prevent="pickAttachment" class="toolbar-button" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
             <?php /* Diktat: Der aufbereitete Text wird an der Einfügemarke eingesetzt
                      (FR-VOICE-02). Derselbe Knopf beendet die Aufnahme wieder. */ ?>
             <?php if (!empty($voiceEnabled)): ?>
-                <button type="button" x-show="voiceSupported && canEditPage" x-cloak @click.prevent="toggleVoice" :disabled="voiceStatus === 'processing'" class="toolbar-button" :class="voiceStatus === 'recording' ? 'is-recording' : ''" :title="voiceStatus === 'recording' ? 'Aufnahme beenden' : 'Diktat einfügen'" aria-label="Diktat einfügen">
+                <button type="button" x-show="voiceSupported && canEditPage && !isEncrypted()" x-cloak @click.prevent="toggleVoice" :disabled="voiceStatus === 'processing'" class="toolbar-button" :class="voiceStatus === 'recording' ? 'is-recording' : ''" :title="voiceStatus === 'recording' ? 'Aufnahme beenden' : 'Diktat einfügen'" aria-label="Diktat einfügen">
                     <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
                     <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
                 </button>
             <?php endif; ?>
             <?php if (!empty($aiEnabled)): ?>
-                <button type="button" @click.prevent="openAiRewriteDialog" :disabled="aiBusy || !isOnline" class="toolbar-button" title="Text mit KI korrigieren und strukturieren" aria-label="Text mit KI korrigieren und strukturieren" x-icon="wand-sparkles"></button>
+                <button x-show="!isEncrypted()" type="button" @click.prevent="openAiRewriteDialog" :disabled="aiBusy || !isOnline" class="toolbar-button" title="Text mit KI korrigieren und strukturieren" aria-label="Text mit KI korrigieren und strukturieren" x-icon="wand-sparkles"></button>
             <?php endif; ?>
             <input x-ref="imageInput" type="file" accept="image/*" class="hidden" @change="insertPickedImage">
             <input x-ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="insertPickedImage">
@@ -145,9 +158,16 @@
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>
-            <div class="mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+            <div x-show="!isEncrypted()" class="mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
         <?php endif; ?>
-        <div class="prose-editor" x-ref="editor"></div>
+        <section x-show="isEncrypted() && !isCryptoUnlocked()" x-cloak class="note-lock-screen" aria-labelledby="note-lock-title">
+            <span class="note-lock-icon" x-icon="lock:size-8"></span>
+            <h2 id="note-lock-title" class="mt-4 text-xl font-semibold">Verschlüsselte Notiz</h2>
+            <p x-show="cryptoStatus === 'locked'" class="mt-2 max-w-md text-sm" style="color: var(--color-text-muted);">Der Inhalt liegt auf diesem Gerät nur als Ciphertext vor. Gib das Notizkennwort ein, um ihn lokal im Browser zu entschlüsseln.</p>
+            <p x-show="cryptoStatus === 'error'" x-text="cryptoError" class="mt-2 max-w-md text-sm" style="color: var(--color-danger);" role="alert"></p>
+            <button x-show="cryptoStatus === 'locked'" type="button" @click="openCryptoDialog('unlock')" class="btn btn-primary mt-5"><span x-icon="lock-open"></span>Entsperren</button>
+        </section>
+        <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
         <div x-show="linkMenuOpen" x-cloak @click.outside="closeLinkMenu" @keydown.escape.window="closeLinkMenu" class="link-action-menu" :style="linkMenuStyle">
             <button type="button" @click="openActiveLink" class="link-action-button">Öffnen</button>
             <button x-show="canEditPage" type="button" @click="editActiveLink" class="link-action-button">Bearbeiten</button>
@@ -156,6 +176,64 @@
     </div>
 
     <?php include __DIR__ . '/partials/page_location_dialog.php'; ?>
+
+    <div x-show="cryptoDialogOpen" x-cloak class="fixed inset-0 z-[130] flex items-center justify-center p-4" style="background-color: rgb(0 0 0 / 0.5);" @click.self="closeCryptoDialog" @keydown.escape.window="closeCryptoDialog" @keydown.tab="trapCryptoDialogFocus" role="dialog" aria-modal="true" aria-labelledby="note-crypto-dialog-title">
+        <form x-ref="cryptoDialog" @submit.prevent="submitCryptoDialog" class="w-full max-w-lg rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 id="note-crypto-dialog-title" class="text-xl font-semibold" x-text="encryptionDialogTitle()"></h2>
+                    <p x-show="cryptoDialogMode === 'unlock'" class="mt-1 text-sm" style="color: var(--color-text-muted);">Entschlüsselung und Schlüsselableitung erfolgen ausschließlich in diesem Browser.</p>
+                    <p x-show="cryptoDialogMode === 'encrypt'" class="mt-1 text-sm" style="color: var(--color-text-muted);">Der Server erhält danach nur noch den verschlüsselten Krypto-Umschlag.</p>
+                    <p x-show="cryptoDialogMode === 'rewrap'" class="mt-1 text-sm" style="color: var(--color-text-muted);">Nur die Kennworthülle wird ersetzt. Der verschlüsselte Inhalt bleibt unverändert.</p>
+                    <p x-show="cryptoDialogMode === 'decrypt'" class="mt-1 text-sm" style="color: var(--color-text-muted);">Der Inhalt wird wieder als lesbarer Klartext auf dem Server gespeichert.</p>
+                </div>
+                <button type="button" @click="closeCryptoDialog" :disabled="cryptoBusy" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+            </div>
+
+            <div x-show="cryptoDialogMode === 'unlock'" class="mt-5">
+                <label for="note-crypto-password" class="block text-sm font-medium">Notizkennwort</label>
+                <input id="note-crypto-password" x-model="cryptoPassword" type="password" autocomplete="current-password" maxlength="1024" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+            </div>
+
+            <div x-show="cryptoDialogMode === 'rewrap'" class="mt-5">
+                <label for="note-crypto-current-password" class="block text-sm font-medium">Bisheriges Kennwort</label>
+                <input id="note-crypto-current-password" x-model="cryptoPasswordCurrent" type="password" autocomplete="current-password" maxlength="1024" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+            </div>
+
+            <div x-show="cryptoDialogMode === 'encrypt' || cryptoDialogMode === 'rewrap'" class="mt-5 space-y-4">
+                <div>
+                    <label for="note-crypto-new-password" class="block text-sm font-medium" x-text="cryptoDialogMode === 'encrypt' ? 'Kennwort' : 'Neues Kennwort'"></label>
+                    <input id="note-crypto-new-password" x-model="cryptoPassword" type="password" autocomplete="new-password" maxlength="1024" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);" aria-describedby="note-crypto-password-hint">
+                </div>
+                <div>
+                    <label for="note-crypto-confirm-password" class="block text-sm font-medium">Kennwort wiederholen</label>
+                    <input id="note-crypto-confirm-password" x-model="cryptoPasswordConfirm" type="password" autocomplete="new-password" maxlength="1024" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+                </div>
+                <p id="note-crypto-password-hint" x-show="cryptoPasswordHint()" x-text="cryptoPasswordHint()" class="text-xs" style="color: var(--color-text-muted);"></p>
+                <p class="rounded-lg p-3 text-sm" style="background: var(--color-bg-subtle);">Verwende mindestens 12 Zeichen, besser eine lange einzigartige Passphrase. Leerzeichen am Anfang und Ende gehören zum Kennwort.</p>
+            </div>
+
+            <div x-show="cryptoDialogMode === 'encrypt'" class="mt-5 rounded-lg p-4 text-sm" style="background: color-mix(in srgb, var(--color-accent) 9%, transparent);">
+                <p><strong>Keine Wiederherstellung:</strong> Ein verlorenes Kennwort kann weder durch den Server noch durch Administratoren ersetzt werden.</p>
+                <p class="mt-2">Die Verschlüsselung schützt nicht vor Schadcode im ausgelieferten JavaScript, kompromittierten Geräten oder alten Klartextkopien in Backups und Browser-Snapshots. Titel, Standort, Zeitpunkte und Größe bleiben sichtbar.</p>
+            </div>
+            <div x-show="cryptoDialogMode === 'decrypt'" class="mt-5 rounded-lg p-4 text-sm" style="background: color-mix(in srgb, var(--color-danger) 9%, transparent);">
+                Suche, Export, Versionsverlauf, KI und künftige Backups können den Inhalt danach wieder als Klartext verarbeiten.
+            </div>
+
+            <label x-show="cryptoDialogMode === 'encrypt' || cryptoDialogMode === 'decrypt'" class="mt-5 flex items-start gap-3 text-sm">
+                <input x-model="cryptoAcknowledged" type="checkbox" class="mt-1">
+                <span x-show="cryptoDialogMode === 'encrypt'">Ich verstehe, dass der Inhalt bei Kennwortverlust endgültig unzugänglich ist.</span>
+                <span x-show="cryptoDialogMode === 'decrypt'">Ich bestätige, dass der Server den Notizinhalt künftig wieder lesen kann.</span>
+            </label>
+
+            <p x-show="cryptoDialogError" x-text="cryptoDialogError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+            <div class="mt-6 flex justify-end gap-2">
+                <button type="button" @click="closeCryptoDialog" :disabled="cryptoBusy" class="btn btn-quiet">Abbrechen</button>
+                <button type="submit" :disabled="cryptoBusy" class="btn btn-primary" x-text="cryptoActionLabel()"></button>
+            </div>
+        </form>
+    </div>
 
     <?php if (!empty($aiEnabled)): ?>
         <div x-show="aiOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeAiRewriteDialog" @keydown.escape.window="closeAiRewriteDialog" role="dialog" aria-modal="true" aria-labelledby="ai-rewrite-title">

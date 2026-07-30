@@ -6,6 +6,7 @@ namespace Tests\Integration\Domain\Voice;
 
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\NotebookService;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageService;
@@ -109,6 +110,20 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertSame(2, $content['version']);
         self::assertStringContainsString('Hochbeet aufbauen', json_encode($content['content'], JSON_THROW_ON_ERROR));
         self::assertSame('bulletList', $content['content']['content'][1]['type']);
+    }
+
+    public function testDictationRejectsEncryptedTargetBeforeProviderCall(): void
+    {
+        $page = $this->pages->create($this->user, 'note', 'Geheim', null);
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => (int) $page['id']]);
+
+        try {
+            $this->service()->transcribeForPage($this->user, (int) $page['id'], $this->makeUpload());
+            self::fail('Diktat für verschlüsselte Notiz wurde gestartet.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
+        }
     }
 
     public function testVoiceNoteKeepsTheOptionalRecordingLocation(): void

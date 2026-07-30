@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Domain\Notes\NoteEncryptionException;
 use PDO;
 
 final class PageAttachmentRepository
@@ -25,7 +26,9 @@ final class PageAttachmentRepository
         $stmt = $this->pdo->prepare(
             'INSERT INTO page_attachments
                 (page_id, token_hash, storage_name, original_name, mime_type, byte_size, created_by, created_at)
-             VALUES (:page_id, :token_hash, :storage_name, :original_name, :mime_type, :byte_size, :created_by, :now)'
+             SELECT :page_id, :token_hash, :storage_name, :original_name, :mime_type, :byte_size, :created_by, :now
+               FROM pages
+              WHERE id = :page_id_guard AND is_encrypted = 0'
         );
         $stmt->execute([
             'page_id' => $pageId,
@@ -36,7 +39,16 @@ final class PageAttachmentRepository
             'byte_size' => $byteSize,
             'created_by' => $createdBy,
             'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'page_id_guard' => $pageId,
         ]);
+
+        if ($stmt->rowCount() !== 1) {
+            throw new NoteEncryptionException(
+                'ENCRYPTION_STATE_CONFLICT',
+                'Verschlüsselte Notizen können keine Dateianhänge enthalten.',
+                409,
+            );
+        }
 
         $id = (int) $this->pdo->lastInsertId();
         $row = $this->findById($id);

@@ -183,7 +183,24 @@ async function normalizeLegacyNoteQueue() {
 
   for (const [pageId, entries] of byPage) {
     if (entries.length > 1) {
-      await db.upsertNoteOutbox(pageId, entries[entries.length - 1].payload);
+      const signatures = new Set(entries.map((entry) => {
+        const payload = entry.payload || {};
+        return `${payload.operation || 'save'}:${payload.expected_encryption_state || 'plain'}`;
+      }));
+      if (signatures.size === 1) {
+        await db.upsertNoteOutbox(pageId, {
+          ...entries[entries.length - 1].payload,
+          operation: entries[entries.length - 1].payload?.operation || 'save',
+          expected_encryption_state: entries[entries.length - 1].payload?.expected_encryption_state || 'plain',
+        });
+      } else {
+        for (const entry of entries) {
+          await db.patchOutbox(Number(entry.id), {
+            status: 'blocked',
+            last_error: 'Lokale Änderungen überschreiten eine Verschlüsselungszustandsgrenze.',
+          });
+        }
+      }
     }
   }
 }
@@ -367,12 +384,21 @@ export async function getCachedNotebooks() {
 
 /** @param {number} pageId @param {Record<string, unknown>} payload */
 export async function cacheNoteContent(pageId, payload) {
+  const encryptionState = payload.encryption_state
+    || (payload.content?.zk === 1 ? 'encrypted' : 'plain');
+  if (encryptionState === 'encrypted' && payload.content?.zk !== 1) {
+    throw new Error('Verschlüsselter Offline-Inhalt enthält keinen Krypto-Umschlag.');
+  }
+  if (encryptionState === 'plain' && payload.content?.zk === 1) {
+    throw new Error('Ein Krypto-Umschlag darf nicht als Klartext gecacht werden.');
+  }
   const row = {
     page_id: Number(pageId),
     content: payload.content,
     version: Number(payload.version || 1),
     updated_at: payload.updated_at || null,
     last_editor_name: payload.last_editor_name || null,
+    encryption_state: encryptionState,
     dirty: Boolean(payload.dirty),
     cached_at: new Date().toISOString(),
   };
@@ -383,7 +409,7 @@ export async function cacheNoteContent(pageId, payload) {
   } else {
     stored = await db.putNoteContentIfClean(Number(pageId), row);
   }
-  if (stored) {
+  if (stored && encryptionState === 'plain') {
     await cacheAttachmentsFromContent(payload.content);
   }
   return stored;
@@ -418,9 +444,16 @@ export async function readCachedDocument(url) {
  * @param {number} pageId
  * @param {Record<string, unknown>} content
  * @param {number} version
- * @param {{ forceSnapshot?: boolean }} [options]
+ * @param {{ forceSnapshot?: boolean, expectedEncryptionState?: 'plain'|'encrypted' }} [options]
  */
 export async function saveNoteOffline(pageId, content, version, options = {}) {
+  const expectedState = options.expectedEncryptionState || 'plain';
+  if (expectedState === 'encrypted' && content?.zk !== 1) {
+    throw new Error('Verschlüsselte Notizen dürfen nur als Krypto-Umschlag lokal gespeichert werden.');
+  }
+  if (expectedState === 'plain' && content?.zk === 1) {
+    throw new Error('Der Verschlüsselungszustand des lokalen Inhalts ist ungültig.');
+  }
   const queued = await db.saveNoteAndUpsertOutbox(Number(pageId), {
     page_id: Number(pageId),
     content,
@@ -428,13 +461,18 @@ export async function saveNoteOffline(pageId, content, version, options = {}) {
     dirty: true,
     updated_at: new Date().toISOString(),
     last_editor_name: null,
+    encryption_state: expectedState,
     cached_at: new Date().toISOString(),
   }, {
+    operation: 'save',
+    expected_encryption_state: expectedState,
     content,
     version,
     force_snapshot: Boolean(options.forceSnapshot),
   });
-  await cacheAttachmentsFromContent(content);
+  if (expectedState === 'plain') {
+    await cacheAttachmentsFromContent(content);
+  }
   await refreshQueueState();
   syncChannel?.postMessage({ type: 'queue-changed' });
   return queued;
@@ -511,11 +549,14 @@ async function runSyncOutbox() {
             body: JSON.stringify({
               content,
               version: item.payload.version,
+              expected_encryption_state: item.payload.expected_encryption_state || 'plain',
               force_snapshot: item.payload.force_snapshot || false,
             }),
           });
           const completion = await db.completeNoteSync(Number(item.id), sentRevision, result);
-          await cacheAttachmentsFromContent(result.content);
+          if ((result.encryption_state || item.payload.expected_encryption_state || 'plain') === 'plain') {
+            await cacheAttachmentsFromContent(result.content);
+          }
           if (completion.newerRevision) {
             needsAnotherSync = true;
           }
@@ -618,6 +659,9 @@ export async function listSyncConflicts() {
       local_content: item.payload?.content || null,
       server_content: item.conflict?.content || null,
       server_version: Number(item.conflict?.version || 0),
+      expected_encryption_state: item.payload?.expected_encryption_state || 'plain',
+      server_encryption_state: item.conflict?.encryption_state
+        || (item.conflict?.content?.zk === 1 ? 'encrypted' : 'plain'),
       created_at: item.created_at,
       // Zeitpunkt der letzten lokalen Bearbeitung; ältere Einträge kennen nur created_at.
       local_updated_at: item.updated_at || item.created_at || null,
@@ -640,6 +684,12 @@ async function resolveConflictKeepLocalLocked(outboxId) {
   if (!online) {
     throw new Error('Die Konfliktauflösung benötigt eine Verbindung.');
   }
+  const expectedState = item.payload.expected_encryption_state || 'plain';
+  const serverState = item.conflict.encryption_state
+    || (item.conflict.content?.zk === 1 ? 'encrypted' : 'plain');
+  if (expectedState !== serverState) {
+    throw new Error('Meine Fassung kann nicht über eine Verschlüsselungszustandsgrenze übernommen werden.');
+  }
 
   const sentRevision = Number(item.revision || 0);
   const sourceContent = item.payload.content;
@@ -651,6 +701,7 @@ async function resolveConflictKeepLocalLocked(outboxId) {
       body: JSON.stringify({
         content,
         version: Number(item.conflict.version),
+        expected_encryption_state: item.payload.expected_encryption_state || 'plain',
         force_snapshot: true,
       }),
     });
@@ -665,7 +716,9 @@ async function resolveConflictKeepLocalLocked(outboxId) {
     throw error;
   }
   const completion = await db.completeNoteSync(Number(item.id), sentRevision, result);
-  await cacheAttachmentsFromContent(result.content);
+  if ((result.encryption_state || item.payload.expected_encryption_state || 'plain') === 'plain') {
+    await cacheAttachmentsFromContent(result.content);
+  }
   dispatchNoteSync(
     completion.completed ? 'resolved-local' : 'synced',
     Number(item.page_id),
@@ -695,6 +748,7 @@ async function resolveConflictUseServerLocked(outboxId) {
   const result = {
     content: item.conflict.content,
     version: Number(item.conflict.version),
+    encryption_state: item.conflict.encryption_state || item.payload.expected_encryption_state || 'plain',
     updated_at: item.conflict.updated_at || null,
     last_editor_name: item.conflict.last_editor_name || null,
   };
@@ -769,6 +823,27 @@ export async function discardBlockedEntry(outboxId) {
   await refreshQueueState();
 }
 
+/** Replace caches and purge queued/conflicting copies after a direct transition. */
+export async function replaceNoteEncryptionState(pageId, result, encrypted) {
+  try {
+    localStorage.removeItem(`notes-note-cache-${Number(pageId)}`);
+  } catch {
+    /* storage may be disabled */
+  }
+  await db.replaceNoteEncryptionState(Number(pageId), result, encrypted);
+  if (encrypted && typeof caches !== 'undefined') {
+    const pageUrl = `/app/page/${Number(pageId)}`;
+    for (const cacheName of await caches.keys()) {
+      if (cacheName.startsWith(CACHE_PREFIX)) {
+        const cache = await caches.open(cacheName);
+        await cache.delete(pageUrl, { ignoreVary: true });
+      }
+    }
+  }
+  await refreshQueueState();
+  syncChannel?.postMessage({ type: 'queue-changed' });
+}
+
 export function cancelPrefetch() {
   prefetchAbort?.abort();
 }
@@ -802,6 +877,7 @@ function needsPrefetch(page, known, cached, staleDocuments) {
   const previous = known.get(pageId);
   if (!previous
     || String(previous.updated_at || '') !== String(page.updated_at || '')
+    || Boolean(previous.is_encrypted) !== Boolean(page.is_encrypted)
     || Number(previous.attachment_count || 0) !== Number(page.attachment_count || 0)) {
     return true;
   }
@@ -881,9 +957,12 @@ export async function prefetchSelected(options = {}) {
               version: Number(content.version || 1),
               updated_at: content.updated_at || null,
               last_editor_name: content.last_editor_name || null,
+              encryption_state: content.encryption_state || (content.content?.zk === 1 ? 'encrypted' : 'plain'),
             });
             if (stored) {
-              await cacheAttachmentsFromContent(content.content);
+              if ((content.encryption_state || (content.content?.zk === 1 ? 'encrypted' : 'plain')) === 'plain') {
+                await cacheAttachmentsFromContent(content.content);
+              }
             }
           } else if (page.type === 'task') {
             const board = await apiFetch(`/api/pages/${page.id}/board`);
@@ -892,7 +971,7 @@ export async function prefetchSelected(options = {}) {
         }
         // Dateianhänge hängen an der Seite, nicht am Dokument: Sie werden auch
         // für lokal geänderte Notizen aufgefrischt.
-        if (page.type === 'note') {
+        if (page.type === 'note' && !page.is_encrypted) {
           await prefetchPageAttachments(page);
         }
         const htmlResponse = await fetch(`/app/page/${page.id}`, {

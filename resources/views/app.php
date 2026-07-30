@@ -118,7 +118,8 @@
                 <div x-show="(searchQuery.trim() !== '' || workspaceTab !== 'location') && !searchLoading" class="divide-y divide-[color:var(--color-border)]">
                     <template x-for="page in (searchQuery.trim() !== '' ? searchResults : workspacePages())" :key="page.id">
                         <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
-                            <span x-show="page.type === 'note'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
+                            <span x-show="page.type === 'note' && !page.is_encrypted" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
+                            <span x-show="page.type === 'note' && page.is_encrypted" class="pt-0.5" style="color: var(--color-accent);" title="Verschlüsselte Notiz" x-icon="lock"></span>
                             <span x-show="page.type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
                             <span x-show="page.type === 'log'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
                             <span x-show="page.is_shared" class="pt-0.5" style="color: var(--color-accent);" title="Geteilte Seite" x-icon="share-2"></span>

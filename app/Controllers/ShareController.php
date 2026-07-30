@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\ShareService;
 use App\Support\CurrentUser;
 use App\Support\Env;
@@ -76,11 +77,15 @@ final class ShareController
     public function store(Request $request, Response $response, array $args): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $share = $this->shares->create(
-            CurrentUser::require($request),
-            (int) $args['id'],
-            (string) ($body['permission'] ?? ''),
-        );
+        try {
+            $share = $this->shares->create(
+                CurrentUser::require($request),
+                (int) $args['id'],
+                (string) ($body['permission'] ?? ''),
+            );
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
+        }
 
         return JsonResponse::json($response, [
             'id' => $share['id'],

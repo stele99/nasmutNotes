@@ -116,6 +116,13 @@ final class NoteRewriteService
      */
     public function rewrite(User $user, int $pageId, array $content, string $mode): array
     {
+        $page = $this->pages->find($user, $pageId);
+        if (($page['type'] ?? null) !== 'note') {
+            throw new ValidationException('Nur Notizen können überarbeitet werden.');
+        }
+        $this->pages->assertNotEncrypted($page);
+        $this->pages->assertCanWrite($user, (int) $page['id']);
+
         if (!$this->isUsable()) {
             throw new ValidationException('Die KI-Textüberarbeitung ist nicht verfügbar.');
         }
@@ -123,11 +130,6 @@ final class NoteRewriteService
             throw new ValidationException('Ungültiger KI-Stil.');
         }
 
-        $page = $this->pages->find($user, $pageId);
-        if (($page['type'] ?? null) !== 'note') {
-            throw new ValidationException('Nur Notizen können überarbeitet werden.');
-        }
-        $this->pages->assertCanWrite($user, (int) $page['id']);
         $this->validator->validate($content);
 
         $text = $this->validator->extractText($content);

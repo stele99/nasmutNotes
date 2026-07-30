@@ -16,8 +16,9 @@ final class NoteContentRepository
     public function find(int $pageId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT note_contents.*, users.name AS last_editor_name
+            'SELECT note_contents.*, pages.is_encrypted, users.name AS last_editor_name
              FROM note_contents
+             JOIN pages ON pages.id = note_contents.page_id
              LEFT JOIN users ON users.id = note_contents.updated_by
              WHERE note_contents.page_id = :page_id'
         );
@@ -72,4 +73,5 @@ final class NoteContentRepository
             'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
         ]);
     }
+
 }

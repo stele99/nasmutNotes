@@ -91,6 +91,7 @@ final class PageAttachmentService
         if ($page['type'] !== 'note') {
             throw new NotFoundException('Diese Seite ist keine Notizseite.');
         }
+        $this->pages->assertNotEncrypted($page);
         $this->pages->assertCanWrite($user, $pageId);
 
         if ($file->getError() !== UPLOAD_ERR_OK) {

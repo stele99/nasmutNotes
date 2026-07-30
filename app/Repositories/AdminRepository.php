@@ -137,7 +137,8 @@ final class AdminRepository
                     note_attachments.storage_name,
                     note_attachments.byte_size,
                     note_attachments.created_at,
-                    pages.title AS page_title
+                    pages.title AS page_title,
+                    pages.is_encrypted
                FROM note_attachments
                LEFT JOIN pages ON pages.id = note_attachments.page_id
               ORDER BY note_attachments.id ASC'

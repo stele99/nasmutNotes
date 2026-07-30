@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\NotebookService;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\PageCopyService;
 use App\Domain\PublicShareService;
 use App\Domain\ShareService;
@@ -68,7 +69,11 @@ final class PublicShareController
             return JsonResponse::error($response, 'RATE_LIMITED', 'Zu viele Kopien. Bitte später erneut versuchen.', 429);
         }
 
-        $copy = $this->copies->copyFromShare($user, $share, $notebookId);
+        try {
+            $copy = $this->copies->copyFromShare($user, $share, $notebookId);
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
+        }
         $this->auditLog->log($user->id, 'shared_page_copied', 'page', (int) $copy['id'], RequestIp::hash($request), [
             'source_page_id' => (int) $share['page_id'],
         ]);

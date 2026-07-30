@@ -1,4 +1,4 @@
-<script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>;</script>
+<script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_IS_ENCRYPTED__ = <?= !empty($page['is_encrypted']) ? 'true' : 'false' ?>;</script>
 <div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
     <?php /* Mobil decken beide Leisten den Bildschirm vollständig ab; eine
              Überlagerung braucht nur die schmale Notizbuch-Schublade, die
@@ -30,6 +30,7 @@
         data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>"
         data-page-permission="<?= e((string) ($page['share_permission'] ?? '')) ?>"
         data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>"
+        data-page-encrypted="<?= !empty($page['is_encrypted']) ? '1' : '0' ?>"
     >
         <?php /* Der Rückweg aus dem Seiteninhalt liegt mobil im Kopf der Seite
                  selbst (siehe page_note.php / page_task.php) - dort steht er
@@ -54,14 +55,14 @@
                 <div class="flex items-start justify-between gap-4">
                     <div>
                         <h2 class="text-xl font-semibold">Seite teilen</h2>
-                        <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Erstelle einen Link für diese Seite.</p>
+                        <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Erstelle einen Link für diese Seite. Bei verschlüsselten Notizen muss das Kennwort separat und sicher übermittelt werden.</p>
                     </div>
                     <button type="button" @click="closeShareDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
                 </div>
 
                 <fieldset class="mt-6 space-y-3">
                     <legend class="text-sm font-medium">Berechtigung</legend>
-                    <label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                    <label x-show="!isEncrypted" class="flex cursor-pointer items-start gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
                         <input x-model="permission" type="radio" value="read" class="mt-1">
                         <span>
                             <span class="block font-medium">Nur lesen</span>

@@ -296,6 +296,31 @@ final class VoiceNoteService
     }
 
     /**
+     * Diktat in eine bestehende Notiz. Der Zielzustand wird geprüft, bevor
+     * Audiodaten gespeichert oder an den Anbieter gesendet werden.
+     *
+     * @return array{
+     *     transcript: string,
+     *     markdown: string,
+     *     title: string,
+     *     notebook_id: ?int,
+     *     notebook_name: ?string,
+     *     document: array<string, mixed>
+     * }
+     */
+    public function transcribeForPage(User $user, int $pageId, UploadedFileInterface $file): array
+    {
+        $page = $this->pages->find($user, $pageId);
+        if (($page['type'] ?? null) !== 'note') {
+            throw new ValidationException('Das Diktatziel ist keine Notizseite.');
+        }
+        $this->pages->assertNotEncrypted($page);
+        $this->pages->assertCanWrite($user, $pageId);
+
+        return $this->transcribe($user, $file);
+    }
+
+    /**
      * Legt aus einer Aufnahme eine fertige Notiz an: Überschrift und Notizbuch
      * stammen aus der Nachbearbeitung, der Text steht bereits im Inhalt.
      *

@@ -91,6 +91,29 @@ final class PublicShareServiceTest extends TestCase
         self::assertSame('read_copy', $this->publicShares->resolve($share['token'])['mode']);
     }
 
+    public function testEncryptedReadShareReturnsEnvelopeForBrowserDecryption(): void
+    {
+        $page = $this->pages->create($this->owner, 'note', 'Altfreigabe', null);
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'read');
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => (int) $page['id']]);
+        $envelope = [
+            'zk' => 1,
+            'binding' => ['page_id' => (string) $page['id']],
+            'kdf' => ['algo' => 'PBKDF2-HMAC-SHA256', 'iterations' => 600000, 'salt' => base64_encode(str_repeat('s', 16))],
+            'wrapped_key' => ['algo' => 'AES-256-GCM', 'iv' => base64_encode(str_repeat('w', 12)), 'data' => base64_encode(str_repeat('k', 48))],
+            'payload' => ['algo' => 'AES-256-GCM', 'iv' => base64_encode(str_repeat('p', 12)), 'data' => base64_encode(str_repeat('c', 16))],
+        ];
+        $this->pdo->prepare('UPDATE note_contents SET content = :content, content_text = :empty WHERE page_id = :id')
+            ->execute(['content' => json_encode($envelope, JSON_THROW_ON_ERROR), 'empty' => '', 'id' => (int) $page['id']]);
+
+        $view = $this->publicShares->view($share['token']);
+
+        self::assertTrue($view['page']['is_encrypted']);
+        self::assertSame($envelope, $view['encrypted_envelope']);
+        self::assertNull($view['note_html']);
+    }
+
     public function testWriteShareCannotBeReadThroughPublicContentService(): void
     {
         $page = $this->pages->create($this->owner, 'note', 'Privat bis Login', null);

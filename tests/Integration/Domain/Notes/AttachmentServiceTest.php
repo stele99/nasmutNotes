@@ -6,6 +6,7 @@ namespace Tests\Integration\Domain\Notes;
 
 use App\Domain\Notes\AttachmentService;
 use App\Domain\Notes\ImageCompressionService;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\PageService;
 use App\Domain\ShareService;
 use App\Domain\User;
@@ -131,6 +132,23 @@ final class AttachmentServiceTest extends TestCase
             $this->pageId,
             $this->uploadedFile('not an image', 'fake.png'),
         );
+    }
+
+    public function testEncryptedNoteRejectsImageBeforeWritingFile(): void
+    {
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => $this->pageId]);
+
+        try {
+            $this->attachments->upload(
+                $this->owner,
+                $this->pageId,
+                $this->uploadedFile($this->pngBytes(), 'secret.png'),
+            );
+            self::fail('Bild wurde an eine verschlüsselte Notiz angehängt.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
+        }
     }
 
     public function testCompressionValidatesQualityBeforeUsingGd(): void

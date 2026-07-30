@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Voice\VoiceNoteService;
 use App\Domain\Voice\VoiceServiceException;
 use App\Support\CurrentUser;
@@ -52,7 +53,12 @@ final class VoiceNoteController
         }
 
         return $this->guard($response, function () use ($request, $user, $response): Response {
-            $result = $this->voice->transcribe($user, $this->requireAudio($request));
+            $body = (array) ($request->getParsedBody() ?? []);
+            $rawPageId = $body['page_id'] ?? null;
+            if (!is_int($rawPageId) && !(is_string($rawPageId) && ctype_digit($rawPageId))) {
+                throw new ValidationException('Feld "page_id" fehlt oder ist ungültig.');
+            }
+            $result = $this->voice->transcribeForPage($user, (int) $rawPageId, $this->requireAudio($request));
 
             return JsonResponse::json($response, [
                 'transcript' => $result['transcript'],
@@ -92,6 +98,7 @@ final class VoiceNoteController
                     'notebook_name' => $page['notebook_name'] ?? null,
                     'notebook_icon' => $page['notebook_icon'] ?? null,
                     'notebook_color' => $page['notebook_color'] ?? null,
+                    'is_encrypted' => false,
                     'is_shared' => false,
                     'can_edit' => true,
                     'updated_at' => $page['updated_at'] ?? null,
@@ -167,6 +174,8 @@ final class VoiceNoteController
             $result = $action();
 
             return $result;
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
         } catch (VoiceServiceException $e) {
             $this->logger->warning('Sprachdienst fehlgeschlagen', ['message' => $e->getMessage()]);
 

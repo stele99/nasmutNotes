@@ -59,6 +59,7 @@
                     <div class="flex items-start gap-2">
                         <span x-show="page.type === 'task'" class="mt-0.5 shrink-0" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
                         <span x-show="page.type === 'log'" class="mt-0.5 shrink-0" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>
+                        <span x-show="page.type === 'note' && page.is_encrypted" class="mt-0.5 shrink-0" style="color: var(--color-accent);" title="Verschlüsselte Notiz" x-icon="lock"></span>
                         <span x-show="page.is_shared" class="mt-0.5 shrink-0" style="color: var(--color-accent);" x-icon="share-2"></span>
                         <a :href="pageUrl(page)" @click.prevent.stop="handlePageClick(page, $event)" class="min-w-0 flex-1 break-words leading-snug" x-text="page.title"></a>
                         <button x-show="!page.is_shared && activeCollection !== 'trash'" @click.stop="toggleFavorite(page)" class="icon-action shrink-0 p-1" :class="page.is_favorite ? 'is-favorite' : ''" :aria-pressed="page.is_favorite" aria-label="Favorit umschalten" x-icon="star"></button>

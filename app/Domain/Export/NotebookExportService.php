@@ -204,6 +204,16 @@ final class NotebookExportService
     ): int {
         $pageId = (int) $page['id'];
         $title = (string) ($page['title'] ?? 'Ohne Titel');
+        if (($page['type'] ?? null) === 'note' && (bool) ($page['is_encrypted'] ?? false)) {
+            $name = $this->uniqueName(
+                $this->safeName($title, 'Verschlüsselte Notiz') . '.encrypted-note.json',
+                $usedNames,
+            );
+            $this->writeEncryptedNote($zip, $folder . '/' . $name, $page);
+
+            return 0;
+        }
+
         $name = $this->uniqueName($this->safeName($title, 'Ohne Titel'), $usedNames);
 
         $written = 0;
@@ -252,6 +262,31 @@ final class NotebookExportService
         $zip->addFromString($folder . '/' . $name . '.md', $markdown);
 
         return $written;
+    }
+
+    /** @param array<string, mixed> $page */
+    private function writeEncryptedNote(ZipArchive $zip, string $target, array $page): void
+    {
+        $row = $this->contents->find((int) $page['id']);
+        $envelope = $row !== null ? json_decode((string) $row['content'], true) : null;
+        if (!is_array($envelope)) {
+            throw new ValidationException('Eine verschlüsselte Notiz enthält keinen gültigen Umschlag.');
+        }
+
+        $export = [
+            'format' => 'nasmutNotes-encrypted-note',
+            'version' => 1,
+            'title' => (string) ($page['title'] ?? 'Ohne Titel'),
+            'original_page_id' => (string) $page['id'],
+            'created_at' => $page['created_at'] ?? null,
+            'updated_at' => $page['updated_at'] ?? null,
+            'envelope' => $envelope,
+        ];
+        $json = json_encode(
+            $export,
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        );
+        $zip->addFromString($target, $json . "\n");
     }
 
     /** @param array<string, string> $imageTargets Token-Hash → Pfad im Archiv */

@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Domain\Notes\AttachmentService;
 use App\Domain\Notes\ImageCompressionService;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Repositories\AuditLogRepository;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
@@ -82,7 +83,11 @@ final class AttachmentController
             throw new ValidationException('Es wurde keine Bilddatei übermittelt.');
         }
 
-        $attachment = $this->attachments->upload($user, (int) $args['id'], $file);
+        try {
+            $attachment = $this->attachments->upload($user, (int) $args['id'], $file);
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
+        }
 
         return JsonResponse::json($response, $attachment, 201);
     }

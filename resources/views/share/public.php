@@ -36,7 +36,23 @@
                     <span>Owner: <?= e((string) ($page['owner_name'] ?? 'Unbekannt')) ?></span>
                 </p>
                 <?php if ($page['type'] === 'note'): ?>
-                    <div class="public-note-content"><?= $note_html ?></div>
+                    <?php if (!empty($page['is_encrypted'])): ?>
+                        <section data-encrypted-share data-page-id="<?= (int) $page['id'] ?>" class="mx-auto max-w-xl rounded-xl border p-6 text-center" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                            <span class="mx-auto flex size-14 items-center justify-center rounded-full" style="background: var(--color-bg);" aria-hidden="true">&#128274;</span>
+                            <h2 class="mt-4 text-xl font-semibold">Verschlüsselte Notiz</h2>
+                            <p class="mt-2 text-sm" style="color: var(--color-text-muted);">Der Link enthält nur den verschlüsselten Inhalt. Gib das separat erhaltene Notizkennwort ein; es wird ausschließlich in diesem Browser verwendet.</p>
+                            <form data-encrypted-share-form class="mt-5 text-left">
+                                <label for="shared-note-password" class="block text-sm font-medium">Notizkennwort</label>
+                                <input id="shared-note-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+                                <p data-encrypted-share-error class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                                <button type="submit" class="btn btn-primary mt-4 w-full">Im Browser entsperren</button>
+                            </form>
+                        </section>
+                        <div data-encrypted-share-content class="prose-editor public-note-content hidden"></div>
+                        <script type="application/json" data-encrypted-share-envelope><?= json_encode($encrypted_envelope, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES) ?></script>
+                    <?php else: ?>
+                        <div class="public-note-content"><?= $note_html ?></div>
+                    <?php endif; ?>
                 <?php elseif ($page['type'] === 'log'): ?>
                     <div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border);">
                         <table class="w-full text-sm">

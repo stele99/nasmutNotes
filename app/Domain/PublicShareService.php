@@ -45,7 +45,6 @@ final class PublicShareService
         if ($share === null) {
             throw new NotFoundException('Freigabe nicht gefunden.');
         }
-
         return $share;
     }
 
@@ -67,8 +66,10 @@ final class PublicShareService
                 'title' => $page['title'],
                 'updated_at' => (string) ($page['updated_at'] ?? ''),
                 'owner_name' => ($page['owner_name'] ?? null) !== null ? (string) $page['owner_name'] : null,
+                'is_encrypted' => (bool) ($page['is_encrypted'] ?? false),
             ],
             'note_html' => null,
+            'encrypted_envelope' => null,
             'categories' => [],
             'log_columns' => [],
             'log_entries' => [],
@@ -85,8 +86,13 @@ final class PublicShareService
             if (!is_array($document)) {
                 $document = ['type' => 'doc', 'content' => []];
             }
-            $this->validator->validate($document);
-            $data['note_html'] = $this->renderer->render($document, $token);
+            if ((bool) ($page['is_encrypted'] ?? false)) {
+                $data['encrypted_envelope'] = $document;
+                $data['attachments'] = [];
+            } else {
+                $this->validator->validate($document);
+                $data['note_html'] = $this->renderer->render($document, $token);
+            }
         } elseif ($page['type'] === 'log') {
             $data['log_columns'] = array_map(static fn (array $column): array => [
                 'id' => (int) $column['id'],
@@ -123,6 +129,9 @@ final class PublicShareService
     {
         $share = $this->resolve($shareToken);
         $this->assertPublicMode($share);
+        if ((bool) ($share['is_encrypted'] ?? false)) {
+            throw new NotFoundException('Bild nicht gefunden.');
+        }
         if (preg_match('/^[a-f0-9]{64}$/', $imageToken) !== 1) {
             throw new NotFoundException('Bild nicht gefunden.');
         }
@@ -143,6 +152,9 @@ final class PublicShareService
     {
         $share = $this->resolve($shareToken);
         $this->assertPublicMode($share);
+        if ((bool) ($share['is_encrypted'] ?? false)) {
+            throw new NotFoundException('Datei nicht gefunden.');
+        }
         $file = $this->files->findById($attachmentId);
         if ($file === null || (int) $file['page_id'] !== (int) $share['page_id']) {
             throw new NotFoundException('Datei nicht gefunden.');

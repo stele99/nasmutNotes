@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Domain\Notes;
 
 use App\Domain\Notes\NoteContentException;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\Notes\VersionConflictException;
@@ -86,6 +87,30 @@ final class NoteServiceTest extends TestCase
         $stmt->execute(['page_id' => $this->pageId]);
 
         return (int) $stmt->fetchColumn();
+    }
+
+    /** @return array<string, mixed> */
+    private function envelope(?string $wrappedIv = null, ?string $payloadData = null, ?int $pageId = null): array
+    {
+        return [
+            'zk' => 1,
+            'binding' => ['page_id' => (string) ($pageId ?? $this->pageId)],
+            'kdf' => [
+                'algo' => 'PBKDF2-HMAC-SHA256',
+                'iterations' => 600_000,
+                'salt' => base64_encode(str_repeat('s', 16)),
+            ],
+            'wrapped_key' => [
+                'algo' => 'AES-256-GCM',
+                'iv' => $wrappedIv ?? base64_encode(str_repeat('w', 12)),
+                'data' => base64_encode(str_repeat('k', 48)),
+            ],
+            'payload' => [
+                'algo' => 'AES-256-GCM',
+                'iv' => base64_encode(str_repeat('p', 12)),
+                'data' => $payloadData ?? base64_encode(str_repeat('c', 16)),
+            ],
+        ];
     }
 
     public function testInitialContentIsEmptyDocAtVersionOne(): void
@@ -276,5 +301,175 @@ final class NoteServiceTest extends TestCase
         }
 
         self::assertSame(20, $this->versionCount());
+    }
+
+    public function testEncryptPurgesPlaintextStateAndSupportsEncryptedSaveRewrapAndDecrypt(): void
+    {
+        $this->notes->save($this->user, $this->pageId, $this->doc('Alter Klartext'), 1);
+        $this->notes->save($this->user, $this->pageId, $this->doc('Aktueller Klartext'), 2, true);
+        $this->pdo->prepare(
+            'INSERT INTO search_documents
+                (workspace_id, object_type, object_id, page_id, title, body, meta)
+             SELECT workspace_id, :type, id, id, title, :body, :meta FROM pages WHERE id = :id'
+        )->execute([
+            'type' => 'page',
+            'body' => 'Historischer Klartext',
+            'meta' => 'Klartext-Metadaten',
+            'id' => $this->pageId,
+        ]);
+        self::assertSame(1, $this->versionCount());
+
+        $encrypted = $this->notes->transitionEncryption(
+            $this->user,
+            $this->pageId,
+            'encrypt',
+            $this->envelope(),
+            3,
+            'plain',
+        );
+
+        self::assertSame('encrypted', $encrypted['encryption_state']);
+        self::assertSame(4, $encrypted['version']);
+        self::assertSame(0, $this->versionCount());
+        $contentStatement = $this->pdo->query('SELECT content_text FROM note_contents WHERE page_id = ' . $this->pageId);
+        self::assertNotFalse($contentStatement);
+        $row = $contentStatement->fetch();
+        self::assertIsArray($row);
+        self::assertSame('', $row['content_text']);
+        $searchStatement = $this->pdo->query(
+            'SELECT body, meta FROM search_documents WHERE page_id = ' . $this->pageId,
+        );
+        self::assertNotFalse($searchStatement);
+        self::assertSame(['body' => '', 'meta' => ''], $searchStatement->fetch());
+        $secureDeleteStatement = $this->pdo->query('PRAGMA secure_delete');
+        self::assertNotFalse($secureDeleteStatement);
+        self::assertSame(1, (int) $secureDeleteStatement->fetchColumn());
+
+        $changedPayload = $this->envelope(payloadData: base64_encode(str_repeat('d', 16)));
+        $saved = $this->notes->save($this->user, $this->pageId, $changedPayload, 4, false, 'encrypted');
+        self::assertSame(5, $saved['version']);
+        self::assertSame(0, $this->versionCount());
+
+        $rewrapped = $changedPayload;
+        $rewrapped['wrapped_key']['iv'] = base64_encode(str_repeat('n', 12));
+        $rewrapResult = $this->notes->transitionEncryption(
+            $this->user,
+            $this->pageId,
+            'rewrap',
+            $rewrapped,
+            5,
+            'encrypted',
+        );
+        self::assertSame(6, $rewrapResult['version']);
+
+        $plain = $this->notes->transitionEncryption(
+            $this->user,
+            $this->pageId,
+            'decrypt',
+            $this->doc('Wieder Klartext'),
+            6,
+            'encrypted',
+        );
+        self::assertSame('plain', $plain['encryption_state']);
+        self::assertSame(7, $plain['version']);
+        $plainStatement = $this->pdo->query(
+            'SELECT content_text FROM note_contents WHERE page_id = ' . $this->pageId,
+        );
+        self::assertNotFalse($plainStatement);
+        self::assertSame('Wieder Klartext', $plainStatement->fetchColumn());
+    }
+
+    public function testRewrapRejectsChangedPayload(): void
+    {
+        $this->notes->transitionEncryption($this->user, $this->pageId, 'encrypt', $this->envelope(), 1, 'plain');
+
+        try {
+            $this->notes->transitionEncryption(
+                $this->user,
+                $this->pageId,
+                'rewrap',
+                $this->envelope(payloadData: base64_encode(str_repeat('x', 16))),
+                2,
+                'encrypted',
+            );
+            self::fail('Ein veränderter Payload wurde als Rewrap akzeptiert.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('ENCRYPTION_REWRAP_PAYLOAD_CHANGED', $exception->errorCode);
+        }
+    }
+
+    public function testEncryptAllowsReadAndWriteSharesButRejectsCopySharesAndAttachments(): void
+    {
+        $share = $this->shares->create($this->user, $this->pageId, 'write');
+
+        $this->notes->transitionEncryption($this->user, $this->pageId, 'encrypt', $this->envelope(), 1, 'plain');
+
+        $this->shares->open($this->otherUser, $share['token']);
+        $sharedSave = $this->notes->save(
+            $this->otherUser,
+            $this->pageId,
+            $this->envelope(payloadData: base64_encode(str_repeat('z', 16))),
+            2,
+            false,
+            'encrypted',
+        );
+        self::assertSame(3, $sharedSave['version']);
+        try {
+            $this->notes->transitionEncryption($this->otherUser, $this->pageId, 'decrypt', $this->doc('Klartext'), 3, 'encrypted');
+            self::fail('Geteilter Schreiber durfte den Verschlüsselungszustand ändern.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('ENCRYPTION_OWNER_REQUIRED', $exception->errorCode);
+        }
+
+        $copyPage = $this->pages->create($this->user, 'note', 'Kopiervorlage', null);
+        $copyPageId = (int) $copyPage['id'];
+        $this->shares->create($this->user, $copyPageId, 'read_copy');
+        try {
+            $this->notes->transitionEncryption($this->user, $copyPageId, 'encrypt', $this->envelope(pageId: $copyPageId), 1, 'plain');
+            self::fail('Notiz mit Kopierfreigabe wurde verschlüsselt.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('ENCRYPTION_HAS_COPY_SHARE', $exception->errorCode);
+        }
+
+        $attachmentPage = $this->pages->create($this->user, 'note', 'Mit Anhang', null);
+        $attachmentPageId = (int) $attachmentPage['id'];
+        $this->pdo->prepare(
+            'INSERT INTO page_attachments
+                (page_id, token_hash, storage_name, original_name, mime_type, byte_size, created_at)
+             VALUES (:page, :token, :storage, :name, :mime, 1, :now)'
+        )->execute([
+            'page' => $attachmentPageId,
+            'token' => hash('sha256', 'token'),
+            'storage' => 'dummy',
+            'name' => 'dummy.txt',
+            'mime' => 'text/plain',
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+        ]);
+
+        try {
+            $this->notes->transitionEncryption($this->user, $attachmentPageId, 'encrypt', $this->envelope(pageId: $attachmentPageId), 1, 'plain');
+            self::fail('Notiz mit Anhang wurde verschlüsselt.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('ENCRYPTION_HAS_ATTACHMENTS', $exception->errorCode);
+        }
+    }
+
+    public function testVersionEndpointsRejectEncryptedNote(): void
+    {
+        $this->notes->transitionEncryption($this->user, $this->pageId, 'encrypt', $this->envelope(), 1, 'plain');
+
+        try {
+            $this->notes->listVersions($this->user, $this->pageId);
+            self::fail('Versionsliste einer verschlüsselten Notiz wurde gelesen.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
+        }
+    }
+
+    public function testMigrationCheckRejectsInvalidEncryptionFlag(): void
+    {
+        $this->expectException(\PDOException::class);
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 2 WHERE id = :id')
+            ->execute(['id' => $this->pageId]);
     }
 }

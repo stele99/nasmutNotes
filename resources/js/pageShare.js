@@ -4,6 +4,7 @@ export function pageShare() {
   return {
     pageId: window.__CURRENT_PAGE_ID__,
     isShared: Boolean(window.__CURRENT_PAGE_IS_SHARED__),
+    isEncrypted: Boolean(window.__CURRENT_PAGE_IS_ENCRYPTED__),
     currentPermission: window.__CURRENT_PAGE_PERMISSION__ || null,
     permission: 'read',
     shareDialogOpen: false,
@@ -19,6 +20,7 @@ export function pageShare() {
     stoppingSharing: false,
     writerRefreshHandler: null,
     writerRefreshTimer: null,
+    encryptionChangeHandler: null,
 
     permissionLabel() {
       return this.currentPermission === 'write' ? 'schreibend' : 'lesend';
@@ -46,6 +48,8 @@ export function pageShare() {
         window.__CURRENT_PAGE_IS_SHARED__ = this.isShared;
         window.__CURRENT_PAGE_PERMISSION__ = this.currentPermission;
         window.__CURRENT_PAGE_CAN_EDIT__ = pageRoot.dataset.pageCanEdit === '1';
+        this.isEncrypted = pageRoot.dataset.pageEncrypted === '1';
+        window.__CURRENT_PAGE_IS_ENCRYPTED__ = this.isEncrypted;
       }
       await this.loadWriters();
       if (!this.isShared) {
@@ -56,6 +60,14 @@ export function pageShare() {
       };
       window.addEventListener('focus', this.writerRefreshHandler);
       this.writerRefreshTimer = setInterval(() => this.loadWriters(), 30_000);
+      this.encryptionChangeHandler = (event) => {
+        if (Number(event.detail?.pageId) === Number(this.pageId)) {
+          this.isEncrypted = event.detail.encrypted === true;
+          window.__CURRENT_PAGE_IS_ENCRYPTED__ = this.isEncrypted;
+          if (this.isEncrypted && this.permission === 'read_copy') this.permission = 'read';
+        }
+      };
+      window.addEventListener('page-encryption-changed', this.encryptionChangeHandler);
     },
 
     async loadWriters() {
@@ -246,7 +258,8 @@ export function pageShare() {
         window.removeEventListener('focus', this.writerRefreshHandler);
       }
       if (this.writerRefreshTimer) {
-        clearInterval(this.writerRefreshTimer);
+      clearInterval(this.writerRefreshTimer);
+      window.removeEventListener('page-encryption-changed', this.encryptionChangeHandler);
       }
     },
   };

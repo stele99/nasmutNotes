@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { decryptEnvelope, encryptDocument, validateEnvelope } from './noteCrypto.js';
 
 const BEGIN_ENDPOINT = '/api/import/archive/parts';
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
@@ -28,6 +29,8 @@ export function noteImport() {
     processing: false,
     fileName: '',
     fileSize: 0,
+    fileKind: 'archive',
+    encryptionPassword: '',
     error: '',
     report: null,
     detailsOpen: false,
@@ -43,6 +46,8 @@ export function noteImport() {
       this.report = null;
       this.fileName = '';
       this.fileSize = 0;
+      this.fileKind = 'archive';
+      this.encryptionPassword = '';
       this.progress = 0;
       this.detailsOpen = false;
       this.tooLarge = false;
@@ -55,6 +60,7 @@ export function noteImport() {
         return;
       }
       this.open = false;
+      this.encryptionPassword = '';
       this.announce(false);
       // Nach einem Import erscheinen die neuen Seiten erst nach dem Neuladen
       // der Liste.
@@ -101,6 +107,7 @@ export function noteImport() {
       this.report = null;
       this.fileName = file ? file.name : '';
       this.fileSize = file ? file.size : 0;
+      this.fileKind = file?.name.toLowerCase().endsWith('.encrypted-note.json') ? 'encrypted' : 'archive';
       this.tooLarge = Boolean(file) && this.maxArchiveBytes > 0 && file.size > this.maxArchiveBytes;
 
       if (this.tooLarge) {
@@ -118,6 +125,11 @@ export function noteImport() {
     },
 
     progressLabel() {
+      if (this.fileKind === 'encrypted') {
+        return this.processing
+          ? 'Verschlüsselte Notiz wird lokal entschlüsselt und neu gebunden…'
+          : 'Verschlüsselte Notiz wird vorbereitet…';
+      }
       return this.processing
         ? 'Notizen werden angelegt… das kann einige Minuten dauern.'
         : `Archiv wird übertragen… ${this.progress} %`;
@@ -137,7 +149,9 @@ export function noteImport() {
       this.processing = false;
 
       try {
-        this.report = await this.uploadInChunks(file);
+        this.report = this.fileKind === 'encrypted'
+          ? await this.importEncryptedNote(file)
+          : await this.uploadInChunks(file);
         this.$dispatch('pages-changed');
       } catch (error) {
         this.error = this.canceled
@@ -148,7 +162,89 @@ export function noteImport() {
         this.busy = false;
         this.processing = false;
         this.uploadId = null;
+        this.encryptionPassword = '';
       }
+    },
+
+    async importEncryptedNote(file) {
+      if (!this.encryptionPassword) {
+        throw new Error('Gib das Kennwort der verschlüsselten Notiz ein.');
+      }
+      if (file.size > 1_500_000) {
+        throw new Error('Die verschlüsselte Notiz überschreitet die zulässige Größe.');
+      }
+
+      this.processing = true;
+      this.progress = 20;
+      let exported;
+      try {
+        exported = JSON.parse(await file.text());
+      } catch {
+        throw new Error('Die Datei enthält kein gültiges verschlüsseltes Notizformat.');
+      }
+      if (
+        exported?.format !== 'nasmutNotes-encrypted-note'
+        || exported?.version !== 1
+        || !exported.envelope
+        || !/^[1-9][0-9]*$/.test(String(exported.original_page_id || ''))
+      ) {
+        throw new Error('Die Datei enthält kein unterstütztes verschlüsseltes Notizformat.');
+      }
+
+      const originalPageId = String(exported.original_page_id);
+      validateEnvelope(exported.envelope, originalPageId);
+      let decrypted;
+      try {
+        decrypted = await decryptEnvelope(exported.envelope, this.encryptionPassword, originalPageId);
+      } catch {
+        throw new Error('Kennwort falsch oder verschlüsselte Notiz beschädigt.');
+      }
+      this.progress = 50;
+
+      const title = typeof exported.title === 'string' && exported.title.trim()
+        ? exported.title.trim().slice(0, 200)
+        : 'Importierte verschlüsselte Notiz';
+      const created = await apiFetch('/api/pages', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'note', title }),
+      });
+      const pageId = Number(created.id);
+      if (!Number.isInteger(pageId) || pageId < 1) {
+        throw new Error('Die Zielseite konnte nicht angelegt werden.');
+      }
+
+      try {
+        const rebound = await encryptDocument(decrypted.document, this.encryptionPassword, pageId);
+        await apiFetch(`/api/pages/${pageId}/content/encryption`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            transition: 'encrypt',
+            content: rebound.envelope,
+            version: 1,
+            expected_encryption_state: 'plain',
+          }),
+        });
+      } catch (error) {
+        try {
+          await apiFetch(`/api/pages/${pageId}/purge`, { method: 'DELETE' });
+        } catch {
+          /* Die leere Zielseite kann notfalls normal gelöscht werden. */
+        }
+        throw error;
+      }
+
+      this.progress = 100;
+      return {
+        pages: 1,
+        images: 0,
+        files: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        dead_links: 0,
+        unused_files: 0,
+        failed: [],
+        skipped: [],
+      };
     },
 
     async uploadInChunks(file) {

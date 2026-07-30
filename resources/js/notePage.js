@@ -2,6 +2,16 @@ import { apiFetch } from './api.js';
 import { createEditor } from './editor/index.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { sanitizeNoteDoc } from './editor/sanitize.js';
+import {
+  NoteCryptoFormatError,
+  decryptEnvelope,
+  encryptDocument,
+  encryptDocumentWithKey,
+  isCryptoEnvelope,
+  rewrapEnvelope,
+  validateEnvelope,
+  validateNewPassword,
+} from './noteCrypto.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
@@ -16,6 +26,7 @@ import {
   listBlockedEntries,
   listSyncConflicts,
   readCachedNoteContent,
+  replaceNoteEncryptionState,
   resolveConflictKeepLocal,
   resolveConflictUseServer,
   saveOfflineAttachment,
@@ -29,6 +40,9 @@ const LOCAL_CACHE_PREFIX = 'notes-note-cache-';
 export function noteEditorPage() {
   // ProseMirror keeps mutable transaction state and must not be made reactive by Alpine.
   let editor = null;
+  let cryptoKey = null;
+  let cryptoEnvelope = null;
+  let cryptoChannel = null;
   const pendingUploads = new Set();
 
   return {
@@ -114,6 +128,19 @@ export function noteEditorPage() {
     aiPreview: '',
     aiRequestRevision: null,
     aiMode: 'normal',
+    encryptionState: 'plain',
+    cryptoStatus: 'loading', // loading | locked | unlocked | error
+    cryptoError: '',
+    cryptoBusy: false,
+    cryptoDialogOpen: false,
+    cryptoDialogMode: '',
+    cryptoPassword: '',
+    cryptoPasswordCurrent: '',
+    cryptoPasswordConfirm: '',
+    cryptoAcknowledged: false,
+    cryptoDialogError: '',
+    encryptionMenuOpen: false,
+    encryptionHandler: null,
 
     async init() {
       const pageRoot = this.$root;
@@ -124,6 +151,11 @@ export function noteEditorPage() {
         : Boolean(window.__CURRENT_PAGE_CAN_EDIT__);
       const isShared = pageRoot?.dataset.pageIsShared === '1'
         || Boolean(window.__CURRENT_PAGE_IS_SHARED__);
+      const declaredEncrypted = pageRoot?.dataset.pageEncrypted !== undefined
+        ? pageRoot.dataset.pageEncrypted === '1'
+        : Boolean(window.__CURRENT_PAGE_IS_ENCRYPTED__);
+      this.encryptionState = declaredEncrypted ? 'encrypted' : 'plain';
+      this.cryptoStatus = declaredEncrypted ? 'locked' : 'loading';
       this.canRestoreVersions = this.canEditPage && !isShared;
       this.savedPageTitle = this.pageTitle;
       this.initPageLocation(pageRoot);
@@ -144,12 +176,28 @@ export function noteEditorPage() {
 
       let initial;
       let fromOffline = false;
-      const localDraft = this.readLocalCache();
       const idb = await readCachedNoteContent(this.pageId);
-      if (localDraft?.content) {
+      const idbState = idb?.encryption_state || (isCryptoEnvelope(idb?.content) ? 'encrypted' : 'plain');
+      const localDraft = declaredEncrypted || idbState === 'encrypted' ? null : this.readLocalCache();
+      // Der vom Server gerenderte Kryptozustand hat Vorrang vor alten lokalen
+      // Klartextentwürfen. Sonst könnte ein unterbrochener Cache-Austausch nach
+      // erfolgreichem Verschlüsseln den Klartext beim nächsten Öffnen zeigen.
+      if (idb?.dirty && (!declaredEncrypted || idbState === 'encrypted')) {
+        initial = {
+          content: idb.content,
+          version: idb.version,
+          encryption_state: idbState,
+          updated_at: idb.updated_at,
+          last_editor_name: idb.last_editor_name,
+        };
+        this.editorRevision = Number(idb.local_revision || 1);
+        this.queuedRevision = this.editorRevision;
+        fromOffline = true;
+      } else if (localDraft?.content) {
         initial = {
           content: localDraft.content,
           version: Number(localDraft.version || idb?.version || 1),
+          encryption_state: 'plain',
           updated_at: idb?.updated_at || null,
           last_editor_name: idb?.last_editor_name || null,
         };
@@ -161,35 +209,33 @@ export function noteEditorPage() {
           /* localStorage remains the recovery source */
         }
         fromOffline = true;
-      } else if (idb?.dirty) {
-        initial = {
-          content: idb.content,
-          version: idb.version,
-          updated_at: idb.updated_at,
-          last_editor_name: idb.last_editor_name,
-        };
-        this.editorRevision = Number(idb.local_revision || 1);
-        this.queuedRevision = this.editorRevision;
-        fromOffline = true;
       } else {
         try {
           initial = await apiFetch(`/api/pages/${this.pageId}/content`);
           await cacheNoteContent(this.pageId, initial);
         } catch (e) {
           const cached = this.readLocalCache();
-          if (idb && (!cached || Number(idb.version) >= Number(cached.version))) {
+          if (
+            idb
+            && (!declaredEncrypted || idbState === 'encrypted')
+            && (!cached || Number(idb.version) >= Number(cached.version))
+          ) {
             initial = {
               content: idb.content,
               version: idb.version,
+              encryption_state: idbState,
               updated_at: idb.updated_at,
               last_editor_name: idb.last_editor_name,
             };
             fromOffline = true;
           } else if (cached) {
-            initial = { content: cached.content, version: cached.version };
+            initial = { content: cached.content, version: cached.version, encryption_state: 'plain' };
+            fromOffline = true;
+          } else if (declaredEncrypted) {
+            initial = { content: null, version: 1, encryption_state: 'encrypted' };
             fromOffline = true;
           } else {
-            initial = { content: { type: 'doc', content: [] }, version: 1 };
+            initial = { content: { type: 'doc', content: [] }, version: 1, encryption_state: 'plain' };
             fromOffline = true;
           }
         }
@@ -198,32 +244,34 @@ export function noteEditorPage() {
       this.version = initial.version;
       this.updatedAt = initial.updated_at;
       this.lastEditorName = initial.last_editor_name;
+      this.encryptionState = initial.encryption_state
+        || (isCryptoEnvelope(initial.content) ? 'encrypted' : 'plain');
       if (fromOffline) {
         this.status = navigator.onLine ? 'saving' : 'offline';
       }
 
-      // Ein Entwurf aus der Zeit vor der Einfüge-Bereinigung kann Knoten
-      // enthalten, die der Server ablehnt - dann wäre die Notiz dauerhaft
-      // unspeicherbar. Der geputzte Stand wird gleich in die Queue gestellt.
-      const sanitized = sanitizeNoteDoc(initial.content);
-      initial.content = sanitized.doc;
-
-      editor?.destroy();
-      editor = createEditor({
-        element: this.$refs.editor,
-        content: initial.content,
-        editable: this.canEditPage,
-        onUpdate: (json) => this.onChange(json),
-        onTransaction: () => this.syncToolbar(),
-        onImageUpload: (file) => this.uploadImage(file),
-        onImageUploadError: (error) => this.handleImageUploadError(error),
-        onPendingImageUploads: (count) => {
-          this.pendingImageUploads = count;
-        },
-        onLinkClick: (link) => this.openLinkMenu(link),
-      });
-      this.bindImageViewer();
-      this.syncToolbar();
+      let sanitized = { doc: initial.content, changed: false };
+      if (this.encryptionState === 'encrypted') {
+        this.clearLocalCache(true);
+        if (initial.content) {
+          try {
+            cryptoEnvelope = validateEnvelope(initial.content, this.pageId);
+            this.cryptoStatus = 'locked';
+          } catch (error) {
+            this.cryptoStatus = 'error';
+            this.cryptoError = error.message || 'Der Krypto-Umschlag ist beschädigt.';
+          }
+        } else {
+          this.cryptoStatus = 'error';
+          this.cryptoError = 'Diese verschlüsselte Notiz ist auf diesem Gerät noch nicht offline verfügbar.';
+        }
+      } else {
+        // Alte Entwürfe können Knoten enthalten, die der Server inzwischen ablehnt.
+        sanitized = sanitizeNoteDoc(initial.content);
+        initial.content = sanitized.doc;
+        this.cryptoStatus = 'unlocked';
+        this.startEditor(initial.content);
+      }
 
       // Erst nach dem Aufbau des Editors, damit der Fokus im Titel bleibt.
       if (this.canEditPage && consumeNewPageTitleEdit(this.pageId)) {
@@ -238,6 +286,7 @@ export function noteEditorPage() {
         this.conflictContent = {
           content: existingConflict.server_content,
           version: existingConflict.server_version,
+          encryption_state: existingConflict.server_encryption_state,
         };
       }
 
@@ -247,7 +296,7 @@ export function noteEditorPage() {
 
       // Nach dem Setzen des Anfangszustands, damit der bereinigte Stand als
       // ungespeicherte Änderung stehen bleibt und in die Queue wandert.
-      if (sanitized.changed && this.canEditPage && this.status !== 'conflict') {
+      if (this.encryptionState === 'plain' && sanitized.changed && this.canEditPage && this.status !== 'conflict') {
         this.onChange(editor.getJSON());
       }
 
@@ -289,6 +338,34 @@ export function noteEditorPage() {
         this.lastEditorName = detail.result.last_editor_name;
         this.offlineConflictId = null;
         this.conflictContent = null;
+        const resultState = detail.result.encryption_state
+          || (isCryptoEnvelope(detail.result.content) ? 'encrypted' : 'plain');
+        if (resultState !== this.encryptionState) {
+          void this.handleRemoteEncryptionChange(detail.result);
+          return;
+        }
+        if (resultState === 'encrypted') {
+          try {
+            const serverEnvelope = validateEnvelope(detail.result.content, this.pageId);
+            const submittedMatches = detail.sourceContent
+              && JSON.stringify(cryptoEnvelope) === JSON.stringify(detail.sourceContent);
+            if (detail.action === 'resolved-server') {
+              cryptoEnvelope = serverEnvelope;
+              this.status = 'saved';
+              this.clearLocalCache();
+              this.discardCryptoSession();
+            } else if (submittedMatches && this.editorRevision <= this.queuedRevision) {
+              cryptoEnvelope = serverEnvelope;
+              this.status = 'saved';
+              this.clearLocalCache();
+            } else {
+              this.status = this.editorRevision > this.queuedRevision ? 'unsaved' : 'saving';
+            }
+          } catch (error) {
+            this.failCrypto(error);
+          }
+          return;
+        }
         if (detail.result.content && editor) {
           const current = JSON.stringify(editor.getJSON());
           const synced = JSON.stringify(detail.result.content);
@@ -338,10 +415,370 @@ export function noteEditorPage() {
         }
       };
       window.addEventListener('offline-status', this.statusHandler);
+      cryptoChannel = typeof BroadcastChannel === 'function'
+        ? new BroadcastChannel('nasmut-notes-encryption')
+        : null;
+      if (cryptoChannel) {
+        cryptoChannel.onmessage = (event) => {
+          if (Number(event.data?.page_id) !== this.pageId) return;
+          if (['encryption-state-changed', 'encryption-wrapper-changed', 'encryption-locked'].includes(event.data?.type)) {
+            void this.handleEncryptionBroadcast(event.data);
+          }
+        };
+      }
+      if (this.encryptionState === 'plain') void this.loadAttachments();
+    },
+
+    startEditor(content) {
+      editor?.destroy();
+      editor = createEditor({
+        element: this.$refs.editor,
+        content,
+        editable: this.canEditPage,
+        onUpdate: (json) => this.onChange(json),
+        onTransaction: () => this.syncToolbar(),
+        onImageUpload: (file) => this.uploadImage(file),
+        onImageUploadError: (error) => this.handleImageUploadError(error),
+        onPendingImageUploads: (count) => {
+          this.pendingImageUploads = count;
+        },
+        onLinkClick: (link) => this.openLinkMenu(link),
+      });
+      this.bindImageViewer();
+      this.syncToolbar();
+    },
+
+    isEncrypted() {
+      return this.encryptionState === 'encrypted';
+    },
+
+    isCryptoUnlocked() {
+      return this.isEncrypted() && this.cryptoStatus === 'unlocked';
+    },
+
+    encryptionButtonLabel() {
+      if (!this.isEncrypted()) return 'Notiz unverschlüsselt';
+      return this.isCryptoUnlocked()
+        ? 'Notiz verschlüsselt und entsperrt'
+        : 'Notiz verschlüsselt und gesperrt';
+    },
+
+    encryptionDialogTitle() {
+      return {
+        unlock: 'Notiz entsperren',
+        encrypt: 'Notiz verschlüsseln',
+        rewrap: 'Kennwort ändern',
+        decrypt: 'Verschlüsselung aufheben',
+      }[this.cryptoDialogMode] || 'Notizverschlüsselung';
+    },
+
+    cryptoPasswordHint() {
+      const value = this.cryptoPassword.normalize('NFC');
+      if (!value) return '';
+      if (Array.from(value).length < 12) return 'Zu kurz: mindestens 12 Zeichen.';
+      if (/^(.)\1+$/.test(value) || /^(password|passwort|123456|qwertz)/i.test(value)) {
+        return 'Dieses Kennwort ist offensichtlich schwach. Verwende eine einzigartige Passphrase.';
+      }
+      return Array.from(value).length < 20
+        ? 'Gültig, aber eine längere einzigartige Passphrase ist sicherer.'
+        : 'Lange Passphrase.';
+    },
+
+    handleEncryptionButton() {
+      this.encryptionMenuOpen = false;
+      if (!this.isEncrypted()) {
+        this.openCryptoDialog('encrypt');
+      } else if (!this.isCryptoUnlocked()) {
+        this.openCryptoDialog('unlock');
+      } else {
+        this.encryptionMenuOpen = true;
+      }
+    },
+
+    openCryptoDialog(mode) {
+      if (this.cryptoBusy) return;
+      if (mode !== 'unlock' && !navigator.onLine) {
+        this.cryptoError = 'Verschlüsselungsübergänge sind nur online möglich.';
+        return;
+      }
+      this.encryptionMenuOpen = false;
+      this.cryptoDialogMode = mode;
+      this.cryptoPassword = '';
+      this.cryptoPasswordCurrent = '';
+      this.cryptoPasswordConfirm = '';
+      this.cryptoAcknowledged = false;
+      this.cryptoDialogError = '';
+      this.cryptoDialogOpen = true;
+      this.$nextTick(() => this.$refs.cryptoDialog?.querySelector('input:not([type="checkbox"])')?.focus());
+    },
+
+    closeCryptoDialog() {
+      if (!this.cryptoBusy) {
+        this.cryptoDialogOpen = false;
+        this.cryptoPassword = '';
+        this.cryptoPasswordCurrent = '';
+        this.cryptoPasswordConfirm = '';
+      }
+    },
+
+    trapCryptoDialogFocus(event) {
+      const dialog = this.$refs.cryptoDialog;
+      if (!dialog) return;
+      const elements = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled)')];
+      if (elements.length === 0) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+
+    async submitCryptoDialog() {
+      if (this.cryptoBusy) return;
+      this.cryptoBusy = true;
+      this.cryptoDialogError = '';
+      try {
+        if (this.cryptoDialogMode === 'unlock') await this.unlockEncryptedNote();
+        if (this.cryptoDialogMode === 'encrypt') await this.encryptCurrentNote();
+        if (this.cryptoDialogMode === 'rewrap') await this.changeEncryptionPassword();
+        if (this.cryptoDialogMode === 'decrypt') await this.decryptCurrentNote();
+        this.cryptoDialogOpen = false;
+        this.cryptoPassword = '';
+        this.cryptoPasswordCurrent = '';
+        this.cryptoPasswordConfirm = '';
+      } catch (error) {
+        this.cryptoDialogError = error.message || 'Der Verschlüsselungsvorgang ist fehlgeschlagen.';
+      } finally {
+        this.cryptoBusy = false;
+      }
+    },
+
+    cryptoActionLabel() {
+      if (this.cryptoBusy) return 'Bitte warten…';
+      return {
+        unlock: 'Entsperren',
+        encrypt: 'Jetzt verschlüsseln',
+        rewrap: 'Kennwort ändern',
+        decrypt: 'Verschlüsselung aufheben',
+      }[this.cryptoDialogMode] || 'Fortfahren';
+    },
+
+    canKeepConflict() {
+      if (!this.isEncrypted()) return this.conflictContent?.encryption_state !== 'encrypted';
+      const state = this.conflictContent?.encryption_state
+        || (isCryptoEnvelope(this.conflictContent?.content) ? 'encrypted' : 'plain');
+      return state === 'encrypted' && this.isCryptoUnlocked();
+    },
+
+    async unlockEncryptedNote() {
+      if (!cryptoEnvelope) throw new Error('Der Krypto-Umschlag ist nicht verfügbar.');
+      let unlocked;
+      try {
+        unlocked = await decryptEnvelope(cryptoEnvelope, this.cryptoPassword, this.pageId);
+      } catch (error) {
+        if (error instanceof NoteCryptoFormatError) throw error;
+        throw new Error('Kennwort falsch oder Notiz beschädigt.');
+      }
+      const sanitized = sanitizeNoteDoc(unlocked.document);
+      if (!sanitized.doc || sanitized.doc.type !== 'doc') {
+        throw new Error('Der entschlüsselte Notizinhalt ist ungültig.');
+      }
+      cryptoKey = unlocked.key;
+      this.startEditor(sanitized.doc);
+      this.cryptoStatus = 'unlocked';
+      this.cryptoError = '';
+      this.status = navigator.onLine ? 'saved' : 'offline';
+      if (sanitized.changed && this.canEditPage) this.onChange(editor.getJSON());
+    },
+
+    async ensureEncryptionTransitionReady() {
+      if (!navigator.onLine) throw new Error('Dieser Vorgang benötigt eine Internetverbindung.');
+      if (this.status === 'conflict' || this.status === 'invalid') {
+        throw new Error('Löse zuerst den bestehenden Speicher- oder Versionskonflikt.');
+      }
+      if (this.pendingSave) {
+        throw new Error('Ein Speichervorgang läuft noch. Bitte versuche es gleich erneut.');
+      }
+      if (this.status === 'unsaved') await this.saveNow();
+      await syncOutbox();
+      if (await hasQueuedNoteChange(this.pageId)) {
+        throw new Error('Lokale Änderungen sind noch nicht synchronisiert.');
+      }
+      const conflict = (await listSyncConflicts()).find((item) => Number(item.page_id) === this.pageId);
+      if (conflict) throw new Error('Löse zuerst den Versionskonflikt dieser Notiz.');
+    },
+
+    async encryptionTransition(transition, content, expectedState) {
+      try {
+        return await apiFetch(`/api/pages/${this.pageId}/content/encryption`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            transition,
+            content,
+            version: this.version,
+            expected_encryption_state: expectedState,
+          }),
+        });
+      } catch (error) {
+        const current = error.payload?.current;
+        if (error.status === 409 && current?.content) {
+          await this.handleRemoteEncryptionChange(current);
+          throw new Error('Die Notiz wurde zwischenzeitlich geändert. Der aktuelle Stand wurde geladen.');
+        }
+        throw error;
+      }
+    },
+
+    async encryptCurrentNote() {
+      if (this.isEncrypted() || !editor || !this.canEditPage) return;
+      validateNewPassword(this.cryptoPassword, this.cryptoPasswordConfirm);
+      if (!this.cryptoAcknowledged) throw new Error('Bestätige den möglichen endgültigen Verlust bei Kennwortverlust.');
+      if (this.attachments.length > 0 || this.pendingImageUploads > 0 || this.pageImageUrls().length > 0) {
+        throw new Error('Notizen mit Bildern oder Anhängen können nicht verschlüsselt werden.');
+      }
+      await this.ensureEncryptionTransitionReady();
+      const encrypted = await encryptDocument(editor.getJSON(), this.cryptoPassword, this.pageId);
+      const result = await this.encryptionTransition('encrypt', encrypted.envelope, 'plain');
+      cryptoEnvelope = validateEnvelope(result.content || encrypted.envelope, this.pageId);
+      cryptoKey = encrypted.key;
+      this.encryptionState = 'encrypted';
+      this.cryptoStatus = 'unlocked';
+      this.applySavedResult(result);
+      await replaceNoteEncryptionState(this.pageId, { ...result, content: cryptoEnvelope }, true);
+      this.attachments = [];
+      this.clearLocalCache(true);
+      this.broadcastEncryption('encryption-state-changed');
+      window.dispatchEvent(new CustomEvent('page-encryption-changed', { detail: { pageId: this.pageId, encrypted: true } }));
+      window.dispatchEvent(new Event('pages-changed'));
+    },
+
+    async changeEncryptionPassword() {
+      if (!this.isCryptoUnlocked() || !cryptoEnvelope) return;
+      validateNewPassword(this.cryptoPassword, this.cryptoPasswordConfirm);
+      await this.ensureEncryptionTransitionReady();
+      let wrapped;
+      try {
+        wrapped = await rewrapEnvelope(
+          cryptoEnvelope,
+          this.cryptoPasswordCurrent,
+          this.cryptoPassword,
+          this.pageId,
+        );
+      } catch (error) {
+        if (error instanceof NoteCryptoFormatError) throw error;
+        throw new Error('Das bisherige Kennwort ist falsch oder die Notiz ist beschädigt.');
+      }
+      const result = await this.encryptionTransition('rewrap', wrapped.envelope, 'encrypted');
+      cryptoEnvelope = validateEnvelope(result.content || wrapped.envelope, this.pageId);
+      cryptoKey = wrapped.key;
+      this.applySavedResult(result);
+      await replaceNoteEncryptionState(this.pageId, { ...result, content: cryptoEnvelope }, true);
+      this.broadcastEncryption('encryption-wrapper-changed');
+    },
+
+    async decryptCurrentNote() {
+      if (!this.isCryptoUnlocked() || !editor) return;
+      if (!this.cryptoAcknowledged) throw new Error('Bestätige, dass der Server den Inhalt künftig wieder lesen kann.');
+      await this.ensureEncryptionTransitionReady();
+      const document = editor.getJSON();
+      const result = await this.encryptionTransition('decrypt', document, 'encrypted');
+      this.encryptionState = 'plain';
+      this.cryptoStatus = 'unlocked';
+      cryptoKey = null;
+      cryptoEnvelope = null;
+      this.applySavedResult(result);
+      await replaceNoteEncryptionState(this.pageId, { ...result, content: result.content || document }, false);
+      this.broadcastEncryption('encryption-state-changed');
+      window.dispatchEvent(new CustomEvent('page-encryption-changed', { detail: { pageId: this.pageId, encrypted: false } }));
+      window.dispatchEvent(new Event('pages-changed'));
       void this.loadAttachments();
     },
 
+    applySavedResult(result) {
+      this.version = Number(result.version);
+      this.updatedAt = result.updated_at || this.updatedAt;
+      this.lastEditorName = result.last_editor_name || this.lastEditorName;
+      this.status = 'saved';
+      this.queuedRevision = this.editorRevision;
+    },
+
+    async lockEncryptedNote(notify = true) {
+      if (!this.isEncrypted()) return;
+      if (this.status === 'unsaved' && editor && !this.pendingSave) await this.saveNow();
+      while (this.pendingSave) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      this.discardCryptoSession();
+      if (notify) this.broadcastEncryption('encryption-locked');
+    },
+
+    discardCryptoSession() {
+      editor?.destroy();
+      editor = null;
+      cryptoKey = null;
+      this.cryptoStatus = cryptoEnvelope ? 'locked' : 'error';
+      this.linkMenuOpen = false;
+      this.historyOpen = false;
+      this.aiOpen = false;
+      this.cancelVoice();
+    },
+
+    failCrypto(error) {
+      this.discardCryptoSession();
+      this.cryptoStatus = 'error';
+      this.cryptoError = error?.message || 'Die verschlüsselte Notiz ist beschädigt.';
+    },
+
+    broadcastEncryption(type) {
+      cryptoChannel?.postMessage({ type, page_id: this.pageId, version: this.version });
+    },
+
+    async handleEncryptionBroadcast(message) {
+      this.discardCryptoSession();
+      if (message.type === 'encryption-locked') return;
+      try {
+        const current = navigator.onLine
+          ? await apiFetch(`/api/pages/${this.pageId}/content`)
+          : await readCachedNoteContent(this.pageId);
+        if (current) await this.handleRemoteEncryptionChange(current);
+      } catch (error) {
+        this.failCrypto(error);
+      }
+    },
+
+    async handleRemoteEncryptionChange(result) {
+      const state = result.encryption_state || (isCryptoEnvelope(result.content) ? 'encrypted' : 'plain');
+      this.discardCryptoSession();
+      this.encryptionState = state;
+      window.__CURRENT_PAGE_IS_ENCRYPTED__ = state === 'encrypted';
+      window.dispatchEvent(new CustomEvent('page-encryption-changed', {
+        detail: { pageId: this.pageId, encrypted: state === 'encrypted' },
+      }));
+      this.applySavedResult(result);
+      if (state === 'encrypted') {
+        try {
+          cryptoEnvelope = validateEnvelope(result.content, this.pageId);
+          this.cryptoStatus = 'locked';
+          await cacheNoteContent(this.pageId, { ...result, encryption_state: 'encrypted' });
+          this.clearLocalCache(true);
+        } catch (error) {
+          this.failCrypto(error);
+        }
+      } else {
+        cryptoEnvelope = null;
+        this.cryptoStatus = 'unlocked';
+        const sanitized = sanitizeNoteDoc(result.content);
+        this.startEditor(sanitized.doc);
+        await cacheNoteContent(this.pageId, { ...result, encryption_state: 'plain' });
+      }
+    },
+
     openCompressionDialog() {
+      if (this.isEncrypted()) return;
       this.compressionQuality = 82;
       this.compressionSize = 'screen';
       this.compressionError = '';
@@ -433,6 +870,7 @@ export function noteEditorPage() {
     },
 
     openAiRewriteDialog() {
+      if (this.isEncrypted()) return;
       this.aiError = '';
       this.aiSuggestion = null;
       this.aiPreview = '';
@@ -456,7 +894,7 @@ export function noteEditorPage() {
     },
 
     async requestAiRewrite() {
-      if (!editor || this.aiBusy) {
+      if (!editor || this.aiBusy || this.isEncrypted()) {
         return;
       }
       if (!navigator.onLine) {
@@ -511,7 +949,7 @@ export function noteEditorPage() {
     onChange(json) {
       this.editorRevision += 1;
       this.status = 'unsaved';
-      this.writeLocalCache(json);
+      if (!this.isEncrypted()) this.writeLocalCache(json);
 
       clearTimeout(this.saveTimer);
       this.saveTimer = setTimeout(() => this.saveNow(), DEBOUNCE_MS);
@@ -526,7 +964,7 @@ export function noteEditorPage() {
       }
       clearTimeout(this.saveTimer);
 
-      const content = editor.getJSON();
+      let content = editor.getJSON();
       const savingRevision = this.editorRevision;
       this.pendingSave = true;
       this.saveRequested = false;
@@ -534,7 +972,16 @@ export function noteEditorPage() {
       this.saveError = '';
 
       try {
-        await saveNoteOffline(this.pageId, content, this.version, options);
+        if (this.isEncrypted()) {
+          if (!cryptoKey || !cryptoEnvelope) throw new Error('Die Notiz ist nicht entsperrt.');
+          content = await encryptDocumentWithKey(content, cryptoKey, cryptoEnvelope, this.pageId);
+          cryptoEnvelope = content;
+          this.writeLocalCache(content, savingRevision);
+        }
+        await saveNoteOffline(this.pageId, content, this.version, {
+          ...options,
+          expectedEncryptionState: this.encryptionState,
+        });
         this.queuedRevision = Math.max(this.queuedRevision, savingRevision);
         this.status = navigator.onLine ? 'saving' : 'offline';
 
@@ -548,6 +995,7 @@ export function noteEditorPage() {
             this.conflictContent = {
               content: conflict.server_content,
               version: conflict.server_version,
+              encryption_state: conflict.server_encryption_state,
             };
           } else if (!(await hasQueuedNoteChange(this.pageId))) {
             const synced = await readCachedNoteContent(this.pageId);
@@ -593,7 +1041,18 @@ export function noteEditorPage() {
         try {
           const content = editor?.getJSON();
           if (content) {
-            await saveNoteOffline(this.pageId, content, this.version, { forceSnapshot: true });
+            let persisted = content;
+            if (this.isEncrypted()) {
+              if (this.conflictContent?.encryption_state !== 'encrypted') {
+                throw new Error('Meine Fassung kann nicht über eine Verschlüsselungszustandsgrenze übernommen werden.');
+              }
+              persisted = await encryptDocumentWithKey(content, cryptoKey, cryptoEnvelope, this.pageId);
+              cryptoEnvelope = persisted;
+            }
+            await saveNoteOffline(this.pageId, persisted, this.version, {
+              forceSnapshot: true,
+              expectedEncryptionState: this.encryptionState,
+            });
             this.queuedRevision = this.editorRevision;
           }
           await resolveConflictKeepLocal(this.offlineConflictId);
@@ -629,6 +1088,7 @@ export function noteEditorPage() {
     },
 
     async openHistory() {
+      if (this.isEncrypted()) return;
       this.historyOpen = true;
       this.historyError = '';
       this.historyLeftId = '';
@@ -899,6 +1359,9 @@ export function noteEditorPage() {
     },
 
     uploadImage(file) {
+      if (this.isEncrypted()) {
+        return Promise.reject(new Error('Bilder sind in verschlüsselten Notizen nicht verfügbar.'));
+      }
       this.imageUploadError = '';
       const request = (async () => {
         if (navigator.onLine) {
@@ -932,13 +1395,15 @@ export function noteEditorPage() {
      * andere Änderung über den Autosave.
      */
     async handleVoiceRecording(recording) {
-      if (!this.canEditPage || !editor) {
+      if (!this.canEditPage || !editor || this.isEncrypted()) {
         throw new Error('Diese Notiz ist schreibgeschützt.');
       }
 
+      const body = voiceFormData(recording);
+      body.append('page_id', String(this.pageId));
       const data = await apiFetch('/api/voice/transcribe', {
         method: 'POST',
-        body: voiceFormData(recording),
+        body,
       });
 
       const nodes = Array.isArray(data.document?.content) ? data.document.content : [];
@@ -1129,7 +1594,7 @@ export function noteEditorPage() {
      * sichtbar bleibt, was an der Notiz hängt (FR-OFFLINE-06).
      */
     async loadAttachments() {
-      if (!this.pageId) {
+      if (!this.pageId || this.isEncrypted()) {
         return;
       }
       if (navigator.onLine) {
@@ -1182,6 +1647,7 @@ export function noteEditorPage() {
     },
 
     pickAttachment() {
+      if (this.isEncrypted()) return;
       this.$refs.attachmentInput?.click();
     },
 
@@ -1191,7 +1657,7 @@ export function noteEditorPage() {
       if (input) {
         input.value = '';
       }
-      if (files.length === 0 || !this.canEditPage) {
+      if (files.length === 0 || !this.canEditPage || this.isEncrypted()) {
         return;
       }
       if (!navigator.onLine) {
@@ -1305,10 +1771,12 @@ export function noteEditorPage() {
     },
 
     pickImage() {
+      if (this.isEncrypted()) return;
       this.$refs.imageInput?.click();
     },
 
     pickCameraImage() {
+      if (this.isEncrypted()) return;
       this.$refs.cameraInput?.click();
     },
 
@@ -1621,6 +2089,7 @@ export function noteEditorPage() {
         return;
       }
       try {
+        if (this.isEncrypted() && !isCryptoEnvelope(content)) return;
         localStorage.setItem(
           LOCAL_CACHE_PREFIX + this.pageId,
           JSON.stringify({
@@ -1638,14 +2107,16 @@ export function noteEditorPage() {
     readLocalCache() {
       try {
         const raw = localStorage.getItem(LOCAL_CACHE_PREFIX + this.pageId);
-        return raw ? JSON.parse(raw) : null;
+        const cached = raw ? JSON.parse(raw) : null;
+        if (cached && this.isEncrypted() && !isCryptoEnvelope(cached.content)) return null;
+        return cached;
       } catch (e) {
         return null;
       }
     },
 
-    clearLocalCache() {
-      if (this.editLockedElsewhere) {
+    clearLocalCache(force = false) {
+      if (this.editLockedElsewhere && !force) {
         return;
       }
       try {
@@ -1690,6 +2161,10 @@ export function noteEditorPage() {
       clearTimeout(this.saveTimer);
       editor?.destroy();
       editor = null;
+      cryptoKey = null;
+      cryptoEnvelope = null;
+      cryptoChannel?.close();
+      cryptoChannel = null;
     },
   };
 }

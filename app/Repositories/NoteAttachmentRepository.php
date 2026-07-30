@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Domain\Notes\NoteEncryptionException;
 use PDO;
 
 final class NoteAttachmentRepository
@@ -28,10 +29,11 @@ final class NoteAttachmentRepository
             'INSERT INTO note_attachments (
                 page_id, token_hash, storage_name, original_name, mime_type,
                 byte_size, width, height, created_by, created_at
-             ) VALUES (
+             ) SELECT
                 :page_id, :token_hash, :storage_name, :original_name, :mime_type,
                 :byte_size, :width, :height, :created_by, :created_at
-             )'
+               FROM pages
+              WHERE id = :page_id_guard AND is_encrypted = 0'
         );
         $stmt->execute([
             'page_id' => $pageId,
@@ -44,7 +46,16 @@ final class NoteAttachmentRepository
             'height' => $height,
             'created_by' => $createdBy,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'page_id_guard' => $pageId,
         ]);
+
+        if ($stmt->rowCount() !== 1) {
+            throw new NoteEncryptionException(
+                'ENCRYPTION_STATE_CONFLICT',
+                'Verschlüsselte Notizen können keine Bilder enthalten.',
+                409,
+            );
+        }
 
         $attachment = $this->findById((int) $this->pdo->lastInsertId());
         assert($attachment !== null);
@@ -145,6 +156,7 @@ final class NoteAttachmentRepository
                JOIN pages ON pages.id = note_attachments.page_id
                JOIN workspaces ON workspaces.id = pages.workspace_id
               WHERE workspaces.user_id = :user_id
+                AND pages.is_encrypted = 0
            ORDER BY note_attachments.id ASC'
         );
         $stmt->execute(['user_id' => $userId]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Domain\Notes\NoteEncryptionException;
 use PDO;
 
 final class ShareRepository
@@ -15,16 +16,29 @@ final class ShareRepository
     public function create(int $pageId, string $tokenHash, string $permission, string $mode): int
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO share_links (page_id, token_hash, permission, mode, created_at)
-             VALUES (:page_id, :token_hash, :permission, :mode, :created_at)'
+            "INSERT INTO share_links (page_id, token_hash, permission, mode, created_at)
+             SELECT :page_id, :token_hash, :permission, :mode, :created_at
+               FROM pages
+              WHERE id = :page_id_guard
+                AND (is_encrypted = 0 OR :mode_guard <> 'read_copy')"
         );
         $stmt->execute([
             'page_id' => $pageId,
             'token_hash' => $tokenHash,
             'permission' => $permission,
             'mode' => $mode,
+            'mode_guard' => $mode,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'page_id_guard' => $pageId,
         ]);
+
+        if ($stmt->rowCount() !== 1) {
+            throw new NoteEncryptionException(
+                'ENCRYPTION_COPY_UNAVAILABLE',
+                'Verschlüsselte Notizen können nicht zum Kopieren geteilt werden.',
+                409,
+            );
+        }
 
         return (int) $this->pdo->lastInsertId();
     }
@@ -41,6 +55,7 @@ final class ShareRepository
                     share_links.created_at,
                     pages.title,
                     pages.type,
+                    pages.is_encrypted,
                     pages.workspace_id,
                     workspaces.user_id AS owner_id
              FROM share_links

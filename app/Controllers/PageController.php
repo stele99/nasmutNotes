@@ -222,6 +222,7 @@ final class PageController
             'deleted_at' => $page['deleted_at'],
             'created_at' => $page['created_at'],
             'updated_at' => $page['updated_at'],
+            'is_encrypted' => (bool) ($page['is_encrypted'] ?? false),
             'is_shared' => ($page['is_shared'] ?? false) === true,
             'share_permission' => $page['share_permission'] ?? null,
             'can_edit' => ($page['can_edit'] ?? true) === true,

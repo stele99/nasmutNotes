@@ -6,7 +6,7 @@
         <span class="flex size-11 shrink-0 items-center justify-center rounded-xl" style="background: var(--color-bg); color: var(--color-text-muted);" x-icon="upload"></span>
         <div class="min-w-0 flex-1">
             <p class="font-medium" style="color: var(--color-text);">Notizen importieren</p>
-            <p class="text-xs">ZIP-Archiv aus UpNote, Obsidian oder Joplin.</p>
+            <p class="text-xs">Markdown-ZIP oder verschlüsselte Notizdatei.</p>
         </div>
     </div>
     <button type="button" class="btn btn-secondary mt-3 w-full" @click="openDialog">Archiv importieren</button>
@@ -27,7 +27,7 @@
                     <div>
                         <h2 class="text-xl font-semibold">Notizen importieren</h2>
                         <p class="mt-1 text-sm" style="color: var(--color-text-muted);">
-                            ZIP-Archiv mit Markdown-Dateien, wie es UpNote, Obsidian oder Joplin exportieren.
+                            ZIP-Archiv mit Markdown-Dateien oder eine aus einem Workspace-Export extrahierte <code>.encrypted-note.json</code>-Datei.
                         </p>
                     </div>
                     <button type="button" @click="closeDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
@@ -38,15 +38,22 @@
                         <li>Jede <code>.md</code>-Datei wird zu einer Notizseite; der Dateiname wird zum Titel.</li>
                         <li>Eingebettete Bilder werden übernommen, sonstige Dateien werden Anhänge der Seite.</li>
                         <li>Erstell- und Änderungsdatum aus dem Archiv bleiben erhalten.</li>
+                        <li>Verschlüsselte Notizen werden ausschließlich im Browser entschlüsselt und für die neue Seiten-ID wieder verschlüsselt.</li>
                         <li x-show="limitHint()" x-cloak x-text="limitHint()"></li>
                     </ul>
 
-                    <input x-ref="archiveInput" type="file" accept=".zip,application/zip" class="hidden" @change="chooseFile">
+                    <input x-ref="archiveInput" type="file" accept=".zip,application/zip,.encrypted-note.json,application/json" class="hidden" @change="chooseFile">
                     <div class="mt-5 flex flex-wrap items-center gap-3">
                         <button type="button" class="btn btn-secondary" :disabled="busy" @click="pickFile">
                             <span x-icon="upload"></span>Archiv wählen
                         </button>
                         <span class="min-w-0 flex-1 truncate text-sm" style="color: var(--color-text-muted);" x-text="fileLabel()"></span>
+                    </div>
+
+                    <div x-show="fileKind === 'encrypted'" x-cloak class="mt-5">
+                        <label for="encrypted-note-import-password" class="block text-sm font-medium">Kennwort der Notiz</label>
+                        <input id="encrypted-note-import-password" x-model="encryptionPassword" type="password" autocomplete="current-password" maxlength="1024" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+                        <p class="mt-2 text-xs" style="color: var(--color-text-muted);">Das Kennwort und der entschlüsselte Inhalt verlassen diesen Browser nicht.</p>
                     </div>
 
                     <div x-show="busy" x-cloak class="mt-5">
@@ -92,7 +99,7 @@
                 <p x-show="error" x-cloak x-text="error" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
 
                 <div class="mt-6 flex flex-col gap-2">
-                    <button x-show="!report" type="button" class="btn btn-primary w-full" :disabled="busy || !fileName || tooLarge" @click="startImport">Import starten</button>
+                    <button x-show="!report" type="button" class="btn btn-primary w-full" :disabled="busy || !fileName || tooLarge || (fileKind === 'encrypted' && !encryptionPassword)" @click="startImport">Import starten</button>
                     <button type="button" class="btn btn-quiet w-full" :disabled="busy" @click="closeDialog" x-text="report ? 'Fertig' : 'Abbrechen'"></button>
                 </div>
             </div>

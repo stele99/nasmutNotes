@@ -36,6 +36,7 @@ final class ImageCompressionService
         if ($page['type'] !== 'note') {
             throw new NotFoundException('Diese Seite ist keine Notizseite.');
         }
+        $this->pages->assertNotEncrypted($page);
         if ($page['deleted_at'] !== null) {
             throw new ValidationException('Bilder einer gelöschten Seite können nicht komprimiert werden.');
         }

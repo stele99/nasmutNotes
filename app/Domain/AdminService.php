@@ -308,7 +308,8 @@ final class AdminService
 
         return array_values(array_filter(
             $this->admin->allAttachments(),
-            static fn (array $row): bool => !isset($referenced[(string) $row['token_hash']]),
+            static fn (array $row): bool => !(bool) ($row['is_encrypted'] ?? false)
+                && !isset($referenced[(string) $row['token_hash']]),
         ));
     }
 

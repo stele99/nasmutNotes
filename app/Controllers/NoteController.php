@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Notes\NoteContentException;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\NoteWriteUnavailableException;
 use App\Domain\Notes\VersionConflictException;
@@ -28,7 +30,7 @@ final class NoteController
     {
         $result = $this->notes->get(CurrentUser::require($request), (int) $args['id']);
 
-        return JsonResponse::json($response, $result);
+        return $this->noStore(JsonResponse::json($response, $result));
     }
 
     /** @param array<string, string> $args */
@@ -49,6 +51,9 @@ final class NoteController
         if (!isset($body['version']) || !is_int($body['version'])) {
             throw new ValidationException('Feld "version" fehlt oder ist keine Ganzzahl.');
         }
+        if (!isset($body['expected_encryption_state']) || !is_string($body['expected_encryption_state'])) {
+            throw new ValidationException('Feld "expected_encryption_state" fehlt oder ist ungültig.');
+        }
 
         $forceSnapshot = ($body['force_snapshot'] ?? false) === true;
 
@@ -59,20 +64,14 @@ final class NoteController
                 $body['content'],
                 (int) $body['version'],
                 $forceSnapshot,
+                $body['expected_encryption_state'],
             );
         } catch (VersionConflictException $e) {
-            return JsonResponse::json($response, [
-                'error' => [
-                    'code' => 'VERSION_CONFLICT',
-                    'message' => $e->getMessage(),
-                ],
-                'current' => [
-                    'content' => $e->currentContent,
-                    'version' => $e->currentVersion,
-                    'updated_at' => $e->currentUpdatedAt,
-                    'last_editor_name' => $e->currentEditorName,
-                ],
-            ], 409);
+            return $this->versionConflictResponse($response, $e);
+        } catch (NoteEncryptionException $e) {
+            return $this->encryptionError($response, $e);
+        } catch (NoteContentException $e) {
+            return JsonResponse::error($response, 'INVALID_NOTE_CONTENT', $e->getMessage(), 422);
         } catch (NoteWriteUnavailableException $e) {
             return JsonResponse::error(
                 $response->withHeader('Retry-After', '1'),
@@ -82,13 +81,71 @@ final class NoteController
             );
         }
 
-        return JsonResponse::json($response, $result);
+        return $this->noStore(JsonResponse::json($response, $result));
+    }
+
+    /** @param array<string, string> $args */
+    public function updateEncryption(Request $request, Response $response, array $args): Response
+    {
+        $user = CurrentUser::require($request);
+        if (!$this->rateLimiter->attempt("note-encryption:{$user->id}", 20, 300)) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '60'),
+                'RATE_LIMITED',
+                'Zu viele Verschlüsselungsänderungen. Bitte kurz warten.',
+                429,
+            );
+        }
+
+        $body = (array) ($request->getParsedBody() ?? []);
+        if (!is_string($body['transition'] ?? null)) {
+            throw new ValidationException('Feld "transition" fehlt oder ist ungültig.');
+        }
+        if (!is_array($body['content'] ?? null)) {
+            throw new ValidationException('Feld "content" fehlt oder ist kein Objekt.');
+        }
+        if (!is_int($body['version'] ?? null)) {
+            throw new ValidationException('Feld "version" fehlt oder ist keine Ganzzahl.');
+        }
+        if (!is_string($body['expected_encryption_state'] ?? null)) {
+            throw new ValidationException('Feld "expected_encryption_state" fehlt oder ist ungültig.');
+        }
+
+        try {
+            $result = $this->notes->transitionEncryption(
+                $user,
+                (int) $args['id'],
+                $body['transition'],
+                $body['content'],
+                $body['version'],
+                $body['expected_encryption_state'],
+            );
+        } catch (VersionConflictException $e) {
+            return $this->versionConflictResponse($response, $e);
+        } catch (NoteEncryptionException $e) {
+            return $this->encryptionError($response, $e);
+        } catch (NoteContentException $e) {
+            return JsonResponse::error($response, 'INVALID_NOTE_CONTENT', $e->getMessage(), 422);
+        } catch (NoteWriteUnavailableException $e) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '1'),
+                'NOTE_BUSY',
+                $e->getMessage(),
+                503,
+            );
+        }
+
+        return $this->noStore(JsonResponse::json($response, $result));
     }
 
     /** @param array<string, string> $args */
     public function versions(Request $request, Response $response, array $args): Response
     {
-        $result = $this->notes->listVersions(CurrentUser::require($request), (int) $args['id']);
+        try {
+            $result = $this->notes->listVersions(CurrentUser::require($request), (int) $args['id']);
+        } catch (NoteEncryptionException $e) {
+            return $this->encryptionError($response, $e);
+        }
 
         return JsonResponse::json($response, $result);
     }
@@ -96,13 +153,17 @@ final class NoteController
     /** @param array<string, string> $args */
     public function showVersion(Request $request, Response $response, array $args): Response
     {
-        $result = $this->notes->getVersion(
-            CurrentUser::require($request),
-            (int) $args['id'],
-            (int) $args['vid'],
-        );
+        try {
+            $result = $this->notes->getVersion(
+                CurrentUser::require($request),
+                (int) $args['id'],
+                (int) $args['vid'],
+            );
+        } catch (NoteEncryptionException $e) {
+            return $this->encryptionError($response, $e);
+        }
 
-        return JsonResponse::json($response, $result);
+        return $this->noStore(JsonResponse::json($response, $result));
     }
 
     /** @param array<string, string> $args */
@@ -128,18 +189,9 @@ final class NoteController
                 $body['version'],
             );
         } catch (VersionConflictException $e) {
-            return JsonResponse::json($response, [
-                'error' => [
-                    'code' => 'VERSION_CONFLICT',
-                    'message' => $e->getMessage(),
-                ],
-                'current' => [
-                    'content' => $e->currentContent,
-                    'version' => $e->currentVersion,
-                    'updated_at' => $e->currentUpdatedAt,
-                    'last_editor_name' => $e->currentEditorName,
-                ],
-            ], 409);
+            return $this->versionConflictResponse($response, $e);
+        } catch (NoteEncryptionException $e) {
+            return $this->encryptionError($response, $e);
         } catch (NoteWriteUnavailableException $e) {
             return JsonResponse::error(
                 $response->withHeader('Retry-After', '1'),
@@ -149,6 +201,43 @@ final class NoteController
             );
         }
 
-        return JsonResponse::json($response, $result);
+        return $this->noStore(JsonResponse::json($response, $result));
+    }
+
+    private function encryptionError(Response $response, NoteEncryptionException $exception): Response
+    {
+        $body = [
+            'error' => [
+                'code' => $exception->errorCode,
+                'message' => $exception->getMessage(),
+            ],
+        ];
+        if ($exception->context !== []) {
+            $body += $exception->context;
+        }
+
+        return $this->noStore(JsonResponse::json($response, $body, $exception->status));
+    }
+
+    private function versionConflictResponse(Response $response, VersionConflictException $exception): Response
+    {
+        return $this->noStore(JsonResponse::json($response, [
+            'error' => [
+                'code' => 'VERSION_CONFLICT',
+                'message' => $exception->getMessage(),
+            ],
+            'current' => [
+                'content' => $exception->currentContent,
+                'version' => $exception->currentVersion,
+                'updated_at' => $exception->currentUpdatedAt,
+                'last_editor_name' => $exception->currentEditorName,
+                'encryption_state' => $exception->encryptionState,
+            ],
+        ], 409));
+    }
+
+    private function noStore(Response $response): Response
+    {
+        return $response->withHeader('Cache-Control', 'no-store');
     }
 }

@@ -28,6 +28,7 @@ function offlinePageHtml(page) {
   const id = Number(page.id);
   const title = escapeHtml(page.title || 'Seite');
   const isShared = page.is_shared ? '1' : '0';
+  const isEncrypted = page.is_encrypted ? '1' : '0';
   const canEdit = page.is_shared
     ? (page.can_edit === true || page.can_edit === 1 || page.share_permission === 'write' ? '1' : '0')
     : '1';
@@ -51,7 +52,7 @@ function offlinePageHtml(page) {
       </div>`;
 
   const body = isNote
-    ? `<div class="note-page page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="${id}" data-page-title="${title}" data-page-can-edit="${canEdit}" data-page-is-shared="${isShared}">
+    ? `<div class="note-page page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="${id}" data-page-title="${title}" data-page-can-edit="${canEdit}" data-page-is-shared="${isShared}" data-page-encrypted="${isEncrypted}">
         <div class="note-sticky-header page-toolbar flex items-center gap-2">
           <span style="color: ${notebookColor};" x-icon="${notebookIcon}"></span>
           ${notebookLabel}
@@ -60,14 +61,30 @@ function offlinePageHtml(page) {
         <div class="pt-10">
           <h1 class="text-4xl font-semibold tracking-tight" x-text="pageTitle"></h1>
           <p class="mt-2 text-sm" style="color: var(--color-text-muted);" x-text="statusLabel()"></p>
-          <div x-show="canEditPage" class="note-sticky-toolbar editor-toolbar mb-5 mt-6 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
+          <section x-show="isEncrypted() && !isCryptoUnlocked()" x-cloak class="note-lock-screen mt-6">
+            <span class="note-lock-icon" x-icon="lock:size-8"></span>
+            <h2 class="mt-4 text-xl font-semibold">Verschlüsselte Notiz</h2>
+            <p class="mt-2 text-sm" style="color: var(--color-text-muted);">Der Offline-Speicher enthält nur den verschlüsselten Umschlag.</p>
+            <button x-show="cryptoStatus === 'locked'" type="button" @click="openCryptoDialog('unlock')" class="btn btn-primary mt-5">Entsperren</button>
+            <p x-show="cryptoStatus === 'error'" x-text="cryptoError" class="mt-3 text-sm" style="color: var(--color-danger);"></p>
+          </section>
+          <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar mb-5 mt-6 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" x-icon="italic"></button>
             <button type="button" data-editor-command="code" @click.prevent="toggleCode" class="toolbar-button" title="Code (inline)" x-icon="code"></button>
             <button type="button" data-editor-command="codeBlock" @click.prevent="toggleCodeBlock" class="toolbar-button" title="Codeblock" x-icon="square-code"></button>
             <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button" title="Tabelle" x-icon="table"></button>
           </div>
-          <div class="prose-editor" x-ref="editor"></div>
+          <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
+          <div x-show="cryptoDialogOpen" x-cloak class="fixed inset-0 z-[130] flex items-center justify-center p-4" style="background: rgb(0 0 0 / .5);" role="dialog" aria-modal="true" aria-labelledby="offline-crypto-title">
+            <form x-ref="cryptoDialog" @submit.prevent="submitCryptoDialog" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg);">
+              <h2 id="offline-crypto-title" class="text-xl font-semibold">Notiz entsperren</h2>
+              <label for="offline-crypto-password" class="mt-5 block text-sm font-medium">Notizkennwort</label>
+              <input id="offline-crypto-password" x-model="cryptoPassword" type="password" autocomplete="current-password" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border);">
+              <p x-show="cryptoDialogError" x-text="cryptoDialogError" class="mt-3 text-sm" style="color: var(--color-danger);"></p>
+              <div class="mt-5 flex justify-end gap-2"><button type="button" @click="closeCryptoDialog" class="btn btn-quiet">Abbrechen</button><button type="submit" class="btn btn-primary">Entsperren</button></div>
+            </form>
+          </div>
         </div>
       </div>`
     : page.type === 'log' ? logBody
@@ -94,7 +111,7 @@ function offlinePageHtml(page) {
   return `<!DOCTYPE html><html><head><title>${title}</title></head><body>
 <main class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto" x-data="pageShare"
   data-page-id="${id}" data-page-title="${title}" data-page-is-shared="${isShared}"
-  data-page-permission="${permission}" data-page-can-edit="${canEdit}">
+  data-page-permission="${permission}" data-page-can-edit="${canEdit}" data-page-encrypted="${isEncrypted}">
   <button @click="goBack()" class="sidebar-toggle fixed left-4 top-4 z-[100] flex border shadow-sm md:hidden" style="border-color: var(--color-border); background: var(--color-bg);" aria-label="Zurück zur Seitenauswahl" x-icon="chevron-left"></button>
   ${body}
 </main></body></html>`;
@@ -642,6 +659,7 @@ export function pageList() {
       window.__CURRENT_PAGE_IS_SHARED__ = isShared;
       window.__CURRENT_PAGE_PERMISSION__ = page?.share_permission || null;
       window.__CURRENT_PAGE_CAN_EDIT__ = canEdit;
+      window.__CURRENT_PAGE_IS_ENCRYPTED__ = Boolean(page?.is_encrypted);
     },
 
     /** Der Ausschnitt wächst beim Scrollen, damit große Workspaces klein starten. */
@@ -738,6 +756,7 @@ export function pageList() {
 
     /** Zweite Kartenzeile: Anriss der Notiz bzw. Aufgabenstand der Task-Seite. */
     pageSummary(page) {
+      if (page.is_encrypted) return 'Verschlüsselte Notiz';
       if (page.type === 'log') {
         const total = Number(page.log_entry_count || 0);
         if (total === 0) {

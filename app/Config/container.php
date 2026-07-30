@@ -22,6 +22,7 @@ use App\Domain\Log\LogService;
 use App\Domain\NotebookService;
 use App\Domain\Notes\AttachmentService;
 use App\Domain\Notes\ImageCompressionService;
+use App\Domain\Notes\NoteCryptoEnvelope;
 use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\PageAttachmentService;
@@ -39,6 +40,7 @@ use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NoteContentRepository;
+use App\Repositories\NoteVersionRepository;
 use App\Repositories\PageAttachmentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\SearchRepository;
@@ -105,6 +107,28 @@ return static function (string $rootPath): DI\Container {
 
         NoteAttachmentRepository::class => static fn (PDO $pdo): NoteAttachmentRepository
             => new NoteAttachmentRepository($pdo),
+
+        NoteService::class => static fn (
+            PDO $pdo,
+            PageService $pages,
+            PageRepository $pageRepository,
+            NoteContentRepository $contents,
+            NoteVersionRepository $versions,
+            NoteAttachmentRepository $attachments,
+            ProseMirrorValidator $validator,
+            NoteCryptoEnvelope $cryptoEnvelope,
+            AuditLogRepository $auditLog,
+        ): NoteService => new NoteService(
+            $pdo,
+            $pages,
+            $pageRepository,
+            $contents,
+            $versions,
+            $attachments,
+            $validator,
+            $cryptoEnvelope,
+            $auditLog,
+        ),
 
         SessionService::class => static fn (SessionRepository $sessions, UserRepository $users): SessionService
             => new SessionService($sessions, $users, Env::int('SESSION_LIFETIME_DAYS', 30)),

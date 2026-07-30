@@ -134,6 +134,29 @@ final class NotebookExportServiceTest extends TestCase
         self::assertStringContainsString('Inhalt der Notiz.', $markdown);
     }
 
+    public function testExportsEncryptedNoteAsEnvelopeJsonInsteadOfEmptyMarkdown(): void
+    {
+        $notebook = $this->notebooks->create($this->user, ['name' => 'Tresor']);
+        $page = $this->pages->create($this->user, 'note', 'Geheim', null, (int) $notebook['id']);
+        $pageId = (int) $page['id'];
+        $envelope = [
+            'zk' => 1,
+            'binding' => ['page_id' => (string) $pageId],
+            'kdf' => ['algo' => 'PBKDF2-HMAC-SHA256', 'iterations' => 600_000, 'salt' => base64_encode(str_repeat('s', 16))],
+            'wrapped_key' => ['algo' => 'AES-256-GCM', 'iv' => base64_encode(str_repeat('w', 12)), 'data' => base64_encode(str_repeat('k', 48))],
+            'payload' => ['algo' => 'AES-256-GCM', 'iv' => base64_encode(str_repeat('p', 12)), 'data' => base64_encode(str_repeat('c', 16))],
+        ];
+        $this->notes->transitionEncryption($this->user, $pageId, 'encrypt', $envelope, 1, 'plain');
+
+        $entries = $this->exportEntries([(int) $notebook['id']]);
+
+        self::assertArrayHasKey('Tresor/Geheim.encrypted-note.json', $entries);
+        self::assertArrayNotHasKey('Tresor/Geheim.md', $entries);
+        $exported = json_decode($entries['Tresor/Geheim.encrypted-note.json'], true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame((string) $pageId, $exported['original_page_id']);
+        self::assertSame($envelope, $exported['envelope']);
+    }
+
     /** Bilder landen im Unterordner und werden relativ verlinkt. */
     public function testEmbeddedImagesGoIntoFilesFolderAndAreLinked(): void
     {

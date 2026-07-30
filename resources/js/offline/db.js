@@ -1,7 +1,7 @@
 const DB_NAME = 'shareinfo-offline';
 // Das Schema gehört dieser Datei: public/sw.js öffnet dieselbe Datenbank ohne
 // Versionsangabe und löst deshalb nie ein eigenes Upgrade aus.
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 /** @type {Promise<IDBDatabase>|null} */
 let dbPromise = null;
@@ -60,6 +60,18 @@ export function openDb() {
           }
           if (!Object.hasOwn(current.value, 'notebook_id') || current.value.notebook_id === undefined) {
             current.update({ ...current.value, notebook_id: null });
+          }
+          current.continue();
+        };
+      }
+      if (event.oldVersion < 5) {
+        const pages = request.transaction.objectStore('pages');
+        const cursor = pages.openCursor();
+        cursor.onsuccess = () => {
+          const current = cursor.result;
+          if (!current) return;
+          if (!Object.hasOwn(current.value, 'is_encrypted')) {
+            current.update({ ...current.value, is_encrypted: false });
           }
           current.continue();
         };
@@ -320,6 +332,13 @@ export async function upsertNoteOutbox(pageId, payload) {
   const matches = all
     .filter((item) => item.type === 'note.putContent' && Number(item.page_id) === Number(pageId))
     .sort((a, b) => Number(a.id) - Number(b.id));
+  const operation = payload.operation || 'save';
+  const expectedState = payload.expected_encryption_state || 'plain';
+  if (matches.some((item) => (item.payload?.operation || 'save') !== operation
+    || (item.payload?.expected_encryption_state || 'plain') !== expectedState)) {
+    tx.abort();
+    throw new Error('Änderungen unterschiedlicher Verschlüsselungszustände dürfen nicht zusammengeführt werden.');
+  }
 
   if (matches.length === 0) {
     const id = await req(s.add({
@@ -388,6 +407,18 @@ export async function saveNoteAndUpsertOutbox(pageId, contentRow, payload) {
   const matches = all
     .filter((item) => item.type === 'note.putContent' && Number(item.page_id) === Number(pageId))
     .sort((a, b) => Number(a.id) - Number(b.id));
+  const operation = payload.operation || 'save';
+  const expectedState = payload.expected_encryption_state || 'plain';
+  if (matches.some((item) => (item.payload?.operation || 'save') !== operation
+    || (item.payload?.expected_encryption_state || 'plain') !== expectedState)) {
+    tx.abort();
+    try {
+      await done;
+    } catch {
+      /* expected abort */
+    }
+    throw new Error('Lokale Änderungen gehören zu einem anderen Verschlüsselungszustand.');
+  }
   const first = matches[0] || null;
   const last = matches[matches.length - 1] || null;
   const conflict = matches.find(
@@ -460,6 +491,7 @@ export async function completeNoteSync(id, expectedRevision, serverRow) {
       page_id: Number(current.page_id),
       content: serverRow.content,
       version: Number(serverRow.version),
+      encryption_state: serverRow.encryption_state || current.payload?.expected_encryption_state || 'plain',
       updated_at: serverRow.updated_at || null,
       last_editor_name: serverRow.last_editor_name || null,
       dirty: false,
@@ -488,6 +520,7 @@ export async function completeNoteSync(id, expectedRevision, serverRow) {
     notes.put({
       ...currentNote,
       version: Number(serverRow.version),
+      encryption_state: serverRow.encryption_state || current.payload?.expected_encryption_state || 'plain',
       dirty: true,
       cached_at: new Date().toISOString(),
     });
@@ -523,6 +556,54 @@ export async function putNoteContentIfClean(pageId, row) {
   }
   await done;
   return !dirty;
+}
+
+/**
+ * Replaces persistent browser copies after a server-confirmed state transition.
+ * Removing the queue atomically prevents a stale plaintext save from following
+ * a successful encryption request.
+ */
+export async function replaceNoteEncryptionState(pageId, row, encrypted) {
+  const database = await openDb();
+  const names = ['pages', 'note_contents', 'documents', 'outbox', 'attachment_drafts', 'page_attachments'];
+  const tx = database.transaction(names, 'readwrite');
+  const done = txDone(tx);
+  const numericId = Number(pageId);
+  const outbox = tx.objectStore('outbox');
+  const entries = await req(outbox.getAll());
+  for (const entry of entries) {
+    if (entry.type === 'note.putContent' && Number(entry.page_id) === numericId) {
+      outbox.delete(entry.id);
+    }
+  }
+
+  const drafts = tx.objectStore('attachment_drafts');
+  const draftIds = await req(drafts.index('by_page').getAllKeys(numericId));
+  for (const id of draftIds) drafts.delete(id);
+
+  tx.objectStore('note_contents').put({
+    ...row,
+    page_id: numericId,
+    version: Number(row.version),
+    encryption_state: encrypted ? 'encrypted' : 'plain',
+    dirty: false,
+    cached_at: new Date().toISOString(),
+  });
+  const pages = tx.objectStore('pages');
+  const page = await req(pages.get(numericId));
+  if (page) {
+    pages.put({
+      ...page,
+      is_encrypted: encrypted,
+      preview: encrypted ? 'Verschlüsselte Notiz' : page.preview,
+      updated_at: row.updated_at || page.updated_at,
+    });
+  }
+  if (encrypted) {
+    tx.objectStore('documents').delete(`/app/page/${numericId}`);
+    tx.objectStore('page_attachments').delete(numericId);
+  }
+  await done;
 }
 
 /** @param {number} id @param {Record<string, unknown>|null} conflict */

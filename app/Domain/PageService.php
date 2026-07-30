@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use App\Domain\Geo\ReverseGeocoder;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Repositories\PageRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\WorkspaceRepository;
@@ -209,7 +210,9 @@ final class PageService
 
         foreach ($pages as $index => $page) {
             $summary = $summaries[(int) $page['id']] ?? [];
-            $pages[$index]['preview'] = $summary['preview'] ?? null;
+            $pages[$index]['preview'] = ($page['is_encrypted'] ?? false) === true
+                ? 'Verschlüsselte Notiz'
+                : ($summary['preview'] ?? null);
             $pages[$index]['last_editor_name'] = $summary['last_editor_name'] ?? null;
             $pages[$index]['task_count'] = $summary['task_count'] ?? null;
             $pages[$index]['open_task_count'] = $summary['open_task_count'] ?? null;
@@ -251,6 +254,8 @@ final class PageService
             throw new NotFoundException("Seite #{$pageId} nicht gefunden.");
         }
 
+        $page['is_encrypted'] = (bool) ($page['is_encrypted'] ?? false);
+
         return $page;
     }
 
@@ -259,6 +264,17 @@ final class PageService
         $page = $this->find($user, $pageId);
         if (($page['can_edit'] ?? false) !== true) {
             throw new ForbiddenException('Diese Freigabe ist nur lesend.');
+        }
+    }
+
+    /** @param array<string, mixed> $page */
+    public function assertNotEncrypted(array $page): void
+    {
+        if ((bool) ($page['is_encrypted'] ?? false)) {
+            throw new NoteEncryptionException(
+                'NOTE_ENCRYPTED',
+                'Diese Funktion ist für verschlüsselte Notizen nicht verfügbar.',
+            );
         }
     }
 
@@ -402,6 +418,7 @@ final class PageService
      */
     private function withAccess(array $page, bool $isShared, ?string $permission): array
     {
+        $page['is_encrypted'] = (bool) ($page['is_encrypted'] ?? false);
         $page['is_shared'] = $isShared;
         $page['share_permission'] = $permission;
         $page['can_edit'] = $page['deleted_at'] === null

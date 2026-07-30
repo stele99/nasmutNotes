@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\PageAttachmentService;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
@@ -40,7 +41,11 @@ final class PageAttachmentController
             return JsonResponse::error($response, 'VALIDATION_FAILED', 'Es wurde keine Datei übertragen.', 422);
         }
 
-        $attachment = $this->attachments->upload($user, (int) $args['id'], $file);
+        try {
+            $attachment = $this->attachments->upload($user, (int) $args['id'], $file);
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
+        }
 
         return JsonResponse::json($response, $attachment, 201);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Voice\VoiceServiceException;
 use App\Support\CurrentUser;
@@ -48,6 +49,8 @@ final class NoteAiController
                 $body['content'],
                 is_string($body['mode'] ?? null) ? $body['mode'] : '',
             );
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
         } catch (VoiceServiceException $e) {
             $this->logger->warning('KI-Textüberarbeitung fehlgeschlagen', [
                 'user_id' => $user->id,

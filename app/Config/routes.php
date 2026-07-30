@@ -127,6 +127,7 @@ return static function (App $app): void {
         $group->delete('/{id}/share-access', [ShareController::class, 'leave']);
         $group->get('/{id}/content', [NoteController::class, 'show']);
         $group->put('/{id}/content', [NoteController::class, 'update']);
+        $group->put('/{id}/content/encryption', [NoteController::class, 'updateEncryption']);
         $group->post('/{id}/ai/rewrite', [NoteAiController::class, 'rewrite']);
         $group->get('/{id}/versions', [NoteController::class, 'versions']);
         $group->get('/{id}/versions/{vid}', [NoteController::class, 'showVersion']);

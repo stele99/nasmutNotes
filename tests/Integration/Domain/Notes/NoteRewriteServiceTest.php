@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Domain\Notes;
 
 use App\Domain\Import\MarkdownConverter;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageService;
@@ -150,6 +151,24 @@ final class NoteRewriteServiceTest extends TestCase
         ], NoteRewriteService::MODE_INVITING);
 
         self::assertStringContainsString('😊', $result['preview']);
+    }
+
+    public function testEncryptedNoteIsRejectedBeforeAiProcessing(): void
+    {
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => $this->pageId]);
+
+        try {
+            $this->service('Darf nicht aufgerufen werden.')->rewrite(
+                $this->user,
+                $this->pageId,
+                ['type' => 'doc', 'content' => []],
+                NoteRewriteService::MODE_NORMAL,
+            );
+            self::fail('Verschlüsselte Notiz wurde an die KI übergeben.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
+        }
     }
 
     private function service(string|callable $markdown): NoteRewriteService

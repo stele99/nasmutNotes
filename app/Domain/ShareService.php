@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Repositories\ShareRepository;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
@@ -24,6 +25,13 @@ final class ShareService
         $page = $this->pages->findOwned($user, $pageId);
         if ($page['deleted_at'] !== null) {
             throw new NotFoundException('Diese Seite wurde gelöscht.');
+        }
+        if ((bool) ($page['is_encrypted'] ?? false) && $permission === 'read_copy') {
+            throw new NoteEncryptionException(
+                'ENCRYPTION_COPY_UNAVAILABLE',
+                'Verschlüsselte Notizen können lesend oder schreibend geteilt, aber nicht kopiert werden.',
+                409,
+            );
         }
 
         if (!in_array($permission, self::PERMISSIONS, true)) {

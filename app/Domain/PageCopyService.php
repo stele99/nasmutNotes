@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Repositories\CategoryRepository;
 use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
@@ -66,6 +67,12 @@ final class PageCopyService
         $source = $this->pages->findById((int) $resolvedShare['page_id']);
         if ($source === null || $source['deleted_at'] !== null || !in_array($source['type'], ['note', 'task', 'log'], true)) {
             throw new NotFoundException('Quellseite nicht gefunden.');
+        }
+        if ((bool) ($source['is_encrypted'] ?? false)) {
+            throw new NoteEncryptionException(
+                'NOTE_ENCRYPTED',
+                'Verschlüsselte Notizen können nicht serverseitig kopiert werden.',
+            );
         }
 
         $writtenStorageNames = [];

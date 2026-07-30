@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain\Notes;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\PageService;
 use App\Domain\User;
@@ -250,6 +251,19 @@ final class PageAttachmentServiceTest extends TestCase
 
         $this->expectException(NotFoundException::class);
         $this->attachments->upload($this->owner, (int) $taskPage['id'], $this->uploadedFile('%PDF-1.4 x', 'a.pdf'));
+    }
+
+    public function testEncryptedNoteRejectsFileUpload(): void
+    {
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => $this->notePageId]);
+
+        try {
+            $this->upload('%PDF-1.4 geheim', 'geheim.pdf');
+            self::fail('Datei wurde an eine verschlüsselte Notiz angehängt.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
+        }
     }
 
     /** @return array<string, mixed> */

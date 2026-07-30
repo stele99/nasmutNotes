@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\PageService;
 use App\Domain\ShareService;
 use App\Domain\User;
@@ -192,6 +193,23 @@ final class ShareServiceTest extends TestCase
         self::assertSame([(int) $owned['id'], (int) $received['id']], array_keys($byId));
         self::assertFalse($byId[(int) $owned['id']]['is_shared']);
         self::assertTrue($byId[(int) $received['id']]['is_shared']);
+    }
+
+    public function testEncryptedNoteCanBeSharedForReadAndWriteButNotCopy(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Verschlüsselt', null);
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => (int) $page['id']]);
+
+        self::assertSame('read', $this->shares->create($this->userA, (int) $page['id'], 'read')['permission']);
+        self::assertSame('write', $this->shares->create($this->userA, (int) $page['id'], 'write')['permission']);
+
+        try {
+            $this->shares->create($this->userA, (int) $page['id'], 'read_copy');
+            self::fail('Verschlüsselte Notiz wurde zum Kopieren geteilt.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('ENCRYPTION_COPY_UNAVAILABLE', $exception->errorCode);
+        }
     }
 
     private function makeUser(WorkspaceRepository $workspaces, string $email): User

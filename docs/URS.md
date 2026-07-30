@@ -4,9 +4,9 @@
 | Feld | Wert |
 |---|---|
 | Dokument-ID | URS-NOTES-001 |
-| Version | **3.2** |
+| Version | **3.5** |
 | Status | Entwurf |
-| Datum | 2026-07-27 |
+| Datum | 2026-07-30 |
 | Technologie | PHP 8.5, SQLite 3 (WAL + FTS5), Vite 7 + Alpine.js 3 + TipTap 3 |
 
 ---
@@ -225,6 +225,22 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-NOTE-23 | Der Bild-Betrachter (FR-NOTE-16) unterstützt auf Touchgeräten Pinch-to-Zoom (bis 4×), Verschieben im gezoomten Zustand und Doppeltipp zum Ein-/Auszoomen. | S |
 | FR-NOTE-25 | **Jede Seite** — Notiz, Aufgabenliste und Logbuch — kann **optional festhalten, wo sie entstanden ist**. Wann das geschieht, legt der Nutzer je Gerät im Einstellungen-Dialog fest: **„Nur auf Klick"** (Vorgabe) — die Seite entsteht ohne Ort, unter der Überschrift steht „Standort hinzufügen" — oder **„Immer automatisch"**, dann wird der Ort schon beim Anlegen mitgeschickt, auch bei der Sprachnotiz (FR-VOICE-01). Ein gesetzter Ort lässt sich jederzeit **verschieben oder entfernen**: Der Dialog bietet den aktuellen Standort des Geräts sowie die Eingabe von Koordinaten oder eines kopierten Kartenlinks (OpenStreetMap, Google Maps, `geo:`). Gespeichert werden Breite, Länge, gemeldete Genauigkeit und Zeitpunkt an der Seite (Migration 0025). Jeder Fehlschlag der Ortung — abgelehnt, kein Signal, Zeitüberschreitung nach 8 Sekunden — bleibt beim Anlegen folgenlos; beim ausdrücklichen Setzen wird er gemeldet. Beim Anlegen verwirft der Server unbrauchbare Koordinaten stillschweigend, bei einer Eingabe lehnt er sie ab. Die Seite verlinkt den Ort auf OpenStreetMap; eine Karte wird **nicht** eingebunden. Der Ort gehört zur Seite: Freigaben ändern ihn nicht. Anzeige und Dialog sind für alle Seitentypen dieselben (`pageLocationMixin`, `partials/page_location*.php`). | S |
 | FR-NOTE-26 | Zu den Koordinaten wird die **Anschrift ermittelt** und an der Seite gespeichert (Migration 0026), damit das Anzeigen einer Notiz keine weitere Anfrage auslöst. Die Suche läuft **serverseitig** über Nominatim (`GEOCODER_URL`, abschaltbar durch einen leeren Wert): So bleibt die IP-Adresse des Nutzers dem Kartendienst unbekannt und die CSP muss nicht gelockert werden. Angezeigt wird die Anschrift, dahinter die Koordinaten auf **zwei Nachkommastellen** gekürzt — gespeichert bleiben sie vollständig. Findet die Suche nichts oder ist sie nicht erreichbar, bleibt es bei den Koordinaten; der Ort selbst geht dadurch nie verloren. | S |
+
+### 5.4a Verschlüsselte Notizseiten *(neu in v3.5)*
+
+| ID | Anforderung | Prio |
+|---|---|---|
+| FR-CRYPT-01 | Der Eigentümer kann eine normale Notizseite ohne Bilder, Dateianhänge oder aktive Kopierfreigabe mit einem eigenen Kennwort verschlüsseln. Schlüsselableitung, Ver- und Entschlüsselung erfolgen ausschließlich im Browser über WebCrypto; Kennwort, KEK, DEK und entschlüsselter Inhalt werden nie an den Server gesendet. | M |
+| FR-CRYPT-02 | Der Server speichert bei einer verschlüsselten Seite ausschließlich einen versionierten, authentifizierten Krypto-Umschlag. Formatversion 1 verwendet PBKDF2-HMAC-SHA256 mit 600.000 Iterationen und 16-Byte-Salt sowie AES-256-GCM mit frischem 12-Byte-IV und 128-Bit-Tag. Additional Authenticated Data bindet DEK-Hülle und Payload an die Seiten-ID. | M |
+| FR-CRYPT-03 | Das Kennwort wird im Browser nach NFC normalisiert, nicht getrimmt und muss mindestens 12 Unicode-Zeichen umfassen. Ohne Kennwort gibt es keine Wiederherstellung. Kennwort und Schlüssel werden nicht in `localStorage`, IndexedDB, Cache Storage, Cookies oder der Offline-Outbox abgelegt. | M |
+| FR-CRYPT-04 | Der Server erzwingt atomar die Zustände `plain` und `encrypted`. Normale Saves dürfen den Zustand nicht ändern; `encrypt`, `rewrap` und `decrypt` prüfen Ausgangszustand und Inhaltsversion. Diese Übergänge sind ausschließlich dem Eigentümer und nur online erlaubt. | M |
+| FR-CRYPT-05 | Bei verschlüsselten Seiten ist `content_text` leer, es entstehen keine Versionsschnappschüsse und vorhandene Versionen werden beim Verschlüsseln gelöscht. Inhalts-Volltextsuche, serverseitige Vorschau, Kopierfreigaben, serverseitiges Duplizieren, Bilder, Dateianhänge, KI-Überarbeitung, Diktat in die Notiz und Versionswiederherstellung sind serverseitig gesperrt. FR-NOTE-02/09, FR-SRCH, FR-VOICE und FR-EXP gelten insoweit nur für unverschlüsselte Notizen. | M |
+| FR-CRYPT-11 | Verschlüsselte Notizen dürfen mit `read` oder `write` geteilt werden. Der Share-Link enthält nur den Ciphertext; das Notizkennwort wird separat übermittelt und nie serverseitig gespeichert. Öffentliche Leser und angemeldete Schreiber entsperren den Umschlag ausschließlich im Browser. Schreiber dürfen verschlüsselte Saves ausführen, aber weder Kennworthülle noch Verschlüsselungszustand ändern. `read_copy` bleibt für verschlüsselte Notizen gesperrt. | M |
+| FR-CRYPT-06 | Verschlüsselte Notizen bleiben nach vorherigem Laden offline les- und bearbeitbar. Offline-Cache, lokaler Notfallcache, Konfliktfassungen und Outbox enthalten ausschließlich Krypto-Umschläge. Ein Klartext-Outboxeintrag darf niemals über eine Verschlüsselungszustandsgrenze synchronisiert werden. | M |
+| FR-CRYPT-07 | Beim Öffnen erscheint zunächst eine Sperrmaske. Nach lokaler Kennworteingabe wird der Editor im Browser initialisiert. Sperren oder ein Zustands-/Kennwortwechsel in einem anderen Tab zerstört Editor und erreichbare Schlüsselreferenzen; Tabs koordinieren sich zusätzlich über `BroadcastChannel`, ohne die serverseitige Versionsprüfung zu ersetzen. | M |
+| FR-CRYPT-08 | Kennwortwechsel umhüllt denselben DEK mit neuem Salt und IV; der verschlüsselte Payload bleibt bytegleich. Beim bewussten Aufheben der Verschlüsselung weist die UI darauf hin, dass der Klartext anschließend wieder an den Server gesendet sowie durch Suche, Export und Backups verarbeitet wird. | M |
+| FR-CRYPT-09 | Workspace-Exporte schreiben verschlüsselte Notizen als gekennzeichnete `.encrypted-note.json`-Dateien mit Umschlag und unverschlüsselten Metadaten, niemals als leere Markdown-Datei. Titel, Notizbuch, Standort, Zeitstempel, Ciphertextgröße und Zugriffsmuster bleiben grundsätzlich unverschlüsselte Metadaten. | M |
+| FR-CRYPT-10 | Die Funktion verspricht keine rückwirkende physische Löschung historischer Klartexte aus alten Browser-Speichern, Exporten, Backups, WAL-Dateien, Storage-Snapshots oder Datenträgerblöcken. UI und Betriebsdokumentation benennen diese Grenze ausdrücklich. | M |
 
 ### 5.5 Task-Seiten
 
@@ -869,6 +885,13 @@ users ──1:n── audit_log
 | AK-09 | Ein `<script>`-Tag im Notizinhalt wird weder gespeichert noch ausgeführt. |
 | **AK-48** | **Eine über die Werkzeugleiste eingefügte Checkliste lässt sich im Editor abhaken; der Haken bleibt nach Neuladen der Seite erhalten.** |
 | **AK-49** | **Zwei mit Enter getrennte Absätze stehen sichtbar enger beieinander als ein Absatz und eine nachfolgende Überschrift oder Liste.** |
+| **AK-54** | **Nach dem Verschlüsseln enthält `note_contents.content` nur einen gültigen Krypto-Umschlag, `content_text` ist leer und alle bisherigen Versionen der Seite sind gelöscht.** |
+| **AK-55** | **Entsperren, Bearbeiten und Autosave einer verschlüsselten Notiz funktionieren, ohne dass Klartext in Requestbody, `localStorage`, IndexedDB oder Offline-Outbox persistiert wird.** |
+| **AK-56** | **Ein falsches Kennwort entschlüsselt weder DEK noch Inhalt; Kennwort und Schlüssel verlassen den Browser nicht.** |
+| **AK-57** | **Upload-, KI-, Diktat-, Copy- und Versionsendpunkte lehnen eine verschlüsselte Notiz auch bei direktem API-Aufruf ab; Read- und Write-Shares funktionieren nach lokaler Kennworteingabe, Zustandsübergänge bleiben dem Eigentümer vorbehalten.** |
+| **AK-60** | **Ein öffentlicher Read-Share liefert nur den Krypto-Umschlag und zeigt den Inhalt erst nach lokaler Entschlüsselung im Browser; ein angemeldeter Write-Empfänger kann mit bekanntem Kennwort verschlüsselte Änderungen speichern.** |
+| **AK-58** | **Ein Klartext-Outboxeintrag kann nach erfolgreichem Verschlüsseln nicht mehr synchronisiert oder über „Meine Fassung behalten“ auf die Seite geschrieben werden.** |
+| **AK-59** | **Kennwortwechsel verändert Salt und DEK-Hülle, lässt den Payload bytegleich und sperrt andere geöffnete Tabs.** |
 
 ### 12.3 Tasks und Import
 
@@ -974,6 +997,7 @@ users ──1:n── audit_log
 
 | Version | Datum | Änderung |
 |---|---|---|
+| 3.5 | 2026-07-30 | **Zero-Knowledge-Verschlüsselung einzelner Notizseiten** (FR-CRYPT-01–10, AK-54–59, Migration 0033): PBKDF2/AES-GCM ausschließlich im Browser, serverseitiger Zustandsautomat und Guards, verschlüsselter Offline-Autosave, Sperr- und Kennwortwechsel-Abläufe, Ciphertext-Export sowie dokumentierte Grenzen für Metadaten, historische Backups und WAL-Reste |
 | 3.4 | 2026-07-29 | **Logbuch-Seiten** (Kap. 5.9a, FR-LOG-01–10, API 10.2, Migrationen 0027 und 0028): dritter Seitentyp mit Zeitspalte und frei definierbaren Spalten (Text, Standort, Uhrzeit, Stunden, Zahl, Betrag), neueste Einträge oben und Sortierung nach jeder Spalte, Summen der Zahlenspalten, diktierte Einträge über die Spaltenzuordnung eines Modells (`LogService`, `LogRepository`, `LogController`, `VoiceNoteService::transcribeForLog`). Der `Migrator` kann eine Migration jetzt ohne umgebende Transaktion ausführen (`-- migrator:no-transaction`) — nötig, um die CHECK-Bedingung von `pages.type` mit abgeschalteten Fremdschlüsseln umzubauen |
 | 3.3 | 2026-07-29 | **Sprachnotizen** (Kap. 5.10, FR-VOICE-01–07, API 10.2): Aufnahme im Browser über `MediaRecorder`, serverseitige Transkription über OpenAI (`gpt-4o-mini-transcribe`), optionale Nachbearbeitung durch ein zweites Modell mit Überschrift und abgeleitetem Notizbuch (`VoiceNoteService`, `OpenAiClient`, `VoiceNoteController`); sämtliche Parameter im Admin-Dashboard, der Schlüssel ausschließlich in `OPENAI_KEY`. Zusätzlich der optionale **Aufnahmeort** von Notizen (FR-NOTE-25/26, Migrationen 0025 und 0026): je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar über Koordinaten oder Kartenlink, mit serverseitig ermittelter Anschrift über Nominatim (`ReverseGeocoder`) |
 | 3.2 | 2026-07-27 | Neue Freigabeart „Lesen und Kopieren" (`read_copy`, Migration 0024): eigenständige, nicht indexierbare öffentliche Ansicht ohne Workspace-Oberfläche für Nur-Lesen- und Lesen/Kopieren-Links (`PublicShareController`/`PublicShareService`, Notizinhalt als sanitisiertes HTML über `ProseMirrorHtmlRenderer`); angemeldete Nutzer erzeugen daraus eine unabhängige Kopie samt Bildern und Dateianhängen im eigenen Workspace/Notizbuch (`PageCopyService`, `POST /s/{token}/copy`, FR-SHR-16); Lesen/Schreiben-Links verlangen jetzt zwingend eine Anmeldung, der Login-Rückkanal führt danach über einen signierten `return`-Pfad zurück zur Freigabe (FR-SHR-03/06/08, `OAuthFlight`); Sicherheitskorrektur: Task-Board-Änderungen prüfen nun serverseitig das Schreibrecht (`assertCanWrite`); der Service Worker cacht `/s/`-Antworten nicht mehr, da Share-Tokens Bearer-Credentials sind (NFR-SEC-16); zusätzlich Pinch-Zoom/Verschieben/Doppeltipp im Bild-Betrachter (FR-NOTE-23) und eine mobile Wisch-Geste zwischen Notizbuch- und Seitenliste |

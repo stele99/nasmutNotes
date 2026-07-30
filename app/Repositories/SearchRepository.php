@@ -19,8 +19,9 @@ final class SearchRepository
         $stmt = $this->pdo->prepare(
             'SELECT DISTINCT p.id,
                     p.title,
-                    p.type,
-                    p.updated_at,
+                     p.type,
+                     p.is_encrypted,
+                     p.updated_at,
                     CASE WHEN p.workspace_id = :owner_workspace_id THEN 0 ELSE 1 END AS is_shared
              FROM pages p
              LEFT JOIN note_contents n ON n.page_id = p.id
@@ -54,6 +55,10 @@ final class SearchRepository
             'term' => $term,
         ]);
 
-        return $stmt->fetchAll();
+        return array_map(static function (array $page): array {
+            $page['is_encrypted'] = (bool) $page['is_encrypted'];
+
+            return $page;
+        }, $stmt->fetchAll());
     }
 }

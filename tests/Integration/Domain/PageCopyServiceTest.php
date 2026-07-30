@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain;
 
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\PageCopyService;
 use App\Domain\User;
 use App\Repositories\CategoryRepository;
@@ -86,6 +87,23 @@ final class PageCopyServiceTest extends TestCase
             }
         }
         rmdir($this->storagePath);
+    }
+
+    public function testEncryptedNoteCannotBeCopiedServerSide(): void
+    {
+        $source = $this->pages->create($this->workspaceId($this->owner), 'note', 'Geheim', null);
+        $this->pdo->prepare('UPDATE pages SET is_encrypted = 1 WHERE id = :id')
+            ->execute(['id' => (int) $source['id']]);
+
+        try {
+            $this->service->copyFromShare($this->recipient, [
+                'mode' => 'read_copy',
+                'page_id' => (int) $source['id'],
+            ], null);
+            self::fail('Verschlüsselte Notiz wurde kopiert.');
+        } catch (NoteEncryptionException $exception) {
+            self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
+        }
     }
 
     public function testCopiesOnlyReferencedImagesAndAllFilesIndependently(): void

@@ -98,4 +98,10 @@ final class NoteVersionRepository
         $stmt->bindValue('keep', $keep, PDO::PARAM_INT);
         $stmt->execute();
     }
+
+    public function deleteForPage(int $pageId): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM note_versions WHERE page_id = :page_id');
+        $stmt->execute(['page_id' => $pageId]);
+    }
 }

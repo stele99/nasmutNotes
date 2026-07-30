@@ -96,7 +96,7 @@ final class PageRepository
         $stmt->execute(['id' => $id, 'workspace_id' => $workspaceId]);
         $row = $stmt->fetch();
 
-        return $row !== false ? $row : null;
+        return $row !== false ? $this->serialize($row) : null;
     }
 
     /** @return array<string, mixed>|null */
@@ -112,7 +112,7 @@ final class PageRepository
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
 
-        return $row !== false ? $row : null;
+        return $row !== false ? $this->serialize($row) : null;
     }
 
     /**
@@ -152,7 +152,7 @@ final class PageRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
-        return $stmt->fetchAll();
+        return array_map($this->serialize(...), $stmt->fetchAll());
     }
 
     /**
@@ -389,6 +389,18 @@ final class PageRepository
         $stmt->execute(['now' => $updatedAt ?? gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
     }
 
+    public function setEncryptionState(int $id, bool $encrypted, string $updatedAt): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE pages SET is_encrypted = :is_encrypted, updated_at = :updated_at WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $id,
+            'is_encrypted' => $encrypted ? 1 : 0,
+            'updated_at' => $updatedAt,
+        ]);
+    }
+
     /**
      * Übernimmt die Zeitstempel aus einem Import (FR-IMP-22). Der Notizinhalt
      * bekommt dasselbe Änderungsdatum, damit die Anzeige „Zuletzt geändert"
@@ -571,5 +583,17 @@ final class PageRepository
         }
 
         return $rows;
+    }
+
+    /** @param array<string, mixed> $page
+     *  @return array<string, mixed>
+     */
+    private function serialize(array $page): array
+    {
+        if (array_key_exists('is_encrypted', $page)) {
+            $page['is_encrypted'] = (bool) $page['is_encrypted'];
+        }
+
+        return $page;
     }
 }
