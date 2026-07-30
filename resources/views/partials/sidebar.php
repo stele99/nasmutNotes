@@ -77,6 +77,11 @@
                     </div>
                 </div>
             </template>
+            <?php /* Nur „Alle Notizen" wächst schrittweise nach - die anderen Sammlungen
+                     laden ohnehin vollständig (siehe hasMoreRecentPages). */ ?>
+            <div x-ref="recentSentinel" x-show="activeCollection === 'all' && searchQuery.trim() === '' && hasMoreRecentPages()" class="px-4 pt-2">
+                <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Notizen laden</button>
+            </div>
             <p x-show="searchLoading" class="px-4 py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
             <p x-show="trashError" x-cloak class="px-4 py-6 text-sm" style="color: var(--color-danger);" x-text="trashError"></p>
             <p x-show="!loading && !searchLoading && !trashError && filteredPages().length === 0" class="px-4 py-6 text-sm" style="color: var(--color-text-muted);" x-text="activeCollection === 'trash' ? 'Der Papierkorb ist leer.' : 'Noch keine Seiten.'"></p>

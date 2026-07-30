@@ -296,6 +296,7 @@ export function workspaceShell() {
 
     collectionLabel() {
       if (this.activeCollection === 'favorites') return 'Favoriten';
+      if (this.activeCollection === 'all') return 'Alle Notizen';
       if (this.activeCollection === 'unassigned') return 'Nicht zugewiesen';
       if (this.activeCollection === 'shared') return 'Geteilt';
       if (this.activeCollection === 'trash') return 'Papierkorb';

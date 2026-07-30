@@ -759,6 +759,11 @@ export function pageList() {
       if (this.activeCollection === 'favorites') {
         return pages.filter((page) => page.is_favorite);
       }
+      // „Alle Notizen" wächst wie die Übersicht schrittweise nach, sortiert
+      // rein nach Änderungsdatum (siehe orderedPages/recentLimit).
+      if (this.activeCollection === 'all' && this.searchQuery.trim() === '') {
+        return this.recentPages();
+      }
       return pages;
     },
 
