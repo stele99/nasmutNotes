@@ -52,7 +52,7 @@ final class Vite
         $nonceAttr = $nonce !== null ? " nonce=\"{$nonce}\"" : '';
         $html = '';
 
-        foreach ($item['css'] ?? [] as $cssFile) {
+        foreach ($this->cssFiles($manifest, $key) as $cssFile) {
             $html .= "<link rel=\"stylesheet\" href=\"/build/{$cssFile}\">\n";
         }
 
@@ -60,6 +60,44 @@ final class Vite
         $html .= "<script type=\"module\" data-cfasync=\"false\" src=\"/build/{$file}\"{$nonceAttr}></script>\n";
 
         return $html;
+    }
+
+    /**
+     * Vite kann gemeinsam genutztes CSS in einen importierten JS-Chunk
+     * auslagern. Das Entry selbst nennt dann nur noch sein eigenes CSS; ohne
+     * rekursive Auflösung würde die Produktion die Hauptstyles nicht laden.
+     *
+     * @param array<string, array<string, mixed>> $manifest
+     * @return list<string>
+     */
+    private function cssFiles(array $manifest, string $key): array
+    {
+        $visited = [];
+        $files = [];
+        $collect = function (string $itemKey) use (&$collect, &$files, &$visited, $manifest): void {
+            if (isset($visited[$itemKey])) {
+                return;
+            }
+            $visited[$itemKey] = true;
+            $item = $manifest[$itemKey] ?? null;
+            if (!is_array($item)) {
+                return;
+            }
+
+            foreach ($item['imports'] ?? [] as $import) {
+                if (is_string($import)) {
+                    $collect($import);
+                }
+            }
+            foreach ($item['css'] ?? [] as $file) {
+                if (is_string($file) && !in_array($file, $files, true)) {
+                    $files[] = $file;
+                }
+            }
+        };
+        $collect($key);
+
+        return $files;
     }
 
     /** @return array<string, array<string, mixed>> */
