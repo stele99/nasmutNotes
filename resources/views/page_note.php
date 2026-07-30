@@ -26,6 +26,18 @@
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
+            <button
+                x-show="status === 'conflict'"
+                x-cloak
+                type="button"
+                @click="openConflictDialog"
+                class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5"
+                style="border-color: var(--color-danger); color: var(--color-danger);"
+                title="Sync-Konflikt: beide Fassungen ansehen und entscheiden"
+                aria-label="Sync-Konflikt"
+            >
+                <span x-icon="triangle-alert"></span><span class="hidden lg:inline">Sync-Konflikt</span>
+            </button>
             <?php /* Löschen steht bewusst nur als Symbol da - der rote Papierkorb
                      ist eindeutig genug und die Leiste ist schon gut gefüllt. */ ?>
             <button x-show="!isShared && canEditPage" type="button" @click="trashPage" class="icon-action icon-action-danger flex items-center border p-2" style="border-color: var(--color-border); color: var(--color-danger);" title="In den Papierkorb" aria-label="In den Papierkorb" x-icon="trash"></button>
@@ -100,11 +112,13 @@
 
         <div
             x-show="status === 'conflict'"
+            x-cloak
             class="mb-8 flex flex-col gap-3 rounded-lg p-4 text-base sm:flex-row sm:items-center sm:justify-between"
             style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);"
         >
             <span>Diese Seite wurde zwischenzeitlich anderswo geändert.</span>
             <div class="flex flex-wrap gap-3">
+                <button type="button" @click="openConflictDialog" class="underline text-sm font-medium" style="color: var(--color-danger);">Beide Fassungen vergleichen</button>
                 <button @click="useServerVersion()" :disabled="pendingSave" class="underline text-sm font-medium">Serverfassung übernehmen</button>
                 <button x-show="canKeepConflict()" @click="keepMyVersion()" :disabled="pendingSave" class="underline text-sm font-medium">Meine Fassung behalten</button>
             </div>
@@ -417,6 +431,59 @@
                         x-text="restoringVersion ? 'Stelle wieder her…' : 'Ausgangsversion wiederherstellen'"
                     ></button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <?php /* Konflikt-Dialog: Auflösung findet ausschließlich hier statt (nicht in
+             den Einstellungen), weil nur hier beide Fassungen im Kontext der Notiz
+             nebeneinander sichtbar sind. Erreichbar über den roten Knopf oben in
+             der Werkzeugleiste, sobald status === 'conflict'. */ ?>
+    <div
+        x-show="conflictDialogOpen"
+        x-cloak
+        class="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5"
+        style="background-color: rgb(0 0 0 / 0.45);"
+        @click.self="closeConflictDialog"
+        @keydown.escape.window="closeConflictDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="note-conflict-title"
+    >
+        <div class="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+            <div class="flex items-start justify-between gap-4 border-b px-5 py-4" style="border-color: var(--color-border);">
+                <div>
+                    <h2 id="note-conflict-title" class="text-xl font-semibold" style="color: var(--color-danger);">Sync-Konflikt</h2>
+                    <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Diese Notiz wurde zwischenzeitlich anderswo geändert. Wähle, welche Fassung erhalten bleiben soll.</p>
+                </div>
+                <button type="button" @click="closeConflictDialog" :disabled="pendingSave" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+            </div>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                <div class="grid gap-4 md:grid-cols-2">
+                    <section class="min-w-0">
+                        <p class="text-sm font-medium">Meine Fassung <span x-show="updatedAt" class="font-normal" style="color: var(--color-text-muted);">· zuletzt lokal bearbeitet</span></p>
+                        <div class="mt-2 min-h-44 max-h-96 overflow-auto rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                            <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" x-text="conflictDocumentText(myConflictDocument())"></pre>
+                        </div>
+                    </section>
+
+                    <section class="min-w-0">
+                        <p class="text-sm font-medium">
+                            Serverfassung
+                            <span class="font-normal" style="color: var(--color-text-muted);" x-text="conflictContent?.version ? ('· Version ' + conflictContent.version) : ''"></span>
+                        </p>
+                        <div class="mt-2 min-h-44 max-h-96 overflow-auto rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                            <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" x-text="conflictDocumentText(conflictContent?.content)"></pre>
+                        </div>
+                    </section>
+                </div>
+                <p x-show="saveError" x-cloak x-text="saveError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+            </div>
+
+            <div class="flex flex-col gap-3 border-t px-5 py-4 sm:flex-row sm:items-center sm:justify-end" style="border-color: var(--color-border);">
+                <button type="button" @click="useServerVersion()" :disabled="pendingSave" class="btn btn-secondary">Serverfassung übernehmen</button>
+                <button type="button" x-show="canKeepConflict()" @click="keepMyVersion()" :disabled="pendingSave" class="btn btn-primary" x-text="pendingSave ? 'Wird gespeichert…' : 'Meine Fassung behalten'"></button>
             </div>
         </div>
     </div>

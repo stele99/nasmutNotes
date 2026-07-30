@@ -555,11 +555,13 @@ async function runSyncOutbox() {
   try {
     const pending = await db.listOutboxPending();
     for (const item of pending) {
+      let uploadedContent = null;
       try {
         if (item.type === 'note.putContent') {
           const sentRevision = Number(item.revision || 0);
           const sourceContent = item.payload.content;
           const content = await uploadOfflineAttachments(Number(item.page_id), item.payload.content);
+          uploadedContent = content;
           const result = await apiFetch(`/api/pages/${item.page_id}/content`, {
             method: 'PUT',
             body: JSON.stringify({
@@ -587,10 +589,19 @@ async function runSyncOutbox() {
         }
       } catch (error) {
         if (error.status === 409) {
-          conflicts += 1;
           const conflict = error.payload?.current || null;
-          await db.markNoteConflict(Number(item.id), conflict);
-          dispatchNoteSync('conflict', Number(item.page_id), conflict, Number(item.id));
+          const attemptedContent = uploadedContent ?? item.payload.content;
+          if (conflict && contentsEqual(attemptedContent, conflict.content)) {
+            const completion = await autoAcceptServerVersion(item, Number(item.revision || 0), conflict);
+            synced += 1;
+            if (completion.newerRevision) {
+              needsAnotherSync = true;
+            }
+          } else {
+            conflicts += 1;
+            await db.markNoteConflict(Number(item.id), conflict);
+            dispatchNoteSync('conflict', Number(item.page_id), conflict, Number(item.id));
+          }
         } else if ([400, 403, 404, 413, 422].includes(error.status)) {
           errors += 1;
           await db.markOutboxBlocked(
@@ -651,6 +662,45 @@ function clearSyncRetry() {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
+}
+
+/**
+ * Strukturvergleich für ProseMirror-JSON. Ein Konflikt entsteht nur aus der
+ * Versionsnummer (siehe VERSION_CONFLICT) - tippt niemand etwas anderes,
+ * unterscheidet sich der Inhalt selbst oft gar nicht, und der Server
+ * gewinnt dann automatisch statt eine Entscheidung einzufordern.
+ */
+function contentsEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== typeof b || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+      && a.every((item, index) => contentsEqual(item, b[index]));
+  }
+  if (typeof a === 'object') {
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    return keysA.length === keysB.length
+      && keysA.every((key) => Object.hasOwn(b, key) && contentsEqual(a[key], b[key]));
+  }
+  return a === b;
+}
+
+/** Übernimmt die Serverfassung stillschweigend, ohne den Eintrag als Konflikt zu markieren. */
+async function autoAcceptServerVersion(item, sentRevision, conflict) {
+  const completion = await db.completeNoteSync(Number(item.id), sentRevision, conflict);
+  dispatchNoteSync(
+    completion.completed ? 'resolved-server' : 'synced',
+    Number(item.page_id),
+    conflict,
+    Number(item.id),
+    item.payload.content,
+  );
+  return completion;
 }
 
 function dispatchNoteSync(action, pageId, result, outboxId, sourceContent = null) {
@@ -724,6 +774,12 @@ async function resolveConflictKeepLocalLocked(outboxId) {
   } catch (error) {
     if (error.status === 409) {
       const conflict = error.payload?.current || null;
+      if (conflict && contentsEqual(content, conflict.content)) {
+        await autoAcceptServerVersion(item, sentRevision, conflict);
+        await refreshQueueState();
+        syncChannel?.postMessage({ type: 'queue-changed' });
+        return conflict;
+      }
       await db.markNoteConflict(Number(item.id), conflict);
       dispatchNoteSync('conflict', Number(item.page_id), conflict, Number(item.id));
       await refreshQueueState();

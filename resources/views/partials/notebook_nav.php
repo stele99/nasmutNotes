@@ -138,25 +138,20 @@
                                 <?php /* Konflikte stehen ganz oben, weil sie eine Entscheidung
                                          brauchen - der Klick auf den Sync-Status in der Leiste
                                          landet genau hier (siehe openSyncSettings). */ ?>
+                                <?php /* Behoben wird ein Konflikt nur auf der Notiz selbst - dort stehen
+                                         beide Fassungen im Kontext nebeneinander (roter Knopf in der
+                                         Werkzeugleiste). Hier gibt es deshalb nur die Übersicht und den
+                                         Einstieg dorthin. */ ?>
                                 <div x-show="conflicts.length > 0" x-cloak class="mt-5 space-y-3">
                                     <h4 class="text-sm font-semibold" style="color: var(--color-danger);">Sync-Konflikte</h4>
                                     <template x-for="conflict in conflicts" :key="conflict.id">
-                                        <div class="rounded-lg border p-4" style="border-color: var(--color-danger);">
-                                            <p class="font-medium" x-text="conflict.title"></p>
-                                            <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                                                <div class="rounded-md border p-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
-                                                    <p class="text-sm font-medium" x-text="localConflictLabel(conflict)"></p>
-                                                    <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="conflictPreview(conflict.local_content)"></p>
-                                                </div>
-                                                <div class="rounded-md border p-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
-                                                    <p class="text-sm font-medium" x-text="serverConflictLabel(conflict)"></p>
-                                                    <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="conflictPreview(conflict.server_content)"></p>
-                                                </div>
+                                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4" style="border-color: var(--color-danger);">
+                                            <div class="min-w-0">
+                                                <p class="font-medium" x-text="conflict.title"></p>
+                                                <p class="mt-1 text-xs" style="color: var(--color-text-muted);" x-text="localConflictLabel(conflict)"></p>
+                                                <p class="text-xs" style="color: var(--color-text-muted);" x-text="serverConflictLabel(conflict)"></p>
                                             </div>
-                                            <div class="mt-3 flex flex-wrap gap-2">
-                                                <button type="button" @click="keepLocalConflict(conflict)" :disabled="isResolvingConflict(conflict)" class="btn btn-secondary">Lokale Fassung behalten</button>
-                                                <button type="button" @click="useServerConflict(conflict)" :disabled="isResolvingConflict(conflict)" class="btn btn-quiet">Serverfassung übernehmen</button>
-                                            </div>
+                                            <button type="button" @click="openConflictNote(conflict)" class="btn btn-secondary shrink-0">Notiz öffnen</button>
                                         </div>
                                     </template>
                                 </div>

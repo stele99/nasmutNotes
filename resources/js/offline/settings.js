@@ -11,8 +11,6 @@ import {
   normalizeCacheLimit,
   onStatusChange,
   prefetchSelected,
-  resolveConflictKeepLocal,
-  resolveConflictUseServer,
   retryBlockedEntry,
   setCacheLimit,
   syncOutbox,
@@ -316,60 +314,19 @@ export function offlineSettings() {
         : `Auf dem Server geändert: ${time}`;
     },
 
-    conflictPreview(content) {
-      const parts = [];
-      const walk = (node) => {
-        if (!node || typeof node !== 'object') {
-          return;
-        }
-        if (node.type === 'text' && typeof node.text === 'string') {
-          parts.push(node.text);
-        }
-        if (Array.isArray(node.content)) {
-          node.content.forEach(walk);
-          if (['paragraph', 'heading', 'listItem', 'taskItem', 'blockquote'].includes(node.type)) {
-            parts.push('\n');
-          }
-        }
-      };
-      walk(content);
-      const text = parts.join('').replace(/\n{3,}/g, '\n\n').trim();
-      return text.length > 180 ? `${text.slice(0, 177)}…` : (text || '(leer)');
-    },
-
-    async keepLocalConflict(conflict) {
-      this.resolvingConflictId = conflict.id;
-      this.error = '';
-      try {
-        await resolveConflictKeepLocal(conflict.id);
-        this.message = `Lokale Fassung von „${conflict.title}“ wurde gespeichert.`;
-        await this.refreshStats();
-      } catch (error) {
-        this.error = error.message || 'Konflikt konnte nicht aufgelöst werden.';
-      } finally {
-        this.resolvingConflictId = null;
+    /**
+     * Die Auflösung selbst findet nur auf der Notiz statt (dort stehen beide
+     * Fassungen im Kontext nebeneinander) - hier gibt es deshalb nur den
+     * Einstieg, keine Entscheidungsknöpfe.
+     */
+    openConflictNote(conflict) {
+      const owner = window.__workspaceNavigationOwner__;
+      this.closeDialog();
+      if (owner && typeof owner.navigateTo === 'function') {
+        void owner.navigateTo(`/app/page/${conflict.page_id}`);
+      } else {
+        window.location.href = `/app/page/${conflict.page_id}`;
       }
-    },
-
-    async useServerConflict(conflict) {
-      if (!window.confirm(`Lokale Änderungen an „${conflict.title}“ verwerfen und Serverfassung übernehmen?`)) {
-        return;
-      }
-      this.resolvingConflictId = conflict.id;
-      this.error = '';
-      try {
-        await resolveConflictUseServer(conflict.id);
-        this.message = `Serverfassung von „${conflict.title}“ wurde übernommen.`;
-        await this.refreshStats();
-      } catch (error) {
-        this.error = error.message || 'Konflikt konnte nicht aufgelöst werden.';
-      } finally {
-        this.resolvingConflictId = null;
-      }
-    },
-
-    isResolvingConflict(conflict) {
-      return this.resolvingConflictId === conflict.id;
     },
 
     /**

@@ -64,6 +64,7 @@ export function noteEditorPage() {
     releaseEditLock: null,
     conflictContent: null,
     offlineConflictId: null,
+    conflictDialogOpen: false,
     pageTitle: '',
     savedPageTitle: '',
     editingPageTitle: false,
@@ -340,6 +341,7 @@ export function noteEditorPage() {
         this.lastEditorName = detail.result.last_editor_name;
         this.offlineConflictId = null;
         this.conflictContent = null;
+        this.conflictDialogOpen = false;
         const resultState = detail.result.encryption_state
           || (isCryptoEnvelope(detail.result.content) ? 'encrypted' : 'plain');
         if (resultState !== this.encryptionState) {
@@ -1035,6 +1037,37 @@ export function noteEditorPage() {
       }
     },
 
+    /**
+     * Der rote Konflikt-Knopf in der Werkzeugleiste öffnet diesen Dialog - die
+     * Entscheidung fällt hier und nicht mehr in den Einstellungen, weil nur
+     * hier beide Fassungen im Kontext der Notiz sichtbar sind.
+     */
+    openConflictDialog() {
+      if (this.status !== 'conflict') {
+        return;
+      }
+      this.conflictDialogOpen = true;
+    },
+
+    closeConflictDialog() {
+      if (this.pendingSave) {
+        return;
+      }
+      this.conflictDialogOpen = false;
+    },
+
+    conflictDocumentText(content) {
+      if (!content) {
+        return '(leerer Inhalt)';
+      }
+      const text = documentToDiffBlocks(content).map((block) => block.text).join('\n\n');
+      return text || '(leerer Inhalt)';
+    },
+
+    myConflictDocument() {
+      return editor ? editor.getJSON() : null;
+    },
+
     async keepMyVersion() {
       if (this.offlineConflictId) {
         this.pendingSave = true;
@@ -1058,6 +1091,7 @@ export function noteEditorPage() {
             this.queuedRevision = this.editorRevision;
           }
           await resolveConflictKeepLocal(this.offlineConflictId);
+          this.conflictDialogOpen = false;
         } catch (error) {
           this.status = 'conflict';
           this.saveError = error.message || 'Der Konflikt konnte nicht aufgelöst werden.';
@@ -1069,6 +1103,7 @@ export function noteEditorPage() {
       }
       this.status = 'unsaved';
       this.conflictContent = null;
+      this.conflictDialogOpen = false;
       await this.saveNow({ forceSnapshot: true });
     },
 
@@ -1080,6 +1115,7 @@ export function noteEditorPage() {
       editor?.setEditable(false);
       try {
         await resolveConflictUseServer(this.offlineConflictId);
+        this.conflictDialogOpen = false;
       } catch (error) {
         this.status = 'conflict';
         this.saveError = error.message || 'Die Serverfassung konnte nicht übernommen werden.';
