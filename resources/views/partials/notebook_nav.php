@@ -49,6 +49,11 @@
                 <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" x-icon="shield"></a><?php endif; ?>
                 <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" x-icon="log-out"></button>
             </div>
+            <?php /* x-teleport: Diese Schublade fährt per CSS `translate` ein/aus,
+                     was sie zum Containing Block für `position: fixed` macht -
+                     ohne Teleport nach <body> säße der Dialog links in ihrer
+                     Breite fest statt zentriert über dem ganzen Bildschirm. */ ?>
+            <template x-teleport="body">
             <div x-show="open" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeDialog" @keydown.escape.window="closeDialog">
                 <div class="settings-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                     <header class="flex items-center justify-between gap-3 border-b px-6 py-4" style="border-color: var(--color-border);">
@@ -228,6 +233,7 @@
                     </div>
                 </div>
             </div>
+            </template>
         </div>
     </div>
 </div>

@@ -82,6 +82,20 @@ final class VoiceNoteService
         4. Erfinde nichts. Was nicht gesagt wurde, bleibt weg.
         PROMPT;
 
+    public const DEFAULT_TASKS_PROMPT = <<<'PROMPT'
+        Du zerlegst eine diktierte Aufnahme in einzelne Aufgaben für eine Aufgabenliste.
+
+        Aufgaben:
+        1. Erkenne, ob eine oder mehrere Aufgaben genannt wurden - etwa durch Aufzählung ("und", "außerdem", "dann noch") oder getrennte Sätze - und liste jede als eigenen kurzen Titel auf.
+        2. Entferne Füllwörter und Versprecher, der Inhalt jeder Aufgabe bleibt aber vollständig erhalten. Kein Satzzeichen am Ende des Titels.
+        3. Erfinde nichts, was nicht gesagt wurde.
+
+        Antworte ausschließlich mit einem JSON-Objekt der Form:
+        {"tasks": ["…", "…"]}
+
+        Schreibe in der Sprache des Transkripts.
+        PROMPT;
+
     /** Zulässige Aufnahmeformate: Endung => MIME-Typen, die Browser melden. */
     private const AUDIO_FORMATS = [
         'webm' => ['audio/webm', 'video/webm'],
@@ -379,6 +393,55 @@ final class VoiceNoteService
             'values' => $this->mapValuesToColumns($answer['values'] ?? null, $columns),
             'transcript' => $transcript,
         ];
+    }
+
+    /**
+     * Diktierte Aufgabe(n) für eine Aufgabenliste: Die Aufnahme wird
+     * transkribiert und in einen oder mehrere Aufgabentitel zerlegt.
+     * Gespeichert wird hier nichts - das übernimmt der TaskBoardService mit
+     * seiner eigenen Titelprüfung (Länge, Duplikate).
+     *
+     * @return array{titles: array<int, string>, transcript: string}
+     */
+    public function transcribeForTasks(UploadedFileInterface $file): array
+    {
+        $settings = $this->requireUsableSettings();
+        $upload = $this->storeUpload($file, $settings);
+
+        try {
+            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name']);
+        } finally {
+            @unlink($upload['path']);
+        }
+
+        if ($transcript === '') {
+            throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
+        }
+
+        $answer = $this->client->completeJson(
+            $settings,
+            self::DEFAULT_TASKS_PROMPT,
+            "Transkript der Aufnahme:\n" . $transcript,
+        );
+
+        $titles = [];
+        foreach ((array) ($answer['tasks'] ?? []) as $title) {
+            if (!is_scalar($title)) {
+                continue;
+            }
+            $title = trim((string) $title);
+            if ($title !== '') {
+                $titles[] = $title;
+            }
+        }
+
+        // Ohne verwertbare Zerlegung ist das ganze Transkript immer noch eine
+        // Aufgabe - besser das als gar keine.
+        if ($titles === []) {
+            $titles = [$transcript];
+        }
+
+        return ['titles' => $titles, 'transcript' => $transcript];
     }
 
     /**

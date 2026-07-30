@@ -14,8 +14,11 @@ export const LOCATION_MODES = ['manual', 'auto'];
 let profileMode = null;
 let modeRequest = null;
 
-/** Nach dieser Zeit entsteht die Notiz lieber ohne Ort als gar nicht. */
-const LOOKUP_TIMEOUT_MS = 8000;
+/** Nach dieser Zeit entsteht die Notiz lieber ohne Ort als gar nicht.
+ * Bewusst grosszügig, weil die Zeit für die Erlaubnis-Abfrage des Browsers
+ * mitzählt und die Standortermittlung teils schon beim Laden der Seite im
+ * Hintergrund läuft, bevor der Nutzer die Abfrage überhaupt bemerkt. */
+const LOOKUP_TIMEOUT_MS = 15000;
 
 export function isLocationSupported() {
   return typeof navigator !== 'undefined' && 'geolocation' in navigator;

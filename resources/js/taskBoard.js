@@ -2,12 +2,14 @@ import { apiFetch } from './api.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { cacheBoard, readCachedBoard } from './offline/runtime.js';
 import { pageLocationMixin } from './pageLocation.js';
+import { voiceFormData, voiceRecorderMixin } from './voice.js';
 
 const POLL_INTERVAL_MS = 5000;
 
 export function taskBoard() {
   return {
     ...pageLocationMixin(),
+    ...voiceRecorderMixin(),
     pageId: null,
     categories: [],
     hiddenCompletedCategories: {},
@@ -440,6 +442,21 @@ export function taskBoard() {
       }
     },
 
+    /**
+     * Diktierte Aufgabe(n) im gerade gewählten Kapitel: Der Server zerlegt die
+     * Aufnahme in einen oder mehrere Titel und legt sie wie beim Textimport an.
+     */
+    async handleVoiceRecording(recording) {
+      const category = this.selectedCategory();
+      if (!category) {
+        return;
+      }
+      const body = voiceFormData(recording);
+      const data = await apiFetch(`/api/categories/${category.id}/tasks/voice`, { method: 'POST', body });
+      await this.refresh();
+      this.voiceNotice = data.transcript ? `Erfasst: „${data.transcript}“` : 'Aufgabe erfasst.';
+    },
+
     async renameCategory(category) {
       if (!this.canEditPage || !this.requireOnline()) {
         return;
@@ -764,6 +781,7 @@ export function taskBoard() {
 
     destroy() {
       this.destroyPageLocation();
+      this.cancelVoice();
       clearInterval(this.pollTimer);
       if (this.visibilityHandler) {
         document.removeEventListener('visibilitychange', this.visibilityHandler);

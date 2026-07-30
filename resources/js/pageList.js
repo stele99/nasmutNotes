@@ -134,6 +134,12 @@ export function pageList() {
       if (!this.currentPageId && currentPageRoot?.dataset.pageId) {
         this.currentPageId = Number(currentPageRoot.dataset.pageId);
       }
+      // Nur die Workspace-Übersicht hat den Reiter „Standort" - die
+      // Seitenliste in der Sidebar teilt sich zwar denselben Alpine-Baustein,
+      // soll aber nicht bei jeder Notiz nach dem Standort fragen.
+      if (this.$el.matches('.page-canvas')) {
+        void this.prefetchNearbyLocation();
+      }
       await this.refresh();
       this.$nextTick(() => this.observeRecentSentinel());
 
@@ -660,7 +666,12 @@ export function pageList() {
       this.searchResults = [];
 
       if (tab === 'location') {
-        await this.runNearbyFromCurrentLocation(10);
+        // Der Standort wurde beim Laden der Seite meist schon im Hintergrund
+        // ermittelt (siehe prefetchNearbyLocation) - dann reicht die Anzeige
+        // der bereits vorliegenden Treffer, statt erneut zu fragen.
+        if (!this.nearbyActive && !this.nearbyLocating && !this.nearbyLoading) {
+          await this.runNearbyFromCurrentLocation(10);
+        }
       } else {
         this.nearbyActive = false;
       }

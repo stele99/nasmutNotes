@@ -202,6 +202,16 @@ export function nearbySearchMixin() {
       this.nearbyResults = [];
     },
 
+    /** Startseiten-Reiter: Standort schon beim Laden im Hintergrund ermitteln,
+     * damit der Reiter „Standort" ohne Wartezeit oder manuelle Ortswahl
+     * fertige Treffer zeigt. */
+    async prefetchNearbyLocation(radiusKm = 10) {
+      if (this.nearbyActive || this.nearbyLocating || this.nearbyLoading) {
+        return;
+      }
+      await this.runNearbyFromCurrentLocation(radiusKm);
+    },
+
     nearbyResultsLabel() {
       const total = this.nearbyResults.length;
 

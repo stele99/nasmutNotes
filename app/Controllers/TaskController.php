@@ -7,16 +7,25 @@ namespace App\Controllers;
 use App\Domain\TaskBoardService;
 use App\Domain\TaskDuplicateTitleException;
 use App\Domain\TaskVersionConflictException;
+use App\Domain\Voice\VoiceNoteService;
+use App\Domain\Voice\VoiceServiceException;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
+use App\Support\RateLimiter;
 use App\Support\ValidationException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Http\Message\UploadedFileInterface;
+use Psr\Log\LoggerInterface;
 
 final class TaskController
 {
-    public function __construct(private readonly TaskBoardService $board)
-    {
+    public function __construct(
+        private readonly TaskBoardService $board,
+        private readonly VoiceNoteService $voice,
+        private readonly RateLimiter $rateLimiter,
+        private readonly LoggerInterface $logger,
+    ) {
     }
 
     /** @param array<string, string> $args */
@@ -63,6 +72,54 @@ final class TaskController
         return JsonResponse::json($response, [
             'created' => count($tasks),
             'tasks' => array_map([self::class, 'serialize'], $tasks),
+        ], 201);
+    }
+
+    /**
+     * Diktierte Aufgabe(n): Die Aufnahme wird transkribiert, in einen oder
+     * mehrere Titel zerlegt und wie beim Textimport in die Kategorie
+     * übernommen.
+     *
+     * @param array<string, string> $args
+     */
+    public function voice(Request $request, Response $response, array $args): Response
+    {
+        $user = CurrentUser::require($request);
+
+        if (!$this->rateLimiter->attempt("voice-transcribe:{$user->id}", 20, 300)) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '60'),
+                'RATE_LIMITED',
+                'Zu viele Aufnahmen in kurzer Zeit. Bitte kurz warten.',
+                429,
+            );
+        }
+
+        $file = $request->getUploadedFiles()['audio'] ?? null;
+        if (!$file instanceof UploadedFileInterface) {
+            throw new ValidationException('Es wurde keine Aufnahme übermittelt.');
+        }
+
+        set_time_limit(300);
+
+        try {
+            $result = $this->voice->transcribeForTasks($file);
+        } catch (VoiceServiceException $e) {
+            $this->logger->warning('Sprachdienst fehlgeschlagen', ['message' => $e->getMessage()]);
+
+            return JsonResponse::error($response, 'VOICE_SERVICE_FAILED', $e->getMessage(), 502);
+        }
+
+        $tasks = $this->board->importTasks(
+            $user,
+            (int) $args['id'],
+            implode("\n", $result['titles']),
+        );
+
+        return JsonResponse::json($response, [
+            'created' => count($tasks),
+            'tasks' => array_map([self::class, 'serialize'], $tasks),
+            'transcript' => $result['transcript'],
         ], 201);
     }
 

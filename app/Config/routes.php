@@ -147,6 +147,7 @@ return static function (App $app): void {
         $group->patch('/{id}', [CategoryController::class, 'update']);
         $group->delete('/{id}', [CategoryController::class, 'destroy']);
         $group->post('/{id}/tasks/import', [TaskController::class, 'import']);
+        $group->post('/{id}/tasks/voice', [TaskController::class, 'voice']);
         $group->post('/{id}/tasks', [TaskController::class, 'store']);
     })->add(new RequireAuthMiddleware(true));
 

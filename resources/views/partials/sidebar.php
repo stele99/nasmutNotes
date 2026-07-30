@@ -5,7 +5,7 @@
     @navigate-home.window="navigateTo('/app')"
     @page-drop-move.window="movePagesByIds($event.detail.pageIds, $event.detail.notebookId)"
     @page-drop-trash.window="trashPagesByIds($event.detail.pageIds)"
-    class="page-sidebar fixed inset-y-0 left-0 z-40 flex w-full -translate-x-full flex-col border-r transition-transform duration-200 md:sticky md:top-0 md:w-80 md:translate-x-0 xl:w-[22rem]"
+    class="page-sidebar fixed inset-y-0 left-0 z-40 flex w-full -translate-x-full flex-col border-r transition-transform duration-200 md:sticky md:top-0 md:w-90 md:translate-x-0 xl:w-[22rem]"
     :class="{ 'translate-x-0': isPageSidebarVisible() }"
     :aria-hidden="isMobile && !isPageSidebarVisible() ? 'true' : 'false'"
     style="border-color: var(--color-border); background-color: var(--color-bg-subtle);"

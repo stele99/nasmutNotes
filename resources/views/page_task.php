@@ -220,7 +220,29 @@
                         class="min-w-0 flex-1 bg-transparent text-base outline-none"
                     >
                     <button type="submit" class="icon-action" :disabled="savingCategoryId === category.id" style="color: var(--color-accent);" title="Aufgabe hinzufügen" aria-label="Aufgabe hinzufügen" x-icon="check"></button>
+                    <?php /* Diktierte Aufgabe(n) im gerade gewählten Kapitel: Der Server
+                             zerlegt die Aufnahme in einen oder mehrere Titel (analog zum
+                             Logbuch-Diktat FR-LOG-08). */ ?>
+                    <?php if (!empty($voiceEnabled)): ?>
+                        <button
+                            x-show="voiceSupported"
+                            x-cloak
+                            type="button"
+                            @click="toggleVoice"
+                            :disabled="isVoiceBusy()"
+                            class="icon-action shrink-0"
+                            :class="voiceStatus === 'recording' ? 'is-recording' : ''"
+                            title="Aufgabe diktieren"
+                            aria-label="Aufgabe diktieren"
+                        >
+                            <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
+                            <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
+                        </button>
+                    <?php endif; ?>
                 </form>
+                <?php if (!empty($voiceEnabled)): ?>
+                    <?php include __DIR__ . '/partials/voice_panel.php'; ?>
+                <?php endif; ?>
             </section>
         </template>
     </div>
