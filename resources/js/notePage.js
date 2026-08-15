@@ -45,9 +45,20 @@ export function noteEditorPage() {
   let cryptoEnvelope = null;
   let cryptoChannel = null;
   const pendingUploads = new Set();
-  // Wird von initStickyInsets() fortgeschrieben und von ProseMirror bei jedem
-  // Scrollvorgang gelesen - deshalb dasselbe Objekt statt neuer Werte.
-  const scrollInset = { top: 0, right: 0, bottom: 16, left: 0 };
+  // Von initStickyInsets() gemessen. ProseMirror liest den Abstand bei jedem
+  // Scrollvorgang neu; der Getter hält ihn ohne Umweg an der aktuellen Höhe der
+  // klebenden Leisten. Beim Tippen klebt nur die Werkzeugleiste (siehe app.css).
+  const stickyHeights = { header: 0, toolbar: 0 };
+  const scrollInset = {
+    get top() {
+      return document.documentElement.dataset.keyboard === 'open'
+        ? stickyHeights.toolbar
+        : stickyHeights.header + stickyHeights.toolbar;
+    },
+    right: 0,
+    bottom: 16,
+    left: 0,
+  };
 
   return {
     ...voiceRecorderMixin(),
@@ -456,14 +467,14 @@ export function noteEditorPage() {
       this.stickyScroller = pageRoot.closest('.workspace-main');
 
       const measure = () => {
-        const headerHeight = header.getBoundingClientRect().height;
+        stickyHeights.header = Math.round(header.getBoundingClientRect().height);
+        stickyHeights.toolbar = toolbar ? Math.round(toolbar.getBoundingClientRect().height) : 0;
         // Eigene Variable statt --note-sticky-header-height: Jene setzt die
         // Mindesthöhe des Kopfes und dürfte nicht aus seiner gemessenen Höhe
         // stammen, das ergäbe eine Rückkopplung.
-        pageRoot.style.setProperty('--note-sticky-header-actual', `${Math.round(headerHeight)}px`);
-        const inset = Math.round(headerHeight + (toolbar ? toolbar.getBoundingClientRect().height : 0));
-        this.stickyScroller?.style.setProperty('--sticky-scroll-inset', `${inset}px`);
-        scrollInset.top = inset;
+        pageRoot.style.setProperty('--note-sticky-header-actual', `${stickyHeights.header}px`);
+        this.stickyScroller?.style.setProperty('--sticky-header-height', `${stickyHeights.header}px`);
+        this.stickyScroller?.style.setProperty('--sticky-toolbar-height', `${stickyHeights.toolbar}px`);
       };
 
       measure();
@@ -2247,7 +2258,8 @@ export function noteEditorPage() {
       }
       // Der Scroll-Container überlebt den Seitenwechsel; ein stehengebliebener
       // Abstand gälte sonst auch für Seiten ohne klebende Leisten.
-      this.stickyScroller?.style.removeProperty('--sticky-scroll-inset');
+      this.stickyScroller?.style.removeProperty('--sticky-header-height');
+      this.stickyScroller?.style.removeProperty('--sticky-toolbar-height');
       this.stickyScroller = null;
       if (this.visibilityHandler) {
         document.removeEventListener('visibilitychange', this.visibilityHandler);

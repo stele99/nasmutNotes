@@ -40,11 +40,6 @@
 
 :root {
   color-scheme: light dark;
-  /* Höhe, die eingeblendete Tastatur und der dadurch verschobene sichtbare
-     Ausschnitt der Anwendung wegnehmen. `initViewportMetrics()` in
-     resources/js/viewport.js pflegt die beiden Anteile; ohne Tastatur sind
-     beide 0 und die Anwendung bleibt exakt so hoch wie bisher. */
-  --app-viewport-trim: calc(var(--keyboard-inset, 0px) + var(--viewport-shift, 0px));
 }
 
 :root[data-theme="light"] {
@@ -138,17 +133,8 @@ textarea::placeholder {
 .notebook-rail,
 .notebook-drawer {
   height: 100vh;
-  height: calc(100dvh - var(--app-viewport-trim));
+  height: calc(100dvh - var(--keyboard-inset, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-/* Seitenleiste und Notizbuch-Schublade liegen mobil `fixed` am Layout-Viewport
-   und folgen dem verschobenen Rand der Anwendung nicht von selbst. Ohne
-   Tastatur ist der Versatz 0, die Regel wirkt dann wie das bisherige `top: 0`
-   der Hilfsklasse. */
-.page-sidebar,
-.notebook-drawer {
-  top: var(--viewport-shift, 0px);
 }
 
 .notebook-rail {
@@ -381,32 +367,30 @@ body.is-resizing-sidebar {
   pointer-events: none;
 }
 
-/* Die Anwendung deckt genau den sichtbaren Ausschnitt ab. Ohne den Abzug reicht
-   sie auf iOS hinter die eingeblendete Tastatur - dort verkleinert die Tastatur
-   weder `dvh` noch `innerHeight` -, und der Rand, an dem Notizkopf und
-   Werkzeugleiste kleben, liegt oberhalb des Bildschirms. Die Hilfsklasse
-   `h-dvh` im Markup bleibt als Fallback für Browser ohne Visual-Viewport-API
-   gültig, weil beide Anteile dort 0 sind. */
+/* Die Anwendung endet über der eingeblendeten Tastatur, statt dahinter zu
+   reichen - auf iOS verkleinert die Tastatur weder `dvh` noch `innerHeight`.
+   Damit klebt die Oberkante des Scroll-Containers wieder an einer sichtbaren
+   Kante, und Safari hat keinen Grund mehr, den Ausschnitt zu verschieben. Die
+   Hilfsklasse `h-dvh` im Markup bleibt für Browser ohne Visual-Viewport-API
+   gültig, weil der Abzug dort 0 ist. */
 .workspace-shell,
 .workspace-main {
   height: 100vh;
-  height: calc(100dvh - var(--app-viewport-trim));
-}
-
-/* Verschiebt Safari den sichtbaren Ausschnitt nach oben, wandert die Anwendung
-   um dieselbe Strecke mit - der Scroll-Container beginnt dann wieder genau an
-   der sichtbaren Oberkante, und `position: sticky` klebt dort, wo es soll. */
-.workspace-shell {
-  margin-top: var(--viewport-shift, 0px);
+  height: calc(100dvh - var(--keyboard-inset, 0px));
 }
 
 .workspace-main {
   background: var(--color-bg);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   /* Notizkopf und Werkzeugleiste kleben über dem Inhalt: Ohne diesen Abstand
-     scrollt der Browser die Einfügemarke unter die Leisten. Die tatsächliche
-     Höhe misst notePage.js, weil die Leisten mobil umbrechen. */
-  scroll-padding-top: var(--sticky-scroll-inset, 0px);
+     scrollt der Browser die Einfügemarke unter die Leisten. Die tatsächlichen
+     Höhen misst notePage.js, weil die Leisten mobil umbrechen. */
+  scroll-padding-top: calc(var(--sticky-header-height, 0px) + var(--sticky-toolbar-height, 0px));
+}
+
+/* Beim Tippen klebt nur noch die Werkzeugleiste (siehe .note-sticky-header). */
+:root[data-keyboard="open"] .workspace-main {
+  scroll-padding-top: var(--sticky-toolbar-height, 0px);
 }
 
 .page-canvas {
@@ -447,6 +431,25 @@ body.is-resizing-sidebar {
   position: sticky;
   top: var(--note-sticky-header-actual, var(--note-sticky-header-height));
   z-index: 25;
+}
+
+/* Mit eingeblendeter Tastatur bleibt vom Bildschirm nur ein schmaler Streifen -
+   auf einem iPhone rund ein Drittel. Kopf und Werkzeugleiste belegen davon
+   mobil zusammen zwei Drittel, für den Text bleiben wenige Zeilen. Zurück,
+   Freigabe und die Seitenaktionen braucht beim Schreiben niemand: Der Kopf hört
+   auf zu kleben und scrollt mit dem Text weg, die Werkzeugleiste rückt an den
+   oberen Rand und trägt weniger Innenabstand. `position: static` statt
+   `display: none`, weil der Kopf so seinen Platz im Fluss behält - der Text
+   springt beim Ein- und Ausblenden der Tastatur sonst um dessen Höhe. */
+:root[data-keyboard="open"] .note-sticky-header {
+  position: static;
+}
+
+:root[data-keyboard="open"] .note-sticky-toolbar {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  padding-top: 0.5rem;
+  top: 0;
 }
 
 .note-encryption-active {

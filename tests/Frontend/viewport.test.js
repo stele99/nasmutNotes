@@ -3,13 +3,13 @@ import test from 'node:test';
 
 import { initViewportMetrics } from '../../resources/js/viewport.js';
 
-function createWindow({ innerHeight, height, offsetTop, scrollY = 0 }) {
+function createWindow({ innerHeight, height, offsetTop }) {
   const listeners = { viewport: [], window: [] };
   const properties = new Map();
+  const timers = [];
 
   return {
     innerHeight,
-    scrollY,
     visualViewport: {
       height,
       offsetTop,
@@ -35,21 +35,32 @@ function createWindow({ innerHeight, height, offsetTop, scrollY = 0 }) {
       callback();
       return 1;
     },
+    // Nur aufzeichnen: Das Nachmessen wird im Test von Hand ausgelöst.
+    setTimeout(callback) {
+      timers.push(callback);
+      return timers.length;
+    },
+    clearTimeout() {},
     properties,
     listeners,
+    timers,
+    notifyViewport() {
+      for (const [, handler] of listeners.viewport) {
+        handler();
+      }
+    },
     get root() {
       return this.document.documentElement;
     },
   };
 }
 
-test('reports the keyboard height and the shifted viewport', () => {
+test('reports the height covered by the keyboard', () => {
   const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60 });
 
   initViewportMetrics(win);
 
   assert.equal(win.properties.get('--keyboard-inset'), '280px');
-  assert.equal(win.properties.get('--viewport-shift'), '60px');
   assert.equal(win.root.dataset.keyboard, 'open');
 });
 
@@ -59,17 +70,7 @@ test('ignores the address bar sliding in and out', () => {
   initViewportMetrics(win);
 
   assert.equal(win.properties.get('--keyboard-inset'), '0px');
-  assert.equal(win.properties.get('--viewport-shift'), '0px');
   assert.equal(win.root.dataset.keyboard, 'closed');
-});
-
-test('counts a scrolled window as viewport shift', () => {
-  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 0, scrollY: 60 });
-
-  initViewportMetrics(win);
-
-  assert.equal(win.properties.get('--keyboard-inset'), '340px');
-  assert.equal(win.properties.get('--viewport-shift'), '60px');
 });
 
 test('never reports a negative inset', () => {
@@ -78,7 +79,14 @@ test('never reports a negative inset', () => {
   initViewportMetrics(win);
 
   assert.equal(win.properties.get('--keyboard-inset'), '0px');
-  assert.equal(win.properties.get('--viewport-shift'), '0px');
+});
+
+test('leaves the viewport offset alone, the application no longer reaches past it', () => {
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60 });
+
+  initViewportMetrics(win);
+
+  assert.equal(win.properties.has('--viewport-shift'), false);
 });
 
 test('recalculates when the visual viewport changes', () => {
@@ -88,13 +96,30 @@ test('recalculates when the visual viewport changes', () => {
   assert.equal(win.properties.get('--keyboard-inset'), '0px');
 
   win.visualViewport.height = 460;
-  win.visualViewport.offsetTop = 60;
-  for (const [, handler] of win.listeners.viewport) {
-    handler();
-  }
+  win.visualViewport.offsetTop = 0;
+  win.notifyViewport();
 
-  assert.equal(win.properties.get('--keyboard-inset'), '280px');
-  assert.equal(win.properties.get('--viewport-shift'), '60px');
+  assert.equal(win.properties.get('--keyboard-inset'), '340px');
+  assert.equal(win.root.dataset.keyboard, 'open');
+});
+
+test('measures again after the keyboard animation settles', () => {
+  const win = createWindow({ innerHeight: 800, height: 800, offsetTop: 0 });
+
+  initViewportMetrics(win);
+  assert.equal(win.timers.length, 0, 'kein Nachmessen ohne Zustandswechsel');
+
+  // Zwischenstand während der Animation: Safari schickt zum Endstand nicht
+  // zuverlässig ein weiteres Ereignis.
+  win.visualViewport.height = 600;
+  win.notifyViewport();
+  assert.equal(win.properties.get('--keyboard-inset'), '200px');
+  assert.equal(win.timers.length, 1);
+
+  win.visualViewport.height = 460;
+  win.timers.pop()();
+
+  assert.equal(win.properties.get('--keyboard-inset'), '340px');
 });
 
 test('stays silent without the visual viewport API', () => {
