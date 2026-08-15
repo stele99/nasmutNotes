@@ -97,10 +97,17 @@ final class PageAttachmentServiceTest extends TestCase
         self::assertSame(2, $this->scalar('SELECT COUNT(*) FROM page_attachments'));
     }
 
-    /** Ohne erkennbaren Typ bleibt ein neutraler stehen statt einer Ablehnung. */
+    /**
+     * Ohne erkennbaren Typ bleibt ein neutraler stehen statt einer Ablehnung.
+     *
+     * Feste Bytes statt `random_bytes()`: Zufallsdaten treffen gelegentlich eine
+     * Signatur von libmagic und der Test fiel dann ohne Zutun um (in der CI
+     * zuletzt als `application/x-dosexec`). Schon ein Zähler 0..63 gilt als
+     * `image/x-tga` - die Erkennung braucht wenig Anlass.
+     */
     public function testUnknownContentGetsNeutralMimeType(): void
     {
-        $attachment = $this->upload(random_bytes(64), 'unbekannt.bin');
+        $attachment = $this->upload(str_repeat("\x00", 64), 'unbekannt.bin');
 
         self::assertSame('application/octet-stream', $attachment['mime_type']);
     }
