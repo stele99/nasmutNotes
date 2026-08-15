@@ -133,8 +133,15 @@ textarea::placeholder {
 .notebook-rail,
 .notebook-drawer {
   height: 100vh;
-  height: calc(100dvh - var(--keyboard-inset, 0px));
+  height: calc(100dvh - var(--keyboard-inset, 0px) - var(--viewport-shift, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Seitenleiste und Notizbuch-Schublade liegen mobil `fixed` am Layout-Viewport
+   und folgen dem nachgerückten Rand der Anwendung nicht von selbst. */
+.page-sidebar,
+.notebook-drawer {
+  top: var(--viewport-shift, 0px);
 }
 
 .notebook-rail {
@@ -373,10 +380,20 @@ body.is-resizing-sidebar {
    Kante, und Safari hat keinen Grund mehr, den Ausschnitt zu verschieben. Die
    Hilfsklasse `h-dvh` im Markup bleibt für Browser ohne Visual-Viewport-API
    gültig, weil der Abzug dort 0 ist. */
-.workspace-shell,
-.workspace-main {
+.workspace-shell {
   height: 100vh;
   height: calc(100dvh - var(--keyboard-inset, 0px));
+  /* Bleibt die Oberkante der Anwendung trotzdem über dem sichtbaren Ausschnitt
+     - Safari verschiebt beim Fokussieren mitunter doch -, rückt sie um die
+     gemessene Strecke nach. Innenabstand statt Außenabstand, weil dieser mit
+     dem Rand des Body verschmelzen könnte und die Messung dann ins Leere liefe.
+     Ohne Tastatur ist der Wert 0. */
+  padding-top: var(--viewport-shift, 0px);
+}
+
+.workspace-main {
+  height: 100vh;
+  height: calc(100dvh - var(--keyboard-inset, 0px) - var(--viewport-shift, 0px));
 }
 
 .workspace-main {
@@ -1380,6 +1397,16 @@ button:disabled,
 
   .note-page {
     --note-sticky-header-height: 3.5rem;
+  }
+
+  /* In eine Zeile passen auf dem Handy rund neun Schaltflächen, die volle
+     Werkzeugleiste braucht zwei. Mit eingeblendeter Tastatur kostet die zweite
+     Zeile ein Viertel des sichtbaren Bereichs. Sichtbar bleiben deshalb die
+     beim Schreiben am Telefon gebräuchlichen Werkzeuge; der Rest steht hinter
+     dem Mehr-Schalter, der die Leiste aufklappt. Ab 768 px ist alles zu sehen,
+     die Regel greift dort nicht. */
+  .editor-toolbar:not(.is-expanded) .toolbar-more {
+    display: none;
   }
 
   /* Der Kopfbereich trägt Freigabe-Status, Kollaboratoren und Aktionen. Ohne

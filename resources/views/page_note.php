@@ -132,25 +132,25 @@
             <span x-text="saveError"></span>
         </div>
 
-        <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" style="border-color: var(--color-border);" x-ref="toolbar">
+        <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" :class="toolbarExpandedClass()" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" aria-label="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" aria-label="Kursiv" x-icon="italic"></button>
-            <button type="button" data-editor-command="strike" @click.prevent="toggleStrike" class="toolbar-button toolbar-text" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
-            <button type="button" data-editor-command="code" @click.prevent="toggleCode" class="toolbar-button" title="Code (inline)" aria-label="Code (inline)" x-icon="code"></button>
-            <button type="button" data-editor-command="codeBlock" @click.prevent="toggleCodeBlock" class="toolbar-button" title="Codeblock" aria-label="Codeblock" x-icon="square-code"></button>
-            <span class="toolbar-divider"></span>
-            <button type="button" data-editor-command="heading1" @click.prevent="toggleHeading1" class="toolbar-button" title="Überschrift 1" aria-label="Überschrift 1" x-icon="heading-1"></button>
+            <button type="button" data-editor-command="strike" @click.prevent="toggleStrike" class="toolbar-button toolbar-text toolbar-more" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
+            <button type="button" data-editor-command="code" @click.prevent="toggleCode" class="toolbar-button toolbar-more" title="Code (inline)" aria-label="Code (inline)" x-icon="code"></button>
+            <button type="button" data-editor-command="codeBlock" @click.prevent="toggleCodeBlock" class="toolbar-button toolbar-more" title="Codeblock" aria-label="Codeblock" x-icon="square-code"></button>
+            <span class="toolbar-divider toolbar-more"></span>
+            <button type="button" data-editor-command="heading1" @click.prevent="toggleHeading1" class="toolbar-button toolbar-more" title="Überschrift 1" aria-label="Überschrift 1" x-icon="heading-1"></button>
             <button type="button" data-editor-command="heading2" @click.prevent="toggleHeading2" class="toolbar-button" title="Überschrift 2" aria-label="Überschrift 2" x-icon="heading-2"></button>
             <button type="button" data-editor-command="bulletList" @click.prevent="toggleBulletList" class="toolbar-button" title="Aufzählung" aria-label="Aufzählung" x-icon="list"></button>
             <button type="button" data-editor-command="taskList" @click.prevent="toggleTaskList" class="toolbar-button" title="Checkliste" aria-label="Checkliste" x-icon="list-checks"></button>
-            <button type="button" data-editor-command="blockquote" @click.prevent="toggleBlockquote" class="toolbar-button" title="Zitat" aria-label="Zitat" x-icon="quote"></button>
-            <button type="button" data-editor-command="link" @click.prevent="editLink" class="toolbar-button" title="Link" aria-label="Link" x-icon="link"></button>
-            <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button" title="Tabelle einfügen" aria-label="Tabelle einfügen" x-icon="table"></button>
+            <button type="button" data-editor-command="blockquote" @click.prevent="toggleBlockquote" class="toolbar-button toolbar-more" title="Zitat" aria-label="Zitat" x-icon="quote"></button>
+            <button type="button" data-editor-command="link" @click.prevent="editLink" class="toolbar-button toolbar-more" title="Link" aria-label="Link" x-icon="link"></button>
+            <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button toolbar-more" title="Tabelle einfügen" aria-label="Tabelle einfügen" x-icon="table"></button>
             <?php /* Auf dem Handy gibt es weder Drag & Drop noch bequemes Einfügen aus der
                      Zwischenablage - Bilder kommen dort über Dateiauswahl und Kamera. */ ?>
-            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button toolbar-more" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
-            <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button toolbar-more" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
             <?php /* Diktat: Der aufbereitete Text wird an der Einfügemarke eingesetzt
                      (FR-VOICE-02). Derselbe Knopf beendet die Aufnahme wieder. */ ?>
             <?php if (!empty($voiceEnabled)): ?>
@@ -160,7 +160,7 @@
                 </button>
             <?php endif; ?>
             <?php if (!empty($aiEnabled)): ?>
-                <button x-show="!isEncrypted()" type="button" @click.prevent="openAiRewriteDialog" :disabled="aiBusy || !isOnline" class="toolbar-button" title="Text mit KI korrigieren und strukturieren" aria-label="Text mit KI korrigieren und strukturieren" x-icon="wand-sparkles"></button>
+                <button x-show="!isEncrypted()" type="button" @click.prevent="openAiRewriteDialog" :disabled="aiBusy || !isOnline" class="toolbar-button toolbar-more" title="Text mit KI korrigieren und strukturieren" aria-label="Text mit KI korrigieren und strukturieren" x-icon="wand-sparkles"></button>
             <?php endif; ?>
             <input x-ref="imageInput" type="file" accept="image/*" class="hidden" @change="insertPickedImage">
             <input x-ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="insertPickedImage">
@@ -173,7 +173,10 @@
             <button x-show="inTable" x-cloak type="button" data-editor-command="tableDelete" @click.prevent="deleteTable" class="toolbar-button toolbar-button-danger" title="Tabelle löschen" aria-label="Tabelle löschen" x-icon="trash"></button>
             <span class="toolbar-divider"></span>
             <button type="button" data-editor-command="undo" @click.prevent="undo" class="toolbar-button" title="Rückgängig" aria-label="Rückgängig" x-icon="undo"></button>
-            <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
+            <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button toolbar-more" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
+            <?php /* Klappt auf dem Handy die übrigen Werkzeuge auf (NFR-UI-24).
+                     Ab 768 px steht ohnehin alles in der Leiste. */ ?>
+            <button type="button" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>

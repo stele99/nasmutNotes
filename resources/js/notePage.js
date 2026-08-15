@@ -107,6 +107,7 @@ export function noteEditorPage() {
     imageViewerHandlers: null,
     stickyObserver: null,
     stickyScroller: null,
+    toolbarExpanded: false,
     attachments: [],
     attachmentError: '',
     uploadingAttachment: false,
@@ -449,6 +450,26 @@ export function noteEditorPage() {
         };
       }
       if (this.encryptionState === 'plain') void this.loadAttachments();
+    },
+
+    // Auf dem Handy zeigt die Werkzeugleiste nur die gebräuchlichen Werkzeuge;
+    // die übrigen tragen die Klasse `toolbar-more` und erscheinen erst mit
+    // diesem Schalter (NFR-UI-24). Der Zustand bleibt bestehen, bis er wieder
+    // umgelegt wird - wer eine Tabelle baut, braucht die Knöpfe mehrfach.
+    toggleToolbarMore() {
+      this.toolbarExpanded = !this.toolbarExpanded;
+    },
+
+    toolbarExpandedClass() {
+      return this.toolbarExpanded ? 'is-expanded' : '';
+    },
+
+    toolbarMoreButtonClass() {
+      return this.toolbarExpanded ? 'is-active' : '';
+    },
+
+    toolbarMoreLabel() {
+      return this.toolbarExpanded ? 'Weitere Werkzeuge ausblenden' : 'Weitere Werkzeuge';
     },
 
     // Notizkopf und Werkzeugleiste kleben am oberen Rand des Scroll-Containers.

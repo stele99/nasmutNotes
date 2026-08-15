@@ -8,9 +8,13 @@
 // Tastaturhöhe schiebt.
 //
 // Dieses Maß macht die Tastatur für CSS sichtbar. app.css zieht die Anwendung
-// damit auf den sichtbaren Ausschnitt zusammen. Damit entfällt für Safari der
-// Grund zu verschieben - der Versatz muss deshalb nicht ausgeglichen werden,
-// ein Ausgleich bliebe im Gegenteil als Leerraum am oberen Rand stehen.
+// damit auf den sichtbaren Ausschnitt zusammen. Das nimmt Safari meist schon den
+// Grund zu verschieben - meist, nicht immer. Der Rest wird deshalb gemessen
+// statt gerechnet: `--viewport-shift` ist die Strecke, um die die Oberkante der
+// Anwendung tatsächlich neben dem sichtbaren Ausschnitt liegt. Ein aus
+// `offsetTop`/`scrollY` abgeleiteter Wert bleibt dagegen stehen, wenn Safari
+// seinen Versatz wieder zurücknimmt, ohne das zu melden - und schiebt die
+// Anwendung dann grundlos nach unten.
 
 // Unterhalb dieses Werts stammt die Differenz von der ein- und ausfahrenden
 // Adressleiste, nicht von der Tastatur. Ohne die Schwelle änderte die Anwendung
@@ -21,6 +25,14 @@ const KEYBOARD_MIN_INSET = 120;
 // Endstand nicht zuverlässig ein weiteres Ereignis. Nach jedem Wechsel wird
 // deshalb einmal nachgemessen.
 const SETTLE_MS = 300;
+
+// Messrauschen (Teilpixel, ein Frame Rückstand) soll den Wert nicht bei jedem
+// Ereignis neu setzen.
+const SHIFT_DEAD_ZONE = 2;
+
+// Mehr als eine halbe Bildschirmhöhe kann kein sinnvoller Versatz sein; die
+// Grenze verhindert, dass ein Messfehler die Anwendung aus dem Bild schiebt.
+const SHIFT_MAX = 400;
 
 export function initViewportMetrics(win = globalThis.window) {
   const viewport = win?.visualViewport;
@@ -34,6 +46,7 @@ export function initViewportMetrics(win = globalThis.window) {
   let pending = false;
   let settleTimer = 0;
   let open = false;
+  let shift = 0;
 
   const apply = () => {
     pending = false;
@@ -42,6 +55,20 @@ export function initViewportMetrics(win = globalThis.window) {
 
     root.style.setProperty('--keyboard-inset', `${inset}px`);
     root.dataset.keyboard = inset > 0 ? 'open' : 'closed';
+
+    // getBoundingClientRect() liegt im Layout-Viewport, offsetTop gibt darin die
+    // Oberkante des sichtbaren Ausschnitts an. Die Differenz ist der Fehler des
+    // aktuellen Ausgleichs - und wird 0, sobald er stimmt. Deshalb ist der Wert
+    // selbstkorrigierend: Er wächst, wenn die Anwendung zu hoch sitzt, und
+    // schrumpft wieder, sobald Safari den Versatz zurücknimmt.
+    const shell = win.document.querySelector('.workspace-shell');
+    if (shell) {
+      const error = viewport.offsetTop - shell.getBoundingClientRect().top;
+      if (Math.abs(error) >= SHIFT_DEAD_ZONE) {
+        shift = Math.min(SHIFT_MAX, Math.max(0, Math.round(shift + error)));
+        root.style.setProperty('--viewport-shift', `${shift}px`);
+      }
+    }
 
     if (open !== inset > 0) {
       open = inset > 0;

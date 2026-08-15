@@ -3,10 +3,18 @@ import test from 'node:test';
 
 import { initViewportMetrics } from '../../resources/js/viewport.js';
 
-function createWindow({ innerHeight, height, offsetTop }) {
+function createWindow({ innerHeight, height, offsetTop, shellTop = 0 }) {
   const listeners = { viewport: [], window: [] };
   const properties = new Map();
   const timers = [];
+  // Die Shell rückt um den gesetzten Ausgleich nach - wie im Browser, wo
+  // padding-top ihre Oberkante verschiebt.
+  const shell = {
+    getBoundingClientRect() {
+      const shift = Number.parseInt(properties.get('--viewport-shift') || '0', 10);
+      return { top: shellTop + shift };
+    },
+  };
 
   return {
     innerHeight,
@@ -18,6 +26,9 @@ function createWindow({ innerHeight, height, offsetTop }) {
       },
     },
     document: {
+      querySelector() {
+        return shell;
+      },
       documentElement: {
         dataset: {},
         style: {
@@ -81,8 +92,32 @@ test('never reports a negative inset', () => {
   assert.equal(win.properties.get('--keyboard-inset'), '0px');
 });
 
-test('leaves the viewport offset alone, the application no longer reaches past it', () => {
-  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60 });
+test('makes up for an application top edge above the visible area', () => {
+  // Safari hat verschoben: Der sichtbare Ausschnitt beginnt 60px tiefer als die
+  // Oberkante der Anwendung.
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60, shellTop: 0 });
+
+  initViewportMetrics(win);
+
+  assert.equal(win.properties.get('--viewport-shift'), '60px');
+});
+
+test('takes the compensation back when it is no longer needed', () => {
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60, shellTop: 0 });
+
+  initViewportMetrics(win);
+  assert.equal(win.properties.get('--viewport-shift'), '60px');
+
+  // Safari nimmt seinen Versatz zurück, ohne das zu melden: Ohne Nachmessen
+  // bliebe der Ausgleich als Leerraum am oberen Rand stehen.
+  win.visualViewport.offsetTop = 0;
+  win.notifyViewport();
+
+  assert.equal(win.properties.get('--viewport-shift'), '0px');
+});
+
+test('leaves the compensation alone while it fits', () => {
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 0, shellTop: 0 });
 
   initViewportMetrics(win);
 
