@@ -18,6 +18,7 @@ import { workspaceShell } from './workspaceShell.js';
 import { offlineSettings } from './offline/settings.js';
 import { initOfflineRuntime } from './offline/runtime.js';
 import { renderIconDirective } from './icons.js';
+import { initViewportMetrics } from './viewport.js';
 
 Alpine.data('theme', theme);
 Alpine.data('pageList', pageList);
@@ -37,6 +38,10 @@ Alpine.data('offlineSettings', offlineSettings);
 Alpine.directive('icon', (el, { expression }) => renderIconDirective(el, expression));
 
 window.Alpine = Alpine;
+
+// Vor Alpine.start(), damit die Maße schon beim ersten Aufbau der Oberfläche
+// stehen und kein Layoutsprung entsteht.
+initViewportMetrics();
 
 // Alpine startet unabhängig vom Offline-Init: hängt IndexedDB (blockiertes
 // Upgrade, Privatmodus), darf die App davon nicht ausgebremst werden. Die

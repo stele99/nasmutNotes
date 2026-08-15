@@ -40,6 +40,11 @@
 
 :root {
   color-scheme: light dark;
+  /* Höhe, die eingeblendete Tastatur und der dadurch verschobene sichtbare
+     Ausschnitt der Anwendung wegnehmen. `initViewportMetrics()` in
+     resources/js/viewport.js pflegt die beiden Anteile; ohne Tastatur sind
+     beide 0 und die Anwendung bleibt exakt so hoch wie bisher. */
+  --app-viewport-trim: calc(var(--keyboard-inset, 0px) + var(--viewport-shift, 0px));
 }
 
 :root[data-theme="light"] {
@@ -133,8 +138,17 @@ textarea::placeholder {
 .notebook-rail,
 .notebook-drawer {
   height: 100vh;
-  height: 100dvh;
+  height: calc(100dvh - var(--app-viewport-trim));
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Seitenleiste und Notizbuch-Schublade liegen mobil `fixed` am Layout-Viewport
+   und folgen dem verschobenen Rand der Anwendung nicht von selbst. Ohne
+   Tastatur ist der Versatz 0, die Regel wirkt dann wie das bisherige `top: 0`
+   der Hilfsklasse. */
+.page-sidebar,
+.notebook-drawer {
+  top: var(--viewport-shift, 0px);
 }
 
 .notebook-rail {
@@ -367,9 +381,32 @@ body.is-resizing-sidebar {
   pointer-events: none;
 }
 
+/* Die Anwendung deckt genau den sichtbaren Ausschnitt ab. Ohne den Abzug reicht
+   sie auf iOS hinter die eingeblendete Tastatur - dort verkleinert die Tastatur
+   weder `dvh` noch `innerHeight` -, und der Rand, an dem Notizkopf und
+   Werkzeugleiste kleben, liegt oberhalb des Bildschirms. Die Hilfsklasse
+   `h-dvh` im Markup bleibt als Fallback für Browser ohne Visual-Viewport-API
+   gültig, weil beide Anteile dort 0 sind. */
+.workspace-shell,
+.workspace-main {
+  height: 100vh;
+  height: calc(100dvh - var(--app-viewport-trim));
+}
+
+/* Verschiebt Safari den sichtbaren Ausschnitt nach oben, wandert die Anwendung
+   um dieselbe Strecke mit - der Scroll-Container beginnt dann wieder genau an
+   der sichtbaren Oberkante, und `position: sticky` klebt dort, wo es soll. */
+.workspace-shell {
+  margin-top: var(--viewport-shift, 0px);
+}
+
 .workspace-main {
   background: var(--color-bg);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Notizkopf und Werkzeugleiste kleben über dem Inhalt: Ohne diesen Abstand
+     scrollt der Browser die Einfügemarke unter die Leisten. Die tatsächliche
+     Höhe misst notePage.js, weil die Leisten mobil umbrechen. */
+  scroll-padding-top: var(--sticky-scroll-inset, 0px);
 }
 
 .page-canvas {
@@ -400,12 +437,15 @@ body.is-resizing-sidebar {
   z-index: 30;
 }
 
+/* Der Versatz folgt der gemessenen Kopfhöhe (notePage.js), nicht der
+   Mindesthöhe: Bricht der Kopf mobil auf zwei Zeilen um, klebte die
+   Werkzeugleiste sonst unter dem Kopf und würde von ihm verdeckt. */
 .note-sticky-toolbar {
   background: var(--color-bg);
   box-shadow: 0 1px 0 color-mix(in srgb, var(--color-border) 70%, transparent);
   padding-top: 0.75rem;
   position: sticky;
-  top: var(--note-sticky-header-height);
+  top: var(--note-sticky-header-actual, var(--note-sticky-header-height));
   z-index: 25;
 }
 

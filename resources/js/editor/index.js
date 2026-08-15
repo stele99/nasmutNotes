@@ -22,6 +22,7 @@ export function createEditor({
   onImageUploadError,
   onPendingImageUploads,
   onLinkClick,
+  scrollInset,
 }) {
   return new Editor({
     element,
@@ -66,6 +67,15 @@ export function createEditor({
       TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }),
     ],
     editorProps: {
+      // Notizkopf und Werkzeugleiste kleben über dem Editor. Ohne diese Angaben
+      // holt ProseMirror die Einfügemarke nur bis an die Oberkante des
+      // Scroll-Containers - also unter die Leisten. Schwelle und Abstand sind
+      // bewusst dasselbe Objekt: Sobald die Marke in den Bereich der Leisten
+      // gerät, wird sie genau darunter gescrollt. ProseMirror liest die Werte
+      // bei jedem Scrollvorgang neu, notePage.js hält sie an der gemessenen
+      // Höhe der Leisten.
+      scrollThreshold: scrollInset,
+      scrollMargin: scrollInset,
       transformPastedHTML: sanitizePastedHtml,
       handleClick(_view, position, event) {
         const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
