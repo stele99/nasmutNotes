@@ -4,11 +4,13 @@
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
         <button type="button" @click="goBack()" class="icon-action flex shrink-0 items-center border p-2 md:hidden" style="border-color: var(--color-border);" title="Zurück zur Seitenauswahl" aria-label="Zurück zur Seitenauswahl" x-icon="chevron-left"></button>
         <?php /* Der Seitentitel steht mobil ohnehin direkt darunter als Überschrift -
-                 der Breadcrumb kostet dort nur Höhe und entfällt deshalb. Die
-                 Freigabe-Anzeige und die Aktionen bleiben sichtbar. Darüber kürzt
-                 jeder Bestandteil mit Auslassungspunkten, statt umzubrechen: Eine
-                 zweite Zeile machte den Kopf höher und verschöbe damit den Versatz
-                 der darunter klebenden Werkzeugleiste. */ ?>
+                 der Breadcrumb kostet dort nur Höhe und entfällt deshalb. Ebenso
+                 der Hinweis „Geteilt" und die Personenkreise: Den Zustand trägt
+                 mobil der eingefärbte Teilen-Schalter, und der Kopf bleibt so
+                 einzeilig (NFR-UI-25). Darüber kürzt jeder Bestandteil mit
+                 Auslassungspunkten, statt umzubrechen: Eine zweite Zeile machte
+                 den Kopf höher und verschöbe die darunter klebende
+                 Werkzeugleiste. */ ?>
         <span class="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             <?php $nbIcon = !empty($page['is_shared']) ? 'share-2' : ($page['notebook_icon'] ?? 'book-open'); ?>
             <?php $nbColor = !empty($page['is_shared']) ? 'var(--color-text-muted)' : ($page['notebook_color'] ?? 'var(--color-text-muted)'); ?>
@@ -18,11 +20,11 @@
             <span class="min-w-0 truncate" x-text="pageTitle"></span>
         </span>
         <div class="ml-auto flex shrink-0 items-center gap-2">
-            <span x-show="isShared" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
+            <span x-show="isShared" x-cloak class="hidden items-center gap-1.5 text-sm md:inline-flex" style="color: var(--color-accent);">
                 <span x-icon="share-2"></span>
                 Geteilt · <span x-text="permissionLabel()"></span>
             </span>
-            <span x-show="ownedAndShared()" x-cloak class="inline-flex items-center gap-1.5 text-sm" style="color: var(--color-accent);">
+            <span x-show="ownedAndShared()" x-cloak class="hidden items-center gap-1.5 text-sm md:inline-flex" style="color: var(--color-accent);">
                 <span x-icon="share-2"></span>Geteilt
             </span>
             <?php include __DIR__ . '/partials/page_writers.php'; ?>
@@ -47,7 +49,7 @@
             <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
                 <span x-icon="image"></span><span class="hidden lg:inline">Komprimieren</span>
             </button>
-            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
+            <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" :class="shareButtonClass()" style="border-color: var(--color-border);" :title="shareButtonLabel()" :aria-label="shareButtonLabel()">
                 <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>
             <div x-show="!isShared && canEditPage" class="relative" @click.outside="encryptionMenuOpen = false">

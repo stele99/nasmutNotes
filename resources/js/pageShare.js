@@ -125,6 +125,19 @@ export function pageShare() {
       return !this.isShared && (this.hasCollaborators() || this.existingShares.length > 0);
     },
 
+    /**
+     * Mobil entfallen der Hinweis „Geteilt" und die Personenkreise im Kopf
+     * (NFR-UI-25); den Zustand trägt dort der Teilen-Schalter selbst, indem er
+     * sich einfärbt. Auf dem Desktop steht beides nebeneinander.
+     */
+    shareButtonClass() {
+      return this.ownedAndShared() ? 'icon-action-shared' : '';
+    },
+
+    shareButtonLabel() {
+      return this.ownedAndShared() ? 'Seite ist geteilt - Freigabe bearbeiten' : 'Seite teilen';
+    },
+
     visibleWriters() {
       return this.writers.slice(0, 4);
     },

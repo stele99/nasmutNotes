@@ -50,7 +50,12 @@ export function initViewportMetrics(win = globalThis.window) {
 
   const apply = () => {
     pending = false;
-    const covered = win.innerHeight - viewport.height - viewport.offsetTop;
+    // Ohne `offsetTop`: Verschiebt Safari den sichtbaren Ausschnitt nach unten,
+    // um die Einfügemarke freizustellen, verdeckt die Tastatur trotzdem
+    // unverändert viel. Wurde der Versatz mitgerechnet, fiel die Summe unter die
+    // Schwelle und die Tastatur galt als eingeklappt - die Anwendung reichte
+    // wieder hinter sie.
+    const covered = win.innerHeight - viewport.height;
     const inset = covered >= KEYBOARD_MIN_INSET ? Math.round(covered) : 0;
 
     root.style.setProperty('--keyboard-inset', `${inset}px`);
@@ -61,9 +66,14 @@ export function initViewportMetrics(win = globalThis.window) {
     // aktuellen Ausgleichs - und wird 0, sobald er stimmt. Deshalb ist der Wert
     // selbstkorrigierend: Er wächst, wenn die Anwendung zu hoch sitzt, und
     // schrumpft wieder, sobald Safari den Versatz zurücknimmt.
-    const shell = win.document.querySelector('.workspace-shell');
-    if (shell) {
-      const error = viewport.offsetTop - shell.getBoundingClientRect().top;
+    //
+    // Gemessen wird der Scroll-Container, nicht die Shell: Deren Rechteck ist
+    // das Rahmenrechteck und bewegt sich nicht mit, wenn der Ausgleich als
+    // Innenabstand gesetzt wird - der Fehler bliebe dann in jedem Durchlauf
+    // gleich groß und der Wert liefe hoch.
+    const scroller = win.document.querySelector('.workspace-main');
+    if (scroller) {
+      const error = viewport.offsetTop - scroller.getBoundingClientRect().top;
       if (Math.abs(error) >= SHIFT_DEAD_ZONE) {
         shift = Math.min(SHIFT_MAX, Math.max(0, Math.round(shift + error)));
         root.style.setProperty('--viewport-shift', `${shift}px`);

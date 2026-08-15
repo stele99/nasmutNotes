@@ -7,9 +7,9 @@ function createWindow({ innerHeight, height, offsetTop, shellTop = 0 }) {
   const listeners = { viewport: [], window: [] };
   const properties = new Map();
   const timers = [];
-  // Die Shell rückt um den gesetzten Ausgleich nach - wie im Browser, wo
-  // padding-top ihre Oberkante verschiebt.
-  const shell = {
+  // Der Scroll-Container rückt um den gesetzten Ausgleich nach - wie im
+  // Browser, wo der Außenabstand der Shell ihn verschiebt.
+  const scroller = {
     getBoundingClientRect() {
       const shift = Number.parseInt(properties.get('--viewport-shift') || '0', 10);
       return { top: shellTop + shift };
@@ -27,7 +27,7 @@ function createWindow({ innerHeight, height, offsetTop, shellTop = 0 }) {
     },
     document: {
       querySelector() {
-        return shell;
+        return scroller;
       },
       documentElement: {
         dataset: {},
@@ -71,7 +71,7 @@ test('reports the height covered by the keyboard', () => {
 
   initViewportMetrics(win);
 
-  assert.equal(win.properties.get('--keyboard-inset'), '280px');
+  assert.equal(win.properties.get('--keyboard-inset'), '340px');
   assert.equal(win.root.dataset.keyboard, 'open');
 });
 
@@ -90,6 +90,17 @@ test('never reports a negative inset', () => {
   initViewportMetrics(win);
 
   assert.equal(win.properties.get('--keyboard-inset'), '0px');
+});
+
+test('counts the keyboard regardless of how far Safari shifted the view', () => {
+  // Ein mitgerechneter Versatz drückte die Summe unter die Schwelle: Die
+  // Tastatur galt dann als eingeklappt und die Anwendung reichte hinter sie.
+  const wide = createWindow({ innerHeight: 800, height: 420, offsetTop: 330 });
+
+  initViewportMetrics(wide);
+
+  assert.equal(wide.properties.get('--keyboard-inset'), '380px');
+  assert.equal(wide.root.dataset.keyboard, 'open');
 });
 
 test('makes up for an application top edge above the visible area', () => {
@@ -131,7 +142,6 @@ test('recalculates when the visual viewport changes', () => {
   assert.equal(win.properties.get('--keyboard-inset'), '0px');
 
   win.visualViewport.height = 460;
-  win.visualViewport.offsetTop = 0;
   win.notifyViewport();
 
   assert.equal(win.properties.get('--keyboard-inset'), '340px');

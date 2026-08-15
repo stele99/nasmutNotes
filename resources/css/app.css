@@ -383,17 +383,17 @@ body.is-resizing-sidebar {
 .workspace-shell {
   height: 100vh;
   height: calc(100dvh - var(--keyboard-inset, 0px));
-  /* Bleibt die Oberkante der Anwendung trotzdem über dem sichtbaren Ausschnitt
-     - Safari verschiebt beim Fokussieren mitunter doch -, rückt sie um die
-     gemessene Strecke nach. Innenabstand statt Außenabstand, weil dieser mit
-     dem Rand des Body verschmelzen könnte und die Messung dann ins Leere liefe.
-     Ohne Tastatur ist der Wert 0. */
-  padding-top: var(--viewport-shift, 0px);
+  /* Safari verschiebt den sichtbaren Ausschnitt beim Fokussieren nach unten,
+     um die Einfügemarke freizustellen; die Anwendung rückt um die gemessene
+     Strecke nach, damit ihre Oberkante im Blick bleibt. Ohne Tastatur ist der
+     Wert 0. Die Höhe bleibt davon unberührt: Sie ist die Höhe des sichtbaren
+     Ausschnitts, gleich wo dieser liegt. */
+  margin-top: var(--viewport-shift, 0px);
 }
 
 .workspace-main {
   height: 100vh;
-  height: calc(100dvh - var(--keyboard-inset, 0px) - var(--viewport-shift, 0px));
+  height: calc(100dvh - var(--keyboard-inset, 0px));
 }
 
 .workspace-main {
@@ -467,6 +467,13 @@ body.is-resizing-sidebar {
   padding-bottom: 0.5rem;
   padding-top: 0.5rem;
   top: 0;
+}
+
+/* Zeigt am Schalter selbst, dass die Seite geteilt ist - mobil steht daneben
+   kein Hinweis und keine Personenkreise mehr (NFR-UI-25). */
+.icon-action-shared {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
 }
 
 .note-encryption-active {

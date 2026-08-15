@@ -1,4 +1,6 @@
-<div x-show="hasCollaborators()" x-cloak class="relative shrink-0">
+<?php /* Mobil entfallen die Personenkreise: Der Kopf bleibt damit einzeilig,
+         was mit eingeblendeter Tastatur den Ausschlag gibt (NFR-UI-25). */ ?>
+<div x-show="hasCollaborators()" x-cloak class="relative hidden shrink-0 md:block">
     <button
         type="button"
         @click="toggleWriters"
