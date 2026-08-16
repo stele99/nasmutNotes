@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { initViewportMetrics, viewportShift } from '../../resources/js/viewport.js';
 
-function createWindow({ innerHeight, height, offsetTop, scrollerTop = 0 }) {
+function createWindow({ innerHeight, height, offsetTop, pageTop = offsetTop, scrollY = 0, scrollerTop = 0 }) {
   const listeners = { viewport: [], window: [] };
   const properties = new Map();
   const timers = [];
@@ -13,9 +13,11 @@ function createWindow({ innerHeight, height, offsetTop, scrollerTop = 0 }) {
 
   return {
     innerHeight,
+    scrollY,
     visualViewport: {
       height,
       offsetTop,
+      pageTop,
       addEventListener(name, handler) {
         listeners.viewport.push([name, handler]);
       },
@@ -137,6 +139,24 @@ test('measures how far Safari moved the visible area', () => {
 
   assert.equal(win.properties.get('--viewport-shift'), '140px');
   assert.equal(viewportShift(), 140);
+});
+
+test('counts the shift once, however Safari reports it', () => {
+  // Safari meldet dieselbe Verschiebung doppelt: als offsetTop und dadurch,
+  // dass es das Dokument mitscrollt. Wurde beides addiert, stand die Leiste um
+  // die doppelte Strecke tiefer - mitten im Text.
+  const win = createWindow({
+    innerHeight: 800,
+    height: 460,
+    offsetTop: 140,
+    pageTop: 140,
+    scrollY: 140,
+    scrollerTop: -140,
+  });
+
+  initViewportMetrics(win);
+
+  assert.equal(win.properties.get('--viewport-shift'), '140px');
 });
 
 test('stays put instead of piling up on itself', () => {

@@ -69,9 +69,16 @@ export function initViewportMetrics(win = globalThis.window) {
     // Reine Messung, keine Regelung: Der Scroll-Container bleibt, wo er ist -
     // ausgeglichen wird nur die klebende Leiste in ihm. Deshalb ändert der
     // gesetzte Wert die Messung nicht und kann sich nicht aufschaukeln.
+    //
+    // Beide Seiten zählen ab der Oberkante des Dokuments, sonst wird doppelt
+    // gezählt: Safari meldet dieselbe Verschiebung sowohl als `offsetTop` als
+    // auch dadurch, dass es das Dokument mitscrollt (`scrollY`, erkennbar am
+    // negativen `top` des Containers). `pageTop` fasst beides bereits zusammen.
     const scroller = win.document.querySelector('.workspace-main');
     const shift = scroller && inset > 0
-      ? Math.min(SHIFT_MAX, Math.max(0, Math.round(viewport.offsetTop - scroller.getBoundingClientRect().top)))
+      ? Math.min(SHIFT_MAX, Math.max(0, Math.round(
+        viewport.pageTop - (scroller.getBoundingClientRect().top + (win.scrollY || 0)),
+      )))
       : 0;
     currentShift = shift;
 
