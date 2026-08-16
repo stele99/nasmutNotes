@@ -3,18 +3,10 @@ import test from 'node:test';
 
 import { initViewportMetrics } from '../../resources/js/viewport.js';
 
-function createWindow({ innerHeight, height, offsetTop, shellTop = 0 }) {
+function createWindow({ innerHeight, height, offsetTop }) {
   const listeners = { viewport: [], window: [] };
   const properties = new Map();
   const timers = [];
-  // Der Scroll-Container rückt um den gesetzten Ausgleich nach - wie im
-  // Browser, wo der Außenabstand der Shell ihn verschiebt.
-  const scroller = {
-    getBoundingClientRect() {
-      const shift = Number.parseInt(properties.get('--viewport-shift') || '0', 10);
-      return { top: shellTop + shift };
-    },
-  };
 
   return {
     innerHeight,
@@ -26,9 +18,6 @@ function createWindow({ innerHeight, height, offsetTop, shellTop = 0 }) {
       },
     },
     document: {
-      querySelector() {
-        return scroller;
-      },
       documentElement: {
         dataset: {},
         style: {
@@ -103,38 +92,6 @@ test('counts the keyboard regardless of how far Safari shifted the view', () => 
   assert.equal(wide.root.dataset.keyboard, 'open');
 });
 
-test('makes up for an application top edge above the visible area', () => {
-  // Safari hat verschoben: Der sichtbare Ausschnitt beginnt 60px tiefer als die
-  // Oberkante der Anwendung.
-  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60, shellTop: 0 });
-
-  initViewportMetrics(win);
-
-  assert.equal(win.properties.get('--viewport-shift'), '60px');
-});
-
-test('takes the compensation back when it is no longer needed', () => {
-  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60, shellTop: 0 });
-
-  initViewportMetrics(win);
-  assert.equal(win.properties.get('--viewport-shift'), '60px');
-
-  // Safari nimmt seinen Versatz zurück, ohne das zu melden: Ohne Nachmessen
-  // bliebe der Ausgleich als Leerraum am oberen Rand stehen.
-  win.visualViewport.offsetTop = 0;
-  win.notifyViewport();
-
-  assert.equal(win.properties.get('--viewport-shift'), '0px');
-});
-
-test('leaves the compensation alone while it fits', () => {
-  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 0, shellTop: 0 });
-
-  initViewportMetrics(win);
-
-  assert.equal(win.properties.has('--viewport-shift'), false);
-});
-
 test('recalculates when the visual viewport changes', () => {
   const win = createWindow({ innerHeight: 800, height: 800, offsetTop: 0 });
 
@@ -165,6 +122,14 @@ test('measures again after the keyboard animation settles', () => {
   win.timers.pop()();
 
   assert.equal(win.properties.get('--keyboard-inset'), '340px');
+});
+
+test('does not compensate the shift - that fought Safari and piled up', () => {
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60 });
+
+  initViewportMetrics(win);
+
+  assert.equal(win.properties.has('--viewport-shift'), false);
 });
 
 test('stays silent without the visual viewport API', () => {

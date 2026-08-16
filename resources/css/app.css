@@ -133,15 +133,8 @@ textarea::placeholder {
 .notebook-rail,
 .notebook-drawer {
   height: 100vh;
-  height: calc(100dvh - var(--keyboard-inset, 0px) - var(--viewport-shift, 0px));
+  height: calc(100dvh - var(--keyboard-inset, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-/* Seitenleiste und Notizbuch-Schublade liegen mobil `fixed` am Layout-Viewport
-   und folgen dem nachgerückten Rand der Anwendung nicht von selbst. */
-.page-sidebar,
-.notebook-drawer {
-  top: var(--viewport-shift, 0px);
 }
 
 .notebook-rail {
@@ -383,12 +376,6 @@ body.is-resizing-sidebar {
 .workspace-shell {
   height: 100vh;
   height: calc(100dvh - var(--keyboard-inset, 0px));
-  /* Safari verschiebt den sichtbaren Ausschnitt beim Fokussieren nach unten,
-     um die Einfügemarke freizustellen; die Anwendung rückt um die gemessene
-     Strecke nach, damit ihre Oberkante im Blick bleibt. Ohne Tastatur ist der
-     Wert 0. Die Höhe bleibt davon unberührt: Sie ist die Höhe des sichtbaren
-     Ausschnitts, gleich wo dieser liegt. */
-  margin-top: var(--viewport-shift, 0px);
 }
 
 .workspace-main {
