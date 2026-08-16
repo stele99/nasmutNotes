@@ -16,6 +16,7 @@ import { voiceFormData, voiceRecorderMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
+import { viewportShift } from './viewport.js';
 import {
   acquireNoteEditLock,
   cacheNoteContent,
@@ -51,8 +52,10 @@ export function noteEditorPage() {
   const stickyHeights = { header: 0, toolbar: 0 };
   const scrollInset = {
     get top() {
+      // Mit eingeblendeter Tastatur klebt nur die Werkzeugleiste, und sie steht
+      // um den Versatz des sichtbaren Ausschnitts tiefer (siehe viewport.js).
       return document.documentElement.dataset.keyboard === 'open'
-        ? stickyHeights.toolbar
+        ? viewportShift() + stickyHeights.toolbar
         : stickyHeights.header + stickyHeights.toolbar;
     },
     right: 0,

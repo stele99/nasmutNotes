@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { initViewportMetrics } from '../../resources/js/viewport.js';
+import { initViewportMetrics, viewportShift } from '../../resources/js/viewport.js';
 
-function createWindow({ innerHeight, height, offsetTop }) {
+function createWindow({ innerHeight, height, offsetTop, scrollerTop = 0 }) {
   const listeners = { viewport: [], window: [] };
   const properties = new Map();
   const timers = [];
+  // Der Scroll-Container bleibt, wo er ist - ausgeglichen wird nur die klebende
+  // Leiste in ihm. Seine Oberkante ändert sich durch den Ausgleich also nicht.
+  const scroller = { getBoundingClientRect: () => ({ top: scrollerTop }) };
 
   return {
     innerHeight,
@@ -18,6 +21,9 @@ function createWindow({ innerHeight, height, offsetTop }) {
       },
     },
     document: {
+      querySelector() {
+        return scroller;
+      },
       documentElement: {
         dataset: {},
         style: {
@@ -124,12 +130,40 @@ test('measures again after the keyboard animation settles', () => {
   assert.equal(win.properties.get('--keyboard-inset'), '340px');
 });
 
-test('does not compensate the shift - that fought Safari and piled up', () => {
-  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 60 });
+test('measures how far Safari moved the visible area', () => {
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 140 });
 
   initViewportMetrics(win);
 
-  assert.equal(win.properties.has('--viewport-shift'), false);
+  assert.equal(win.properties.get('--viewport-shift'), '140px');
+  assert.equal(viewportShift(), 140);
+});
+
+test('stays put instead of piling up on itself', () => {
+  // Der Ausgleich verschiebt nur die Leiste, nie den Scroll-Container: Dessen
+  // Oberkante bleibt gleich, die Messung wiederholt sich also unverändert.
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 140 });
+
+  initViewportMetrics(win);
+  for (let round = 0; round < 5; round += 1) {
+    win.notifyViewport();
+  }
+
+  assert.equal(win.properties.get('--viewport-shift'), '140px');
+});
+
+test('drops the shift once the keyboard is gone', () => {
+  const win = createWindow({ innerHeight: 800, height: 460, offsetTop: 140 });
+
+  initViewportMetrics(win);
+  assert.equal(win.properties.get('--viewport-shift'), '140px');
+
+  win.visualViewport.height = 800;
+  win.visualViewport.offsetTop = 0;
+  win.notifyViewport();
+
+  assert.equal(win.properties.get('--viewport-shift'), '0px');
+  assert.equal(viewportShift(), 0);
 });
 
 test('stays silent without the visual viewport API', () => {

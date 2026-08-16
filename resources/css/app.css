@@ -373,14 +373,13 @@ body.is-resizing-sidebar {
    Kante, und Safari hat keinen Grund mehr, den Ausschnitt zu verschieben. Die
    Hilfsklasse `h-dvh` im Markup bleibt für Browser ohne Visual-Viewport-API
    gültig, weil der Abzug dort 0 ist. */
-.workspace-shell {
-  height: 100vh;
-  height: calc(100dvh - var(--keyboard-inset, 0px));
-}
-
+.workspace-shell,
 .workspace-main {
   height: 100vh;
-  height: calc(100dvh - var(--keyboard-inset, 0px));
+  /* Der Versatz kommt hinzu, weil der sichtbare Ausschnitt um ihn tiefer liegt:
+     Sonst endete die Anwendung um diese Strecke über der Tastatur. Der Inhalt
+     rückt dabei bewusst nicht nach - das führte zur Rückkopplung (viewport.js). */
+  height: calc(100dvh - var(--keyboard-inset, 0px) + var(--viewport-shift, 0px));
 }
 
 .workspace-main {
@@ -392,9 +391,10 @@ body.is-resizing-sidebar {
   scroll-padding-top: calc(var(--sticky-header-height, 0px) + var(--sticky-toolbar-height, 0px));
 }
 
-/* Beim Tippen klebt nur noch die Werkzeugleiste (siehe .note-sticky-header). */
+/* Beim Tippen klebt nur noch die Werkzeugleiste (siehe .note-sticky-header) -
+   sie steht um den Versatz tiefer, also gehört er zum Abstand dazu. */
 :root[data-keyboard="open"] .workspace-main {
-  scroll-padding-top: var(--sticky-toolbar-height, 0px);
+  scroll-padding-top: calc(var(--viewport-shift, 0px) + var(--sticky-toolbar-height, 0px));
 }
 
 .page-canvas {
@@ -449,11 +449,15 @@ body.is-resizing-sidebar {
   position: static;
 }
 
+/* Safari verschiebt den sichtbaren Ausschnitt beim Fokussieren; die Oberkante
+   des Scroll-Containers liegt dann darüber und die Leiste klebte unsichtbar an
+   ihr. Sie rückt deshalb um die gemessene Strecke nach - nur sie, nicht der
+   Inhalt (viewport.js). Ohne Versatz ist der Wert 0. */
 :root[data-keyboard="open"] .note-sticky-toolbar {
   margin-bottom: 0.5rem;
   padding-bottom: 0.5rem;
   padding-top: 0.5rem;
-  top: 0;
+  top: var(--viewport-shift, 0px);
 }
 
 /* Zeigt am Schalter selbst, dass die Seite geteilt ist - mobil steht daneben
