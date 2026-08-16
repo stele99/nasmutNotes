@@ -139,6 +139,7 @@ return static function (App $app): void {
         $group->get('/{id}/board', [BoardController::class, 'show']);
         $group->post('/{id}/categories', [BoardController::class, 'createCategory']);
         $group->get('/{id}/log', [LogController::class, 'show']);
+        $group->get('/{id}/log/export', [LogController::class, 'export']);
         $group->post('/{id}/log/columns', [LogController::class, 'storeColumn']);
         $group->post('/{id}/log/entries', [LogController::class, 'storeEntry']);
         $group->post('/{id}/log/voice', [LogController::class, 'storeVoiceEntry']);

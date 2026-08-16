@@ -24,6 +24,19 @@
             <button x-show="canEditPage" type="button" @click="openColumnDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Spalten verwalten" aria-label="Spalten verwalten">
                 <span x-icon="table"></span><span class="hidden lg:inline">Spalten</span>
             </button>
+            <?php /* Export als Tabelle (FR-LOG-12). Das Format steht im
+                     Aufklappmenü, damit der Kopf nur einen Schalter kostet. */ ?>
+            <div class="relative" @click.outside="closeExportMenu">
+                <button type="button" @click="toggleExportMenu" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Logbuch exportieren" aria-label="Logbuch exportieren" :aria-expanded="exportMenuOpen">
+                    <span x-icon="download"></span><span class="hidden lg:inline">Export</span>
+                </button>
+                <div x-show="exportMenuOpen" x-cloak class="popup-menu" @keydown.escape.window="closeExportMenu">
+                    <p class="px-3 py-2 text-xs font-medium" style="color: var(--color-text-muted);">Logbuch exportieren</p>
+                    <button type="button" @click="exportLog('csv')" class="popup-menu-button"><span x-icon="file-text"></span>CSV</button>
+                    <button type="button" @click="exportLog('xlsx')" class="popup-menu-button"><span x-icon="table"></span>Excel (XLSX)</button>
+                    <button type="button" @click="exportLog('xml')" class="popup-menu-button"><span x-icon="code"></span>XML</button>
+                </div>
+            </div>
             <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Seite teilen" aria-label="Seite teilen">
                 <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
             </button>

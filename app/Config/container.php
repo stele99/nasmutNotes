@@ -18,6 +18,7 @@ use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\Import\ArchiveChunkStore;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Import\ZipImportService;
+use App\Domain\Log\LogExportService;
 use App\Domain\Log\LogService;
 use App\Domain\NotebookService;
 use App\Domain\Notes\AttachmentService;
@@ -383,6 +384,11 @@ return static function (string $rootPath): DI\Container {
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
 
         LogRepository::class => static fn (PDO $pdo): LogRepository => new LogRepository($pdo),
+
+        LogExportService::class => static fn (
+            LogService $log,
+            PageService $pages,
+        ): LogExportService => new LogExportService($log, $pages),
 
         LogService::class => static fn (
             PDO $pdo,

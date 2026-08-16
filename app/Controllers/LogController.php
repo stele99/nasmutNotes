@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\Log\LogColumnType;
+use App\Domain\Log\LogExportService;
 use App\Domain\Log\LogService;
 use App\Domain\Voice\VoiceNoteService;
 use App\Domain\Voice\VoiceServiceException;
@@ -25,10 +26,38 @@ final class LogController
 {
     public function __construct(
         private readonly LogService $log,
+        private readonly LogExportService $export,
         private readonly VoiceNoteService $voice,
         private readonly RateLimiter $rateLimiter,
         private readonly LoggerInterface $logger,
     ) {
+    }
+
+    /**
+     * Bewusst ein GET: Der Browser lädt die Datei dann selbst herunter.
+     *
+     * @param array<string, string> $args
+     */
+    public function export(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getQueryParams();
+        $format = is_string($params['format'] ?? null) ? $params['format'] : '';
+        $timezone = is_string($params['tz'] ?? null) ? $params['tz'] : null;
+
+        $file = $this->export->export(
+            CurrentUser::require($request),
+            (int) $args['id'],
+            $format,
+            $timezone,
+        );
+
+        $response->getBody()->write($file['body']);
+
+        return $response
+            ->withHeader('Content-Type', $file['mime'])
+            ->withHeader('Content-Length', (string) strlen($file['body']))
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $file['filename'] . '"')
+            ->withHeader('X-Content-Type-Options', 'nosniff');
     }
 
     /** @param array<string, string> $args */

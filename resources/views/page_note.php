@@ -63,11 +63,11 @@
                     <span x-show="isEncrypted()" x-cloak x-icon="lock"></span>
                     <span class="hidden lg:inline" x-text="isEncrypted() ? (isCryptoUnlocked() ? 'Entsperrt' : 'Gesperrt') : 'Verschlüsseln'"></span>
                 </button>
-                <div x-show="encryptionMenuOpen" x-cloak class="note-encryption-menu" @keydown.escape.window="encryptionMenuOpen = false">
+                <div x-show="encryptionMenuOpen" x-cloak class="popup-menu" @keydown.escape.window="encryptionMenuOpen = false">
                     <p class="px-3 py-2 text-xs font-medium" style="color: var(--color-text-muted);" x-text="encryptionButtonLabel()"></p>
-                    <button type="button" @click="lockEncryptedNote" class="note-encryption-menu-button"><span x-icon="lock"></span>Sperren</button>
-                    <button type="button" @click="openCryptoDialog('rewrap')" class="note-encryption-menu-button"><span x-icon="key-round"></span>Kennwort ändern</button>
-                    <button type="button" @click="openCryptoDialog('decrypt')" class="note-encryption-menu-button note-encryption-menu-danger"><span x-icon="lock-open"></span>Verschlüsselung aufheben</button>
+                    <button type="button" @click="lockEncryptedNote" class="popup-menu-button"><span x-icon="lock"></span>Sperren</button>
+                    <button type="button" @click="openCryptoDialog('rewrap')" class="popup-menu-button"><span x-icon="key-round"></span>Kennwort ändern</button>
+                    <button type="button" @click="openCryptoDialog('decrypt')" class="popup-menu-button popup-menu-danger"><span x-icon="lock-open"></span>Verschlüsselung aufheben</button>
                 </div>
             </div>
         </div>

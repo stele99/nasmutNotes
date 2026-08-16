@@ -66,6 +66,8 @@ export function logPage() {
     entryError: '',
     locatingColumnId: null,
 
+    exportMenuOpen: false,
+
     columnDialogOpen: false,
     newColumnName: '',
     newColumnType: 'text',
@@ -89,6 +91,34 @@ export function logPage() {
       }
 
       await this.load();
+    },
+
+    // ----------------------------------------------------------------- Export
+
+    toggleExportMenu() {
+      this.exportMenuOpen = !this.exportMenuOpen;
+    },
+
+    closeExportMenu() {
+      this.exportMenuOpen = false;
+    },
+
+    /**
+     * Der Browser lädt selbst herunter - die Antwort trägt
+     * `Content-Disposition: attachment`. Die Zeitzone geht mit, weil die
+     * Zeitpunkte als UTC in der Datenbank stehen und der Server sonst nicht
+     * wüsste, welche Uhrzeit im Export stehen soll (FR-LOG-12).
+     */
+    exportLog(format) {
+      this.exportMenuOpen = false;
+      let timezone = '';
+      try {
+        timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      } catch {
+        /* Ohne Zeitzone rechnet der Server in UTC. */
+      }
+      const query = new URLSearchParams({ format, tz: timezone });
+      window.location.href = `/api/pages/${this.pageId}/log/export?${query.toString()}`;
     },
 
     // ------------------------------------------------------------ Seitentitel

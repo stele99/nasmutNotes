@@ -472,7 +472,9 @@ body.is-resizing-sidebar {
   color: var(--color-accent);
 }
 
-.note-encryption-menu {
+/* Aufklappmenü an einem Schalter im Seitenkopf - Verschlüsselung der Notiz,
+   Exportformat des Logbuchs. */
+.popup-menu {
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -485,7 +487,7 @@ body.is-resizing-sidebar {
   z-index: 45;
 }
 
-.note-encryption-menu-button {
+.popup-menu-button {
   align-items: center;
   border-radius: var(--radius-sm);
   display: flex;
@@ -496,12 +498,12 @@ body.is-resizing-sidebar {
   width: 100%;
 }
 
-.note-encryption-menu-button:hover,
-.note-encryption-menu-button:focus-visible {
+.popup-menu-button:hover,
+.popup-menu-button:focus-visible {
   background: var(--color-bg-subtle);
 }
 
-.note-encryption-menu-danger {
+.popup-menu-danger {
   color: var(--color-danger);
 }
 
