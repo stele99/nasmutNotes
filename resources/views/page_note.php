@@ -46,6 +46,11 @@
             <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
                 <span x-icon="history"></span><span class="hidden lg:inline">Verlauf</span>
             </button>
+            <?php /* Druckt allein Titel und Inhalt; das Ausblenden der Oberfläche
+                     übernimmt das Druck-Stylesheet (FR-NOTE-27). */ ?>
+            <button x-show="!isEncrypted() || isCryptoUnlocked()" type="button" @click="printNote" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Notiz drucken" aria-label="Notiz drucken">
+                <span x-icon="printer"></span><span class="hidden lg:inline">Drucken</span>
+            </button>
             <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
                 <span x-icon="image"></span><span class="hidden lg:inline">Komprimieren</span>
             </button>
@@ -74,10 +79,12 @@
                          sonst die Unterlängen ab. */ ?>
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
-                 <?php include __DIR__ . '/partials/page_location.php'; ?>
-                 <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
+                 <div class="note-print-hide">
+                     <?php include __DIR__ . '/partials/page_location.php'; ?>
+                     <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
+                 </div>
             </div>
-            <div class="flex shrink-0 items-start gap-3">
+            <div class="note-print-hide flex shrink-0 items-start gap-3">
                 <div class="text-left text-xs md:text-right md:text-sm" style="color: var(--color-text-muted);">
                     <p x-text="statusLabel()"></p>
                 </div>
@@ -88,7 +95,7 @@
                  Klick öffnet bzw. lädt herunter, das × entfernt den Anhang. Anhänge
                  über dem Offline-Limit sind ohne Netz als „nur online" markiert
                  (FR-OFFLINE-06). */ ?>
-        <div x-show="!isEncrypted() && (attachments.length > 0 || uploadingAttachment)" x-cloak class="mb-6 flex flex-wrap items-center gap-2">
+        <div x-show="!isEncrypted() && (attachments.length > 0 || uploadingAttachment)" x-cloak class="note-print-hide mb-6 flex flex-wrap items-center gap-2">
             <template x-for="attachment in attachments" :key="attachment.id">
                 <span class="attachment-badge" :class="{ 'attachment-badge-offline': needsConnection(attachment) }">
                     <button type="button" class="attachment-badge-open" @click="openAttachment(attachment)" :title="attachmentLabel(attachment)">
@@ -185,9 +192,9 @@
                      runEditorCommand() ohnehin wieder fokussieren. */ ?>
             <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
         </div>
-        <p x-show="imageUploadError" x-text="imageUploadError" class="mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+        <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>
-            <div x-show="!isEncrypted()" class="mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+            <div x-show="!isEncrypted()" class="note-print-hide mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
         <?php endif; ?>
         <section x-show="isEncrypted() && !isCryptoUnlocked()" x-cloak class="note-lock-screen" aria-labelledby="note-lock-title">
             <span class="note-lock-icon" x-icon="lock:size-8"></span>
@@ -201,7 +208,7 @@
             <button type="button" @click="openActiveLink" class="link-action-button">Öffnen</button>
             <button x-show="canEditPage" type="button" @click="editActiveLink" class="link-action-button">Bearbeiten</button>
         </div>
-        <p x-show="updatedAt" class="mt-12 pb-2 text-center text-xs" style="color: var(--color-text-muted);" x-text="lastEditedLabel()"></p>
+        <p x-show="updatedAt" class="note-print-hide mt-12 pb-2 text-center text-xs" style="color: var(--color-text-muted);" x-text="lastEditedLabel()"></p>
     </div>
 
     <?php include __DIR__ . '/partials/page_location_dialog.php'; ?>

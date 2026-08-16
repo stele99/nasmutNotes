@@ -549,6 +549,17 @@ export function noteEditorPage() {
       this.syncToolbar();
     },
 
+    /**
+     * Gedruckt wird die Seite selbst, nicht eine erzeugte Kopie: Ein
+     * Druck-Stylesheet blendet Navigation, Werkzeuge und Statuszeilen aus
+     * (FR-NOTE-27). Damit stimmt das Papier immer mit dem Bildschirm überein,
+     * und Bilder samt Anhängen brauchen keine zweite Auslieferung mit eigener
+     * Rechteprüfung.
+     */
+    printNote() {
+      window.print();
+    },
+
     isEncrypted() {
       return this.encryptionState === 'encrypted';
     },

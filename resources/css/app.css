@@ -1557,3 +1557,87 @@ button:disabled,
     width: 1.75rem;
   }
 }
+
+/* Gedruckt wird die Notiz, nicht die Anwendung: Titel und Inhalt bleiben,
+   Navigation, Werkzeuge, Anhänge und Statuszeilen entfallen (FR-NOTE-27).
+   Ausgeblendet wird über `.note-print-hide` am Element selbst, damit beim
+   Ergänzen der Seite sichtbar bleibt, was aufs Papier gehört. */
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  /* Hell drucken, auch wenn am Bildschirm der dunkle Modus läuft: Die Palette
+     steht in `@theme` als `light-dark()` und folgt damit dem Farbschema. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    color-scheme: light !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Der Bildschirmaufbau begrenzt die Höhe und scrollt; ohne diese Rücknahme
+     käme nur die erste Seite aus dem Drucker. */
+  /* Nur diese drei: Ein `display` mit !important überstimmt das Inline-`none`,
+     mit dem Alpine die Dialoge versteckt - sie kämen dann mit aufs Papier. */
+  .workspace-shell,
+  .workspace-main,
+  .note-page {
+    display: block !important;
+    height: auto !important;
+    margin: 0 !important;
+    max-height: none !important;
+    max-width: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    width: auto !important;
+  }
+
+  .page-sidebar,
+  .notebook-rail,
+  .notebook-drawer,
+  .sidebar-toggle,
+  .note-sticky-header,
+  .note-sticky-toolbar,
+  .note-print-hide {
+    display: none !important;
+  }
+
+  /* Am Bildschirm kürzt der Titel mit Auslassungspunkten, weil er dort in eine
+     Zeile muss - auf Papier gibt es dafür keinen Grund. */
+  .note-page h1 {
+    font-size: 20pt;
+    margin-bottom: 8mm !important;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  /* Hintergründe von Codeblöcken und der Haken abgehakter Einträge gehen sonst
+     verloren, weil Browser Farbflächen beim Drucken auslassen. */
+  .prose-editor {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .prose-editor .tiptap {
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  .prose-editor img,
+  .prose-editor li,
+  .prose-editor tr {
+    break-inside: avoid;
+  }
+
+  .prose-editor h1,
+  .prose-editor h2,
+  .prose-editor h3 {
+    break-after: avoid;
+  }
+}
