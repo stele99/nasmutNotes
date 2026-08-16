@@ -178,7 +178,12 @@
             <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button toolbar-more" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
             <?php /* Klappt auf dem Handy die übrigen Werkzeuge auf (NFR-UI-24).
                      Ab 768 px steht ohnehin alles in der Leiste. */ ?>
-            <button type="button" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
+            <?php /* touchstart/mousedown halten den Fokus im Editor: Ohne sie
+                     nähme der Schalter ihn an sich, die Textauswahl ginge
+                     verloren und die Tastatur führe ein. Die übrigen Werkzeuge
+                     fallen damit nicht auf, weil sie den Editor über
+                     runEditorCommand() ohnehin wieder fokussieren. */ ?>
+            <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>

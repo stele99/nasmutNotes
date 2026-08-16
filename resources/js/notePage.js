@@ -111,6 +111,7 @@ export function noteEditorPage() {
     stickyObserver: null,
     stickyScroller: null,
     toolbarExpanded: false,
+    editorHadFocus: false,
     attachments: [],
     attachmentError: '',
     uploadingAttachment: false,
@@ -459,8 +460,24 @@ export function noteEditorPage() {
     // die übrigen tragen die Klasse `toolbar-more` und erscheinen erst mit
     // diesem Schalter (NFR-UI-24). Der Zustand bleibt bestehen, bis er wieder
     // umgelegt wird - wer eine Tabelle baut, braucht die Knöpfe mehrfach.
+    /**
+     * Vor dem Antippen gemerkt, weil der Fokus beim Loslassen schon weg sein
+     * kann: `mousedown.prevent` hält ihn auf dem Desktop, auf dem Gerät gibt
+     * ihn Safari trotzdem gelegentlich ab.
+     */
+    rememberEditorFocus() {
+      this.editorHadFocus = Boolean(editor?.isFocused);
+    },
+
     toggleToolbarMore() {
       this.toolbarExpanded = !this.toolbarExpanded;
+      // Holt Auswahl und Tastatur zurück, falls der Schalter den Fokus doch
+      // an sich genommen hat. War der Editor vorher nicht fokussiert, bleibt es
+      // dabei - sonst führe die Tastatur auf, nur weil jemand die Leiste
+      // aufklappt.
+      if (this.editorHadFocus) {
+        editor?.commands.focus();
+      }
     },
 
     toolbarExpandedClass() {
