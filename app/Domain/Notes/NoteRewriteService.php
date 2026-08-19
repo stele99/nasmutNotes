@@ -161,6 +161,8 @@ final class NoteRewriteService
             '',
             $this->providerSettings->maxSeconds,
             $this->providerSettings->maxMb,
+            $runtime['model'],
+            '',
         );
         $result = $this->client->completeJson(
             $providerSettings,

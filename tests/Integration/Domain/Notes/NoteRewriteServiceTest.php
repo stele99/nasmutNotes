@@ -193,6 +193,8 @@ final class NoteRewriteServiceTest extends TestCase
             '',
             300,
             25,
+            'rewrite-model',
+            '',
         );
 
         return new NoteRewriteService(

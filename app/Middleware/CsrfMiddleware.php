@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
+use App\Domain\SessionService;
 use App\Support\JsonResponse;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -40,7 +41,7 @@ final class CsrfMiddleware implements MiddlewareInterface
 
         $request = $request->withAttribute('csrf_token', $cookieToken);
 
-        if (!in_array($request->getMethod(), self::SAFE_METHODS, true)) {
+        if (!in_array($request->getMethod(), self::SAFE_METHODS, true) && !$this->isBearerOnlyRequest($request)) {
             $error = $this->validate($request, $cookieToken);
             if ($error !== null) {
                 $response = new ResponseFactory()->createResponse(403);
@@ -56,6 +57,22 @@ final class CsrfMiddleware implements MiddlewareInterface
         }
 
         return $response;
+    }
+
+    /**
+     * Das Double-Submit-Verfahren schützt cookie-authentifizierte Anfragen vor
+     * fremden Origins: Eine fremde Seite kann das Cookie "ambient" mitschicken,
+     * einen Bearer-Token im Authorization-Header dagegen nicht. Trägt eine
+     * Anfrage einen solchen Header und kein Session-Cookie (Automations-Token,
+     * FR-NVOICE), greift CSRF-Schutz also gar nicht erst - alle
+     * cookie-authentifizierten Routen bleiben davon unberührt.
+     */
+    private function isBearerOnlyRequest(Request $request): bool
+    {
+        $cookies = $request->getCookieParams();
+        $hasSessionCookie = isset($cookies[SessionService::COOKIE_NAME]) && $cookies[SessionService::COOKIE_NAME] !== '';
+
+        return !$hasSessionCookie && str_starts_with($request->getHeaderLine('Authorization'), 'Bearer ');
     }
 
     private function validate(Request $request, string $cookieToken): ?string

@@ -48,7 +48,7 @@ $viteDevServerUrl = Env::bool('APP_DEBUG', false) && Env::get('APP_ENV') === 'de
     : null;
 
 $registerRoutes = require $rootPath . '/app/Config/routes.php';
-$registerRoutes($app);
+$registerRoutes($app, $container);
 
 // Slim führt Middleware LIFO aus (zuletzt hinzugefügt = äußerste Schicht).
 // Reihenfolge unten von innen (zuerst hinzugefügt) nach außen (zuletzt hinzugefügt):

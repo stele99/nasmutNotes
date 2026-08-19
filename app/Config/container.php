@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Controllers\HealthController;
 use App\Domain\AdminService;
 use App\Domain\Auth\AuthService;
+use App\Domain\Auth\DeviceTokenService;
 use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
 use App\Domain\Backup\BackupLayout;
@@ -36,6 +37,7 @@ use App\Domain\Voice\VoiceNoteService;
 use App\Repositories\AdminRepository;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\DeviceTokenRepository;
 use App\Repositories\InviteRepository;
 use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
@@ -382,6 +384,15 @@ return static function (string $rootPath): DI\Container {
         ): NotebookService => new NotebookService($pdo, $notebooks, $workspaces),
 
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
+
+        DeviceTokenRepository::class => static fn (PDO $pdo): DeviceTokenRepository
+            => new DeviceTokenRepository($pdo),
+
+        DeviceTokenService::class => static fn (
+            DeviceTokenRepository $tokens,
+            UserRepository $users,
+            AuditLogRepository $auditLog,
+        ): DeviceTokenService => new DeviceTokenService($tokens, $users, $auditLog),
 
         LogRepository::class => static fn (PDO $pdo): LogRepository => new LogRepository($pdo),
 

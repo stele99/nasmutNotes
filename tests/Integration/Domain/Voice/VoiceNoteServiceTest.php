@@ -257,6 +257,45 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertSame(0, $this->httpMock->count());
     }
 
+    public function testQuickCaptureReturnsPlainTextWithoutCreatingAnything(): void
+    {
+        $this->settings->set(VoiceNoteService::QUICK_MODEL_KEY, 'gpt-4o-quick');
+        $this->queueTranscription('äh also die Tomaten müssen noch gegossen werden');
+        $this->queuePostprocessing(['text' => 'Die Tomaten müssen noch gegossen werden.']);
+
+        $result = $this->service()->transcribeQuick($this->makeUpload());
+
+        self::assertSame('Die Tomaten müssen noch gegossen werden.', $result['text']);
+        self::assertStringContainsString('Tomaten', $result['transcript']);
+        // Kein Notizbuch-Matching, kein ProseMirror-Dokument nötig - die
+        // Nutzernachricht enthält deshalb kein "Vorhandene Notizbücher".
+        self::assertStringNotContainsString('Notizbücher', $this->lastChatRequest());
+        // Eigenes, im Admin-Dashboard gesetztes Modell statt des allgemeinen
+        // Nachbearbeitungsmodells.
+        $payload = json_decode($this->lastRequestBody, true);
+        self::assertSame('gpt-4o-quick', $payload['model'] ?? null);
+        self::assertSame([], $this->pages->list($this->user, 'updated', null, false));
+    }
+
+    public function testQuickCaptureWithoutPostprocessingReturnsRawTranscript(): void
+    {
+        $this->settings->set(VoiceNoteService::POSTPROCESS_ENABLED_KEY, '0');
+        $this->queueTranscription('Roher Text ohne Nachbearbeitung');
+
+        $result = $this->service()->transcribeQuick($this->makeUpload());
+
+        self::assertSame('Roher Text ohne Nachbearbeitung', $result['text']);
+        self::assertSame(0, $this->httpMock->count());
+    }
+
+    public function testQuickCaptureRejectsEmptyRecording(): void
+    {
+        $this->queueTranscription('   ');
+
+        $this->expectException(ValidationException::class);
+        $this->service()->transcribeQuick($this->makeUpload());
+    }
+
     public function testEmptyTranscriptIsRejectedBeforeAnythingIsStored(): void
     {
         $this->queueTranscription('   ');

@@ -46,6 +46,8 @@ export function adminDashboard() {
     voiceLogPrompt: '',
     voiceMaxSeconds: 300,
     voiceMaxMb: 25,
+    voiceQuickModel: '',
+    voiceQuickPrompt: '',
     noteAiEnabled: false,
     noteAiHasApiKey: false,
     noteAiModel: '',
@@ -93,6 +95,8 @@ export function adminDashboard() {
       this.voiceLogPrompt = voice.log_prompt || '';
       this.voiceMaxSeconds = Number(voice.max_seconds || 300);
       this.voiceMaxMb = Number(voice.max_mb || 25);
+      this.voiceQuickModel = voice.quick_model || '';
+      this.voiceQuickPrompt = voice.quick_prompt || '';
     },
 
     voiceStatusLabel() {
@@ -121,6 +125,8 @@ export function adminDashboard() {
         log_prompt: this.voiceLogPrompt,
         max_seconds: Number(this.voiceMaxSeconds),
         max_mb: Number(this.voiceMaxMb),
+        quick_model: this.voiceQuickModel,
+        quick_prompt: this.voiceQuickPrompt,
       };
       await this.run(async () => {
         await apiFetch('/api/admin/settings/voice', {
@@ -139,7 +145,7 @@ export function adminDashboard() {
       await this.run(async () => {
         await apiFetch('/api/admin/settings/voice', {
           method: 'PATCH',
-          body: JSON.stringify({ postprocess_prompt: '', log_prompt: '' }),
+          body: JSON.stringify({ postprocess_prompt: '', log_prompt: '', quick_prompt: '' }),
         });
         this.message = 'Die Standardanweisung wurde wiederhergestellt.';
       });

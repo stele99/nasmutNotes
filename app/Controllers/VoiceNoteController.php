@@ -111,6 +111,29 @@ final class VoiceNoteController
     }
 
     /**
+     * NotesVoice (FR-NVOICE): Aufnahme transkribieren und aufbereiten, ohne
+     * etwas zu speichern - für die per Automations-Token ausgelöste
+     * Schnellerfassung direkt in die Zwischenablage.
+     */
+    public function quick(Request $request, Response $response): Response
+    {
+        $user = CurrentUser::require($request);
+        $limited = $this->assertQuickLimit($response, $user->id);
+        if ($limited !== null) {
+            return $limited;
+        }
+
+        return $this->guard($response, function () use ($request, $response): Response {
+            $result = $this->voice->transcribeQuick($this->requireAudio($request));
+
+            return JsonResponse::json($response, [
+                'text' => $result['text'],
+                'characters' => mb_strlen($result['text']),
+            ]);
+        });
+    }
+
+    /**
      * Aufnahmeort aus den Formularfeldern neben der Audiodatei; fehlt er oder
      * ist er unbrauchbar, entsteht die Notiz einfach ohne ihn (FR-NOTE-25).
      *
@@ -154,6 +177,21 @@ final class VoiceNoteController
             $response->withHeader('Retry-After', '60'),
             'RATE_LIMITED',
             'Zu viele Sprachnotizen in kurzer Zeit. Bitte kurz warten.',
+            429,
+        );
+    }
+
+    /** Eigener Zähler für NotesVoice, getrennt von den übrigen Diktatwegen. */
+    private function assertQuickLimit(Response $response, int $userId): ?Response
+    {
+        if ($this->rateLimiter->attempt("voice-quick:{$userId}", 20, 300)) {
+            return null;
+        }
+
+        return JsonResponse::error(
+            $response->withHeader('Retry-After', '60'),
+            'RATE_LIMITED',
+            'Zu viele Diktate in kurzer Zeit. Bitte kurz warten.',
             429,
         );
     }

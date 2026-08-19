@@ -86,6 +86,16 @@ export function offlineSettings() {
     locationModeHandler: null,
     locationModeSaving: false,
 
+    // Automations-Token für NotesVoice (FR-NVOICE): eigener Diktatweg per
+    // Rückseitentipp-Kurzbefehl, unabhängig vom Session-Cookie.
+    deviceTokens: [],
+    deviceTokensLoading: false,
+    deviceTokenLabel: '',
+    deviceTokenCreating: false,
+    deviceTokenError: '',
+    deviceTokenLastCreated: null,
+    deviceTokenCopyLabel: 'Kopieren',
+
     async init() {
       await this.refreshStats();
       this.locationMode = await loadLocationMode();
@@ -155,6 +165,7 @@ export function offlineSettings() {
       this.error = '';
       this.locationMode = await loadLocationMode(true);
       await this.refreshStats();
+      await this.loadDeviceTokens();
     },
 
     selectSettingsSection(section) {
@@ -256,6 +267,100 @@ export function offlineSettings() {
 
     isLocationMode(mode) {
       return this.locationMode === mode;
+    },
+
+    /** Ohne freigeschaltete Sprachnotizen steht die Sektion gar nicht im Markup. */
+    async loadDeviceTokens() {
+      if (typeof window.__VOICE__ === 'undefined') {
+        return;
+      }
+      this.deviceTokensLoading = true;
+      this.deviceTokenError = '';
+      try {
+        const data = await apiFetch('/api/profile/device-tokens');
+        this.deviceTokens = data.device_tokens || [];
+      } catch (error) {
+        this.deviceTokenError = error.message || 'Automations-Token konnten nicht geladen werden.';
+      } finally {
+        this.deviceTokensLoading = false;
+      }
+    },
+
+    async createDeviceToken() {
+      if (this.deviceTokenCreating) {
+        return;
+      }
+      const label = this.deviceTokenLabel.trim();
+      if (!label) {
+        this.deviceTokenError = 'Bitte einen Namen für das Gerät angeben.';
+        return;
+      }
+      this.deviceTokenCreating = true;
+      this.deviceTokenError = '';
+      this.deviceTokenCopyLabel = 'Kopieren';
+      try {
+        const result = await apiFetch('/api/profile/device-tokens', {
+          method: 'POST',
+          body: JSON.stringify({ label }),
+        });
+        this.deviceTokenLastCreated = result;
+        this.deviceTokenLabel = '';
+        await this.copyDeviceToken();
+        await this.loadDeviceTokens();
+      } catch (error) {
+        this.deviceTokenError = error.message || 'Der Token konnte nicht erstellt werden.';
+      } finally {
+        this.deviceTokenCreating = false;
+      }
+    },
+
+    async copyDeviceToken() {
+      const token = this.deviceTokenLastCreated?.token;
+      if (!token) {
+        return;
+      }
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(token);
+        } else {
+          const input = document.createElement('textarea');
+          input.value = token;
+          input.style.position = 'fixed';
+          input.style.opacity = '0';
+          document.body.appendChild(input);
+          input.select();
+          const copied = document.execCommand('copy');
+          input.remove();
+          if (!copied) {
+            throw new Error('Zwischenablage nicht verfügbar.');
+          }
+        }
+        this.deviceTokenCopyLabel = 'Kopiert';
+      } catch (error) {
+        this.deviceTokenCopyLabel = 'Erneut kopieren';
+      }
+    },
+
+    async revokeDeviceToken(token) {
+      if (!window.confirm(`Automations-Token „${token.label}“ wirklich widerrufen? Die zugehörige Automation funktioniert danach nicht mehr.`)) {
+        return;
+      }
+      this.deviceTokenError = '';
+      try {
+        await apiFetch(`/api/profile/device-tokens/${token.id}`, { method: 'DELETE' });
+        if (this.deviceTokenLastCreated?.id === token.id) {
+          this.deviceTokenLastCreated = null;
+        }
+        await this.loadDeviceTokens();
+      } catch (error) {
+        this.deviceTokenError = error.message || 'Der Token konnte nicht widerrufen werden.';
+      }
+    },
+
+    deviceTokenSummary(token) {
+      return token.last_used_at
+        ? `Zuletzt genutzt: ${this.conflictTime(token.last_used_at)}`
+        : `Erstellt: ${this.conflictTime(token.created_at)} · noch nicht genutzt`;
     },
 
     async compressOwnImages() {

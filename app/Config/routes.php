@@ -10,6 +10,7 @@ use App\Controllers\AttachmentController;
 use App\Controllers\AuthController;
 use App\Controllers\BoardController;
 use App\Controllers\CategoryController;
+use App\Controllers\DeviceTokenController;
 use App\Controllers\ExportController;
 use App\Controllers\GeocodeController;
 use App\Controllers\HealthController;
@@ -30,11 +31,13 @@ use App\Controllers\ShareController;
 use App\Controllers\TaskController;
 use App\Controllers\UserInviteController;
 use App\Controllers\VoiceNoteController;
+use App\Middleware\DeviceTokenAuthMiddleware;
 use App\Middleware\RequireAdminMiddleware;
 use App\Middleware\RequireAuthMiddleware;
+use Psr\Container\ContainerInterface;
 use Slim\App;
 
-return static function (App $app): void {
+return static function (App $app, ContainerInterface $container): void {
     $app->get('/health', HealthController::class);
     $app->get('/', HomeController::class);
 
@@ -97,6 +100,14 @@ return static function (App $app): void {
 
     $app->get('/api/session', [AppController::class, 'session'])->add(new RequireAuthMiddleware(true));
     $app->patch('/api/profile', [ProfileController::class, 'update'])->add(new RequireAuthMiddleware(true));
+
+    // Automations-Token für NotesVoice (FR-NVOICE) - selbst verwaltet, sichtbar
+    // und widerrufbar nur die eigenen.
+    $app->group('/api/profile/device-tokens', function ($group): void {
+        $group->get('', [DeviceTokenController::class, 'index']);
+        $group->post('', [DeviceTokenController::class, 'store']);
+        $group->delete('/{id}', [DeviceTokenController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
 
     $app->get('/app', [AppController::class, 'shell'])->add(new RequireAuthMiddleware(false));
     $app->get('/app/page/{id}', [AppController::class, 'page'])->add(new RequireAuthMiddleware(false));
@@ -204,6 +215,17 @@ return static function (App $app): void {
         $group->post('/transcribe', [VoiceNoteController::class, 'transcribe']);
         $group->post('/notes', [VoiceNoteController::class, 'store']);
     })->add(new RequireAuthMiddleware(true));
+
+    // NotesVoice (FR-NVOICE): außer per Session-Cookie auch per
+    // Automations-Token nutzbar (Rückseitentipp-Kurzbefehl ohne Browser).
+    // DeviceTokenAuthMiddleware wird zuletzt hinzugefügt, damit sie vor
+    // RequireAuthMiddleware läuft (Slim führt Middleware LIFO aus) und das
+    // user-Attribut bereits gesetzt ist, wenn diese es prüft.
+    $deviceTokenAuth = $container->get(DeviceTokenAuthMiddleware::class);
+    assert($deviceTokenAuth instanceof DeviceTokenAuthMiddleware);
+    $app->post('/api/voice/quick', [VoiceNoteController::class, 'quick'])
+        ->add(new RequireAuthMiddleware(true))
+        ->add($deviceTokenAuth);
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));
     $app->get('/api/search/nearby', [SearchController::class, 'nearby'])->add(new RequireAuthMiddleware(true));

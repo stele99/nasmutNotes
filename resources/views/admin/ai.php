@@ -61,6 +61,27 @@
         <div class="mt-6 flex flex-wrap justify-end gap-2"><button type="button" class="btn btn-quiet" :disabled="busy" @click="resetVoicePrompt">Standardanweisungen</button><button type="button" class="btn btn-primary" :disabled="busy" @click="saveVoiceSettings">Speichern</button></div>
     </div>
 
+    <div class="document-surface mb-8 p-5 sm:p-6">
+        <div>
+            <h2 class="text-lg font-semibold">NotesVoice</h2>
+            <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Diktat per Rückseitentipp-Automation direkt in die Zwischenablage - ohne Notizbuch, ohne Überschrift, nur aufbereiteter Fließtext. Nutzt Freischaltung, API-Schlüssel, Transkriptionsmodell und Sprache aus den Sprachnotizen oben; Modell und Anweisung für die Nachbearbeitung sind hier eigene, weil hier kein Markdown und keine Notizbuchzuordnung gebraucht werden. Einrichtung auf dem iPhone: Einstellungen der App unter „Speech2Text“.</p>
+        </div>
+
+        <div class="mt-6 grid gap-4 sm:grid-cols-2">
+            <div>
+                <label for="voice-quick-model" class="block text-sm font-medium">LLM für NotesVoice</label>
+                <input id="voice-quick-model" x-model="voiceQuickModel" :disabled="busy || !voicePostprocessEnabled" type="text" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+            </div>
+            <div class="sm:col-span-2">
+                <label for="voice-quick-prompt" class="block text-sm font-medium">Anweisung für NotesVoice</label>
+                <textarea id="voice-quick-prompt" x-model="voiceQuickPrompt" :disabled="busy || !voicePostprocessEnabled" rows="8" class="mt-2 w-full rounded-md border px-3 py-2 font-mono text-xs" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Liefert Fließtext ohne Markdown-Syntax, damit er sich überall einfügen lässt.</p>
+            </div>
+        </div>
+
+        <div class="mt-6 flex flex-wrap justify-end gap-2"><button type="button" class="btn btn-quiet" :disabled="busy" @click="resetVoicePrompt">Standardanweisung</button><button type="button" class="btn btn-primary" :disabled="busy" @click="saveVoiceSettings">Speichern</button></div>
+    </div>
+
     <div class="document-surface p-5 sm:p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div>

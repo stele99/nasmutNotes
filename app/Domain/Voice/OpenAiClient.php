@@ -59,15 +59,17 @@ final class OpenAiClient
 
     /**
      * Schickt Systemanweisung und Rohtext an ein Chat-Modell und erwartet ein
-     * JSON-Objekt zurück (POST /chat/completions).
+     * JSON-Objekt zurück (POST /chat/completions). Ohne $model greift das
+     * allgemeine Nachbearbeitungsmodell aus den Einstellungen - NotesVoice
+     * (FR-NVOICE) nutzt hier sein eigenes, separat konfigurierbares Modell.
      *
      * @return array<string, mixed>
      */
-    public function completeJson(VoiceSettings $settings, string $systemPrompt, string $userPrompt): array
+    public function completeJson(VoiceSettings $settings, string $systemPrompt, string $userPrompt, ?string $model = null): array
     {
         $payload = $this->send($settings, 'chat/completions', [
             'json' => [
-                'model' => $settings->postprocessModel,
+                'model' => $model ?? $settings->postprocessModel,
                 'response_format' => ['type' => 'json_object'],
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],

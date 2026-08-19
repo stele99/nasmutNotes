@@ -81,6 +81,7 @@
                             <label class="sr-only" for="settings-section-select">Bereich</label>
                             <select id="settings-section-select" x-model="settingsSection" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
                                 <option value="app">App</option>
+                                <?php if (!empty($voiceEnabled)): ?><option value="speech2text">Speech2Text</option><?php endif; ?>
                                 <option value="sync">Sync</option>
                                 <option value="transfer">Import / Export</option>
                                 <option value="storage">Speicher</option>
@@ -88,6 +89,7 @@
                         </div>
                         <nav class="hidden space-y-1 border-r p-3 sm:block" aria-label="Einstellungen" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
                             <button type="button" @click="selectSettingsSection('app')" class="settings-nav-button" :class="isSettingsSection('app') ? 'is-active' : ''"><span x-icon="home"></span><span>App</span></button>
+                            <?php if (!empty($voiceEnabled)): ?><button type="button" @click="selectSettingsSection('speech2text')" class="settings-nav-button" :class="isSettingsSection('speech2text') ? 'is-active' : ''"><span x-icon="mic"></span><span>Speech2Text</span></button><?php endif; ?>
                             <button type="button" @click="selectSettingsSection('sync')" class="settings-nav-button" :class="isSettingsSection('sync') ? 'is-active' : ''"><span x-icon="wifi"></span><span>Sync</span></button>
                             <button type="button" @click="selectSettingsSection('transfer')" class="settings-nav-button" :class="isSettingsSection('transfer') ? 'is-active' : ''"><span x-icon="upload"></span><span>Import / Export</span></button>
                             <button type="button" @click="selectSettingsSection('storage')" class="settings-nav-button" :class="isSettingsSection('storage') ? 'is-active' : ''"><span x-icon="folder"></span><span>Speicher</span></button>
@@ -130,6 +132,65 @@
                                     <p x-show="!locationSupported" x-cloak class="text-xs" style="color: var(--color-danger);">Dieser Browser bietet keine Ortung an.</p>
                                 </div>
                             </section>
+
+                            <?php if (!empty($voiceEnabled)): ?>
+                            <section x-show="isSettingsSection('speech2text')" x-cloak>
+                                <h3 class="text-xl font-semibold">Speech2Text</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">NotesVoice: Diktat per Doppeltipp auf die Geräterückseite, direkt in die Zwischenablage - ohne diese App zu öffnen.</p>
+
+                                <div class="mt-5">
+                                    <h4 class="text-sm font-semibold">Automations-Token</h4>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Erlaubt einer iOS-Automation, in deinem Namen zu diktieren - sonst nichts. Jederzeit widerrufbar.</p>
+
+                                    <form @submit.prevent="createDeviceToken" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                        <label class="sr-only" for="device-token-label">Name des Geräts</label>
+                                        <input id="device-token-label" type="text" maxlength="60" x-model="deviceTokenLabel" placeholder="z. B. iPhone von Steffen" :disabled="deviceTokenCreating" class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                        <button type="submit" class="btn btn-primary shrink-0" :disabled="deviceTokenCreating" x-text="deviceTokenCreating ? 'Erstelle…' : 'Token erzeugen'"></button>
+                                    </form>
+
+                                    <div x-show="deviceTokenLastCreated" x-cloak class="mt-3 rounded-lg p-3" style="background: var(--color-bg-subtle);">
+                                        <p class="text-sm font-medium">Token für „<span x-text="deviceTokenLastCreated?.label"></span>“ (nur jetzt sichtbar)</p>
+                                        <p class="mt-1.5 break-all font-mono text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenLastCreated?.token"></p>
+                                        <p class="mt-2 text-xs" style="color: var(--color-text-muted);">In den Kurzbefehl einfügen (Anleitung unten) - hier verlässt der Token die Seite und ist danach nicht mehr abrufbar.</p>
+                                        <button type="button" @click="copyDeviceToken" class="btn btn-secondary mt-3 w-full" x-text="deviceTokenCopyLabel"></button>
+                                    </div>
+
+                                    <p x-show="deviceTokenError" x-cloak x-text="deviceTokenError" class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
+
+                                    <p x-show="deviceTokensLoading" class="mt-3 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
+                                    <p x-show="!deviceTokensLoading && deviceTokens.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Noch kein Automations-Token angelegt.</p>
+                                    <ul class="mt-3 space-y-2">
+                                        <template x-for="token in deviceTokens" :key="token.id">
+                                            <li class="flex items-center gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                                                <div class="min-w-0 flex-1">
+                                                    <p class="truncate text-sm font-medium" x-text="token.label"></p>
+                                                    <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenSummary(token)"></p>
+                                                </div>
+                                                <button type="button" @click="revokeDeviceToken(token)" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);">Widerrufen</button>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <h4 class="text-sm font-semibold">Einrichtung auf dem iPhone</h4>
+                                    <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
+                                        <li>Oben einen Token erzeugen und kopieren (Schritt bleibt geöffnet, bis du ihn kopiert hast).</li>
+                                        <li>App „Kurzbefehle" → neuer Kurzbefehl „NotesVoice" mit den Aktionen:
+                                            <ol class="mt-1.5 list-[lower-alpha] space-y-1 pl-5" style="color: var(--color-text-muted);">
+                                                <li>„Audio aufnehmen"</li>
+                                                <li>„Inhalte von URL abrufen" - Methode POST, Adresse <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">/api/voice/quick</code> dieser App, Kopfzeile <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">Authorization: Bearer &lt;Token&gt;</code>, Anfragetyp „Datei" mit der Aufnahme als Feld <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">audio</code></li>
+                                                <li>„Wert aus Wörterbuch abrufen" - Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">text</code></li>
+                                                <li>„In Zwischenablage kopieren"</li>
+                                            </ol>
+                                        </li>
+                                        <li>Einstellungen → Bedienungshilfen → Berühren → Rückseitentipp → „Doppeltippen" → Kurzbefehl „NotesVoice" auswählen.</li>
+                                        <li>Doppeltipp auf die Rückseite, sprechen, im Aufnahme-Overlay auf „Fertig" tippen - der aufbereitete Text liegt danach in der Zwischenablage, ohne dass diese App geöffnet wurde.</li>
+                                    </ol>
+                                    <p class="mt-3 text-xs" style="color: var(--color-text-muted);">Der Token steht im Klartext im Kurzbefehl. Bei Verlust des Geräts oder Verdacht auf Missbrauch oben einfach widerrufen - das genügt, ein neuer Token braucht nur die Schritte 1 und 2b erneut.</p>
+                                </div>
+                            </section>
+                            <?php endif; ?>
 
                             <section x-show="isSettingsSection('sync')" x-cloak>
                                 <h3 class="text-xl font-semibold">Synchronisation</h3>

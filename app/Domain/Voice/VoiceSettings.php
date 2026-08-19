@@ -22,6 +22,8 @@ final readonly class VoiceSettings
         public string $logPrompt,
         public int $maxSeconds,
         public int $maxMb,
+        public string $quickModel,
+        public string $quickPrompt,
     ) {
     }
 
@@ -57,6 +59,8 @@ final readonly class VoiceSettings
             'log_prompt' => $this->logPrompt,
             'max_seconds' => $this->maxSeconds,
             'max_mb' => $this->maxMb,
+            'quick_model' => $this->quickModel,
+            'quick_prompt' => $this->quickPrompt,
             'usable' => $this->isUsable(),
         ];
     }

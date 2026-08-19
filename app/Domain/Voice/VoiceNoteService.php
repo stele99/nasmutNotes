@@ -36,6 +36,15 @@ final class VoiceNoteService
     public const MAX_SECONDS_KEY = 'voice_max_seconds';
     public const MAX_MB_KEY = 'voice_max_mb';
 
+    /**
+     * NotesVoice (FR-NVOICE): Schnellerfassung direkt in die Zwischenablage,
+     * ausgelöst über einen Automations-Token statt der offenen Notiz. Eigenes
+     * Modell und eigene Anweisung, weil hier - anders als bei den übrigen
+     * Diktatwegen - weder Titel noch Notizbuch noch Markdown gebraucht werden.
+     */
+    public const QUICK_MODEL_KEY = 'voice_quick_model';
+    public const QUICK_PROMPT_KEY = 'voice_quick_prompt';
+
     public const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
     public const DEFAULT_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
     public const DEFAULT_POSTPROCESS_MODEL = 'gpt-4o-mini';
@@ -96,6 +105,20 @@ final class VoiceNoteService
         Schreibe in der Sprache des Transkripts.
         PROMPT;
 
+    public const DEFAULT_QUICK_PROMPT = <<<'PROMPT'
+        Du bereitest ein diktiertes Sprachtranskript für die Zwischenablage auf.
+
+        Aufgaben:
+        1. Bereinige Erkennungsfehler, Versprecher und Füllwörter, setze Satzzeichen und Absätze. Der Inhalt bleibt unverändert - nichts ergänzen, nichts weglassen, nicht zusammenfassen.
+        2. Schreibe als normalen Fließtext ohne Markdown-Syntax (keine "-", "#", "**"), damit sich der Text überall einfügen lässt.
+        3. Erfinde nichts.
+
+        Antworte ausschließlich mit einem JSON-Objekt der Form:
+        {"text": "…"}
+
+        Schreibe in der Sprache des Transkripts.
+        PROMPT;
+
     /** Zulässige Aufnahmeformate: Endung => MIME-Typen, die Browser melden. */
     private const AUDIO_FORMATS = [
         'webm' => ['audio/webm', 'video/webm'],
@@ -149,6 +172,8 @@ final class VoiceNoteService
                 ?? $this->fallbackMaxSeconds),
             maxMb: min(self::MAX_UPLOAD_MB, max(1, $this->settings->getInt(self::MAX_MB_KEY, $this->fallbackMaxMb)
                 ?? $this->fallbackMaxMb)),
+            quickModel: $this->stringSetting(self::QUICK_MODEL_KEY, $this->fallbackPostprocessModel),
+            quickPrompt: $this->stringSetting(self::QUICK_PROMPT_KEY, self::DEFAULT_QUICK_PROMPT),
         );
     }
 
@@ -223,6 +248,23 @@ final class VoiceNoteService
             }
             $this->settings->set(self::LOG_PROMPT_KEY, $prompt);
             $changed[] = 'log_prompt';
+        }
+
+        if (array_key_exists('quick_model', $input)) {
+            $this->settings->set(self::QUICK_MODEL_KEY, $this->validatedModel($input['quick_model']));
+            $changed[] = 'quick_model';
+        }
+
+        if (array_key_exists('quick_prompt', $input)) {
+            $prompt = trim((string) ($input['quick_prompt'] ?? ''));
+            if ($prompt === '') {
+                $prompt = self::DEFAULT_QUICK_PROMPT;
+            }
+            if (mb_strlen($prompt) > 8000) {
+                throw new ValidationException('Die Anweisung darf höchstens 8000 Zeichen lang sein.');
+            }
+            $this->settings->set(self::QUICK_PROMPT_KEY, $prompt);
+            $changed[] = 'quick_prompt';
         }
 
         if (array_key_exists('max_seconds', $input)) {
@@ -318,6 +360,32 @@ final class VoiceNoteService
         $this->pages->assertCanWrite($user, $pageId);
 
         return $this->transcribe($user, $file);
+    }
+
+    /**
+     * NotesVoice (FR-NVOICE): Schnellerfassung für die Zwischenablage. Anders
+     * als transcribe() ohne Titel, Notizbuchzuordnung oder ProseMirror-
+     * Dokument - es wird nichts gespeichert, der Text verlässt den Server nur
+     * in der Antwort.
+     *
+     * @return array{text: string, transcript: string}
+     */
+    public function transcribeQuick(UploadedFileInterface $file): array
+    {
+        $settings = $this->requireUsableSettings();
+        $upload = $this->storeUpload($file, $settings);
+
+        try {
+            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name']);
+        } finally {
+            @unlink($upload['path']);
+        }
+
+        if ($transcript === '') {
+            throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
+        }
+
+        return ['text' => $this->refineQuick($settings, $transcript), 'transcript' => $transcript];
     }
 
     /**
@@ -583,6 +651,30 @@ final class VoiceNoteService
             'notebook_id' => $matched === null ? null : (int) $matched['id'],
             'notebook_name' => $matched === null ? null : (string) $matched['name'],
         ];
+    }
+
+    /**
+     * Nachbearbeitung für NotesVoice: eigenes Modell, eigener Prompt, kein
+     * Notizbuch-Matching. Ist die Nachbearbeitung insgesamt abgeschaltet oder
+     * liefert das Modell nichts Verwertbares, bleibt es beim getrimmten
+     * Rohtranskript.
+     */
+    private function refineQuick(VoiceSettings $settings, string $transcript): string
+    {
+        if (!$settings->postprocessEnabled) {
+            return $transcript;
+        }
+
+        $answer = $this->client->completeJson(
+            $settings,
+            $settings->quickPrompt,
+            "Transkript der Aufnahme:\n" . $transcript,
+            $settings->quickModel,
+        );
+
+        $text = trim((string) (is_scalar($answer['text'] ?? null) ? $answer['text'] : ''));
+
+        return $text !== '' ? $text : $transcript;
     }
 
     /**
