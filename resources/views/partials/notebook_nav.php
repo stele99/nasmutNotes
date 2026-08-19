@@ -180,7 +180,7 @@
                                             <ol class="mt-1.5 list-[lower-alpha] space-y-1 pl-5" style="color: var(--color-text-muted);">
                                                 <li>„Audio aufnehmen"</li>
                                                 <li>„Inhalte von URL abrufen" - Methode POST, Adresse <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">/api/voice/quick</code> dieser App, Kopfzeile <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">Authorization: Bearer &lt;Token&gt;</code>, Anfragetext „Formular" - dort ein Feld hinzufügen, Typ „Datei", Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">audio</code>, Wert die Aufnahme aus Schritt 1 (nicht „Anfragetext: Datei" - das schickt die Aufnahme ohne Feldnamen)</li>
-                                                <li>„Wert aus Wörterbuch abrufen" - Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">text</code></li>
+                                                <li>„Wörterbuchwert abrufen" - Wörterbuch: die Antwort aus Schritt 2 (Inhalte von URL), Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">text</code></li>
                                                 <li>„In Zwischenablage kopieren"</li>
                                             </ol>
                                         </li>
