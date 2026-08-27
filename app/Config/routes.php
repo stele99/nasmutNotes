@@ -85,6 +85,7 @@ return static function (App $app, ContainerInterface $container): void {
         $group->patch('/settings/voice', [AdminDashboardController::class, 'updateVoiceSettings']);
         $group->patch('/settings/note-ai', [AdminDashboardController::class, 'updateNoteAiSettings']);
         $group->patch('/settings/assistant', [AdminDashboardController::class, 'updateAssistantSettings']);
+        $group->patch('/settings/ai', [AdminDashboardController::class, 'updateAiDefaults']);
         $group->get('/ai-usage', [AdminDashboardController::class, 'aiUsage']);
         $group->get('/model-costs', [AdminDashboardController::class, 'modelCosts']);
         $group->post('/model-costs', [AdminDashboardController::class, 'storeModelCost']);

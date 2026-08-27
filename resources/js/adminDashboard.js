@@ -33,7 +33,8 @@ export function adminDashboard() {
     error: '',
     message: '',
     // Sprachnotizen: flache Felder statt eines verschachtelten Objekts, damit
-    // x-model im CSP-Build ohne Ausdruckspfade auskommt.
+    // x-model im CSP-Build ohne Ausdruckspfade auskommt. Das LLM selbst steht
+    // unter den gemeinsamen KI-Einstellungen; hier bleibt das Audio-Modell.
     voiceEnabled: false,
     voiceHasApiKey: false,
     voiceApiKeyHint: '',
@@ -41,23 +42,25 @@ export function adminDashboard() {
     voiceTranscribeModel: '',
     voiceLanguage: '',
     voicePostprocessEnabled: true,
-    voicePostprocessModel: '',
-    voicePrompt: '',
+    voicePostprocessReasoning: '',
+    voicePostprocessPrompt: '',
     voiceLogPrompt: '',
     voiceMaxSeconds: 300,
     voiceMaxMb: 25,
-    voiceQuickModel: '',
+    voiceQuickReasoning: '',
     voiceQuickPrompt: '',
     noteAiEnabled: false,
     noteAiHasApiKey: false,
-    noteAiModel: '',
+    noteAiReasoning: '',
     noteAiPrompt: '',
+    // Gemeinsame KI-Defaults: ein Modell für alle Bereiche + Reasoning-Vorgabe.
+    aiDefaultModel: '',
+    aiDefaultReasoning: '',
     // Desktop-Assistant (KI-Proxy für die Desktop-App).
     assistantEnabled: false,
     assistantHasApiKey: false,
     assistantApiKeyHint: '',
-    assistantChatBaseUrl: '',
-    assistantChatModel: '',
+    assistantReasoning: '',
     // Modellkosten-Katalog und Verbrauch über alle Nutzer.
     aiCosts: [],
     costModel: '',
@@ -81,6 +84,7 @@ export function adminDashboard() {
         this.defaultQuota = Number(data.default_quota_mb || 0);
         this.maxAttachmentMb = Number(data.max_attachment_mb || 10);
         this.offlineAttachmentKb = Number(data.offline_attachment_max_kb ?? 250);
+        this.applyAiDefaults(data.ai_defaults || {});
         this.applyVoiceSettings(data.voice || {});
         this.applyNoteAiSettings(data.note_ai || {});
         this.applyAssistantSettings(data.assistant || {});
@@ -110,17 +114,22 @@ export function adminDashboard() {
       this.voiceEnabled = Boolean(voice.enabled);
       this.voiceHasApiKey = Boolean(voice.has_api_key);
       this.voiceApiKeyHint = voice.api_key_hint || '';
-      this.voiceBaseUrl = voice.base_url || '';
       this.voiceTranscribeModel = voice.transcribe_model || '';
       this.voiceLanguage = voice.language || '';
       this.voicePostprocessEnabled = voice.postprocess_enabled !== false;
-      this.voicePostprocessModel = voice.postprocess_model || '';
+      this.voicePostprocessReasoning = voice.postprocess_reasoning || '';
       this.voicePrompt = voice.postprocess_prompt || '';
       this.voiceLogPrompt = voice.log_prompt || '';
       this.voiceMaxSeconds = Number(voice.max_seconds || 300);
       this.voiceMaxMb = Number(voice.max_mb || 25);
-      this.voiceQuickModel = voice.quick_model || '';
+      this.voiceQuickReasoning = voice.quick_reasoning || '';
       this.voiceQuickPrompt = voice.quick_prompt || '';
+    },
+
+    applyAiDefaults(defaults) {
+      this.aiDefaultModel = defaults.model || '';
+      this.aiDefaultReasoning = defaults.reasoning || '';
+      this.voiceBaseUrl = defaults.base_url || '';
     },
 
     voiceStatusLabel() {
@@ -137,20 +146,31 @@ export function adminDashboard() {
         : 'fehlt – OPENAI_KEY in der .env des Servers setzen';
     },
 
+    async saveAiDefaults() {
+      await this.run(async () => {
+        const data = await apiFetch('/api/admin/settings/ai', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            model: this.aiDefaultModel,
+            reasoning: this.aiDefaultReasoning,
+            base_url: this.voiceBaseUrl,
+          }),
+        });
+        this.applyAiDefaults(data.ai_defaults || {});
+        this.message = 'Gemeinsame KI-Einstellungen gespeichert.';
+      });
+    },
+
     async saveVoiceSettings() {
       const payload = {
         enabled: this.voiceEnabled,
-        base_url: this.voiceBaseUrl,
         transcribe_model: this.voiceTranscribeModel,
         language: this.voiceLanguage,
-        postprocess_enabled: this.voicePostprocessEnabled,
-        postprocess_model: this.voicePostprocessModel,
+        postprocess_reasoning: this.voicePostprocessReasoning,
         postprocess_prompt: this.voicePrompt,
         log_prompt: this.voiceLogPrompt,
         max_seconds: Number(this.voiceMaxSeconds),
         max_mb: Number(this.voiceMaxMb),
-        quick_model: this.voiceQuickModel,
-        quick_prompt: this.voiceQuickPrompt,
       };
       await this.run(async () => {
         await apiFetch('/api/admin/settings/voice', {
@@ -158,6 +178,19 @@ export function adminDashboard() {
           body: JSON.stringify(payload),
         });
         this.message = 'Einstellungen für Sprachnotizen gespeichert.';
+      });
+    },
+
+    async saveQuickSettings() {
+      await this.run(async () => {
+        await apiFetch('/api/admin/settings/voice', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            quick_reasoning: this.voiceQuickReasoning,
+            quick_prompt: this.voiceQuickPrompt,
+          }),
+        });
+        this.message = 'Einstellungen für NotesVoice gespeichert.';
       });
     },
 
@@ -178,7 +211,7 @@ export function adminDashboard() {
     applyNoteAiSettings(settings) {
       this.noteAiEnabled = Boolean(settings.enabled);
       this.noteAiHasApiKey = Boolean(settings.has_api_key);
-      this.noteAiModel = settings.model || '';
+      this.noteAiReasoning = settings.reasoning || '';
       this.noteAiPrompt = settings.prompt || '';
     },
 
@@ -196,7 +229,7 @@ export function adminDashboard() {
           method: 'PATCH',
           body: JSON.stringify({
             enabled: this.noteAiEnabled,
-            model: this.noteAiModel,
+            reasoning: this.noteAiReasoning,
             prompt: this.noteAiPrompt,
           }),
         });
@@ -224,8 +257,7 @@ export function adminDashboard() {
       this.assistantEnabled = Boolean(assistant.enabled);
       this.assistantHasApiKey = Boolean(assistant.has_api_key);
       this.assistantApiKeyHint = assistant.api_key_hint || '';
-      this.assistantChatBaseUrl = assistant.chat_base_url || '';
-      this.assistantChatModel = assistant.chat_model || '';
+      this.assistantReasoning = assistant.reasoning || '';
     },
 
     assistantStatusLabel() {
@@ -233,7 +265,7 @@ export function adminDashboard() {
         return 'ausgeschaltet';
       }
 
-      return this.assistantChatModel !== '' ? 'aktiv' : 'freigeschaltet, aber ohne Modell unwirksam';
+      return this.assistantHasApiKey ? 'aktiv' : 'freigeschaltet, aber ohne OPENAI_KEY unwirksam';
     },
 
     assistantApiKeyLabel() {
@@ -248,8 +280,7 @@ export function adminDashboard() {
           method: 'PATCH',
           body: JSON.stringify({
             enabled: this.assistantEnabled,
-            chat_base_url: this.assistantChatBaseUrl,
-            chat_model: this.assistantChatModel,
+            reasoning: this.assistantReasoning,
           }),
         });
         this.applyAssistantSettings(data.assistant || {});

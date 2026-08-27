@@ -84,7 +84,14 @@ final class AdminRepository
                          FROM note_versions
                          JOIN pages ON pages.id = note_versions.page_id
                          JOIN workspaces ON workspaces.id = pages.workspace_id
-                        WHERE workspaces.user_id = users.id) AS content_bytes
+                        WHERE workspaces.user_id = users.id) AS content_bytes,
+                    (SELECT COALESCE(SUM(total_tokens), 0)
+                       FROM ai_usage_log
+                      WHERE user_id = users.id) AS ai_tokens_total,
+                    (SELECT COALESCE(SUM(total_tokens), 0)
+                       FROM ai_usage_log
+                      WHERE user_id = users.id
+                        AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')) AS ai_tokens_30d
                FROM users
               ORDER BY users.name COLLATE NOCASE ASC, users.id ASC"
         );

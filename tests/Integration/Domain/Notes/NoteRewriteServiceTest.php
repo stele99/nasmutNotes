@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain\Notes;
 
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteRewriteService;
@@ -32,6 +33,7 @@ final class NoteRewriteServiceTest extends TestCase
     use InMemoryDatabaseTrait;
 
     private PDO $pdo;
+    private SettingsRepository $settings;
     private PageService $pages;
     private User $user;
     private int $pageId;
@@ -39,6 +41,7 @@ final class NoteRewriteServiceTest extends TestCase
     protected function setUp(): void
     {
         $this->pdo = $this->makeDatabase();
+        $this->settings = new SettingsRepository($this->pdo);
         $workspaces = new WorkspaceRepository($this->pdo);
         $this->pages = new PageService(
             new PageRepository($this->pdo),
@@ -114,23 +117,33 @@ final class NoteRewriteServiceTest extends TestCase
         ], NoteRewriteService::MODE_NORMAL);
     }
 
-    public function testAdminCanConfigureModelPromptAndActivation(): void
+    public function testAdminCanConfigurePromptActivationAndReasoning(): void
     {
         $service = $this->service('Unbenutzt');
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'custom-global-model');
 
         $settings = $service->updateSettings($this->user, [
             'enabled' => true,
-            'model' => 'custom-rewrite-model',
+            'reasoning' => 'high',
             'prompt' => 'Korrigiere den Text vorsichtig.',
         ], 'iphash');
 
         self::assertTrue($settings['enabled']);
         self::assertTrue($settings['usable']);
-        self::assertSame('custom-rewrite-model', $settings['model']);
+        // Das Modell kommt aus den gemeinsamen KI-Einstellungen, nicht aus
+        // diesem Bereich.
+        self::assertSame('custom-global-model', $settings['model']);
+        self::assertSame('high', $settings['reasoning']);
         self::assertSame('Korrigiere den Text vorsichtig.', $settings['prompt']);
 
         $reset = $service->updateSettings($this->user, ['prompt' => ''], 'iphash');
         self::assertSame(NoteRewriteService::DEFAULT_PROMPT, $reset['prompt']);
+    }
+
+    public function testCentralModelCannotBeSetThroughAreaSettings(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service('Unbenutzt')->updateSettings($this->user, ['model' => 'custom-rewrite-model'], 'iphash');
     }
 
     public function testInvitingModeAllowsEmojisWithoutChangingFacts(): void

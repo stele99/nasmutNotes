@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Notes;
 
 use App\Domain\Ai\AiCallContext;
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\PageService;
 use App\Domain\User;
@@ -17,8 +18,9 @@ use App\Support\ValidationException;
 final class NoteRewriteService
 {
     public const ENABLED_KEY = 'note_ai_enabled';
-    public const MODEL_KEY = 'note_ai_model';
     public const PROMPT_KEY = 'note_ai_prompt';
+    /** Reasoning-Aufwand der Notiz-KI; leer erbt den globalen Default. */
+    public const REASONING_KEY = 'note_ai_reasoning';
     public const MODE_NORMAL = 'normal';
     public const MODE_INVITING = 'inviting';
 
@@ -58,12 +60,15 @@ final class NoteRewriteService
         return $settings['enabled'] && $settings['has_api_key'] && $settings['model'] !== '';
     }
 
-    /** @return array{enabled: bool, model: string, prompt: string, has_api_key: bool, usable: bool} */
+    /** @return array{enabled: bool, model: string, reasoning: string, prompt: string, has_api_key: bool, usable: bool} */
     public function adminSettings(): array
     {
         $enabledValue = $this->settings->get(self::ENABLED_KEY);
         $enabled = $enabledValue === null ? $this->providerSettings->apiKey !== '' : $enabledValue === '1';
-        $model = trim($this->settings->get(self::MODEL_KEY) ?? $this->providerSettings->postprocessModel);
+        // Ein gemeinsames LLM für alle Bereiche; nur Anweisung und Reasoning
+        // sind hier Bereichssache.
+        $model = trim($this->settings->get(AiModelSettings::DEFAULT_MODEL_KEY)
+            ?? $this->providerSettings->postprocessModel);
         $prompt = trim($this->settings->get(self::PROMPT_KEY) ?? self::DEFAULT_PROMPT);
         if ($prompt === '') {
             $prompt = self::DEFAULT_PROMPT;
@@ -72,6 +77,7 @@ final class NoteRewriteService
         return [
             'enabled' => $enabled,
             'model' => $model,
+            'reasoning' => $this->reasoningFor(),
             'prompt' => $prompt,
             'has_api_key' => $this->providerSettings->apiKey !== '',
             'usable' => $enabled && $this->providerSettings->apiKey !== '' && $model !== '',
@@ -80,7 +86,7 @@ final class NoteRewriteService
 
     /**
      * @param array<string, mixed> $input
-     * @return array{enabled: bool, model: string, prompt: string, has_api_key: bool, usable: bool}
+     * @return array{enabled: bool, model: string, reasoning: string, prompt: string, has_api_key: bool, usable: bool}
      */
     public function updateSettings(User $admin, array $input, string $ipHash): array
     {
@@ -90,12 +96,13 @@ final class NoteRewriteService
             $changed[] = 'enabled';
         }
         if (array_key_exists('model', $input)) {
-            $model = is_string($input['model']) ? trim($input['model']) : '';
-            if ($model === '' || mb_strlen($model) > 100) {
-                throw new ValidationException('Das KI-Modell muss 1-100 Zeichen lang sein.');
-            }
-            $this->settings->set(self::MODEL_KEY, $model);
-            $changed[] = 'model';
+            throw new ValidationException(
+                'Das LLM wird zentral unter „Gemeinsame KI-Einstellungen“ gesetzt und gilt für alle Bereiche.',
+            );
+        }
+        if (array_key_exists('reasoning', $input)) {
+            $this->settings->set(self::REASONING_KEY, AiModelSettings::validatedReasoning($input['reasoning']));
+            $changed[] = 'reasoning';
         }
         if (array_key_exists('prompt', $input)) {
             $prompt = is_string($input['prompt']) ? trim($input['prompt']) : '';
@@ -109,6 +116,16 @@ final class NoteRewriteService
         $this->auditLog->log($admin->id, 'note_ai_settings_changed', null, null, $ipHash, ['fields' => $changed]);
 
         return $this->adminSettings();
+    }
+
+    /** Reasoning-Aufwand des Bereichs; leer erbt den globalen Default. */
+    private function reasoningFor(): string
+    {
+        $value = $this->settings->get(self::REASONING_KEY);
+
+        return $value !== null && $value !== ''
+            ? $value
+            : ($this->settings->get(AiModelSettings::DEFAULT_REASONING_KEY) ?? '');
     }
 
     /**
@@ -171,7 +188,7 @@ final class NoteRewriteService
                 . "\n\nTechnische Pflicht: Antworte ausschließlich als JSON-Objekt {\"text\":\"Markdown\"}. Alle NASMUTKEEP-Platzhalter exakt einmal, unverändert und in derselben Reihenfolge ausgeben. NASMUTKEEPBLOCK bleibt auf einer eigenen Zeile, NASMUTKEEPINLINE an seiner Stelle im Satz.",
             "Zu überarbeitender Notiztext:\n\n{$source}",
             null,
-            new AiCallContext($user->id, 'note_ai'),
+            new AiCallContext($user->id, 'note_ai', $this->reasoningFor()),
         );
         $rewritten = is_string($result['text'] ?? null) ? trim($result['text']) : '';
         if ($rewritten === '') {

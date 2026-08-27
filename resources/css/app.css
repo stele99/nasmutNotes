@@ -351,6 +351,19 @@ body.is-resizing-sidebar {
   font-weight: 600;
 }
 
+/* Sprungleiste der KI-Einstellungen (Anker-Links statt Buttons): mobil
+   horizontal scrollbar mit auto Breite, ab lg vertikal in voller Breite. */
+.admin-section-nav .settings-nav-button {
+  width: auto;
+  white-space: nowrap;
+}
+
+@media (min-width: 64rem) {
+  .admin-section-nav .settings-nav-button {
+    width: 100%;
+  }
+}
+
 .settings-dialog {
   height: min(90vh, 44rem);
 }

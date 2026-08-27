@@ -6,21 +6,21 @@ namespace App\Domain\Assistant;
 
 /**
  * Laufzeit-Konfiguration des Desktop-Assistant. Der API-Schlüssel bleibt auch
- * hier ausschließlich der aus der Umgebung (OPENAI_KEY); Base-URL und Modell
- * greifen gestaffelt auf die Einstellungen der Sprachnotizen zu, solange der
- * Admin nichts Eigenes hinterlegt hat.
+ * hier ausschließlich der aus der Umgebung (OPENAI_KEY); Modell und
+ * Dienst-Adresse werden zentral für alle KI-Funktionen gesetzt, nur der
+ * Reasoning-Aufwand ist hier Bereichssache.
  */
 final readonly class AssistantSettings
 {
     public function __construct(
         public bool $enabled,
         public string $apiKey,
-        public string $chatBaseUrl,
+        public string $baseUrl,
         public string $chatModel,
-        public string $transcribeBaseUrl,
         public string $transcribeModel,
         public string $transcribeLanguage,
         public int $transcribeMaxMb,
+        public string $reasoning = '',
     ) {
     }
 
@@ -36,7 +36,9 @@ final readonly class AssistantSettings
 
     /**
      * Ansicht für das Admin-Dashboard: Der Schlüssel wird nie ausgeliefert,
-     * nur seine letzten vier Zeichen zur Wiedererkennung.
+     * nur seine letzten vier Zeichen zur Wiedererkennung. Modell und Adresse
+     * stehen unter „Gemeinsame KI-Einstellungen“ und sind hier deshalb nicht
+     * enthalten.
      *
      * @return array<string, mixed>
      */
@@ -46,10 +48,7 @@ final readonly class AssistantSettings
             'enabled' => $this->enabled,
             'has_api_key' => $this->apiKey !== '',
             'api_key_hint' => $this->apiKey === '' ? '' : '…' . substr($this->apiKey, -4),
-            'chat_base_url' => $this->chatBaseUrl,
-            'chat_model' => $this->chatModel,
-            'transcribe_base_url' => $this->transcribeBaseUrl,
-            'transcribe_model' => $this->transcribeModel,
+            'reasoning' => $this->reasoning,
             'usable' => $this->isUsable(),
         ];
     }

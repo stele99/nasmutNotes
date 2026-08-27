@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Domain\AdminService;
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Ai\AiUsageService;
 use App\Domain\Assistant\AssistantService;
 use App\Domain\Notes\NoteRewriteService;
@@ -31,6 +32,7 @@ final class AdminDashboardController
         private readonly NoteRewriteService $rewriter,
         private readonly AiUsageService $aiUsage,
         private readonly AssistantService $assistant,
+        private readonly AiModelSettings $aiModelSettings,
     ) {
     }
 
@@ -53,11 +55,24 @@ final class AdminDashboardController
     public function overview(Request $request, Response $response): Response
     {
         return JsonResponse::json($response, array_merge($this->admin->overview(), [
-            'voice' => $this->voice->settings()->toAdminArray(),
+            'ai_defaults' => $this->aiModelSettings->toAdminArray(),
+            'voice' => $this->voice->adminSettings(),
             'note_ai' => $this->rewriter->adminSettings(),
             'assistant' => $this->assistant->settings()->toAdminArray(),
             'ai_costs' => $this->aiUsage->costs(),
         ]));
+    }
+
+    /** Gemeinsame KI-Defaults: Ein LLM für alle Bereiche + Reasoning-Vorgabe. */
+    public function updateAiDefaults(Request $request, Response $response): Response
+    {
+        $defaults = $this->aiModelSettings->setDefaults(
+            CurrentUser::require($request),
+            (array) ($request->getParsedBody() ?? []),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['ai_defaults' => $defaults]);
     }
 
     /** Desktop-Assistant: Freischaltung, Modell und Ziel-Endpoint. */

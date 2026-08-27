@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain\Assistant;
 
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Ai\AiUsageRecorder;
 use App\Domain\Assistant\AssistantService;
 use App\Domain\Assistant\UpstreamReply;
@@ -56,19 +57,23 @@ final class AssistantServiceTest extends TestCase
 
     public function testChatOverridesModelAndKeepsAllOtherParameters(): void
     {
-        $this->settings->set(AssistantService::CHAT_MODEL_KEY, 'gpt-admin-model');
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'gpt-admin-model');
+        $this->settings->set(AiModelSettings::DEFAULT_REASONING_KEY, 'medium');
         $this->queueChatResponse(['choices' => [['message' => ['content' => 'Antwort']]]]);
 
         $reply = $this->service()->chat($this->user, [
             'model' => 'was-der-client-schickte',
             'messages' => [['role' => 'user', 'content' => 'Hallo']],
             'temperature' => 0.7,
+            'reasoning_effort' => 'vom-client-gesetzt',
         ]);
 
         self::assertSame(200, $reply->status);
 
         $payload = json_decode($this->lastRequestBody, true);
         self::assertSame('gpt-admin-model', $payload['model']);
+        // Modell und Reasoning-Aufwand entscheidet der Server, nicht der Client.
+        self::assertSame('medium', $payload['reasoning_effort']);
         self::assertSame(0.7, $payload['temperature']);
         self::assertSame('Hallo', $payload['messages'][0]['content']);
         self::assertSame('https://api.openai.com/v1/chat/completions', $this->lastRequestUri);
@@ -79,9 +84,20 @@ final class AssistantServiceTest extends TestCase
         self::assertSame(1, (int) $stmt->fetchColumn());
     }
 
+    public function testReasoningIsOmittedWhenNothingIsConfigured(): void
+    {
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'gpt-admin-model');
+        $this->queueChatResponse(['choices' => [['message' => ['content' => 'Antwort']]]]);
+
+        $this->service()->chat($this->user, ['messages' => []]);
+
+        $payload = json_decode($this->lastRequestBody, true);
+        self::assertArrayNotHasKey('reasoning_effort', $payload);
+    }
+
     public function testChatRecordsUsageFromProviderResponse(): void
     {
-        $this->settings->set(AssistantService::CHAT_MODEL_KEY, 'gpt-admin-model');
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'gpt-admin-model');
         $this->queueChatResponse([
             'choices' => [['message' => ['content' => 'Antwort']]],
             'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 8, 'total_tokens' => 20],
@@ -98,7 +114,7 @@ final class AssistantServiceTest extends TestCase
 
     public function testChatStreamsAndTeesTheUsageChunk(): void
     {
-        $this->settings->set(AssistantService::CHAT_MODEL_KEY, 'gpt-admin-model');
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'gpt-admin-model');
         $sse = "data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\"Hallo\"}}]}\n\n"
             . "data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\" Welt\"}}]}\n\n"
             . "data: {\"id\":\"1\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4,\"total_tokens\":14}}\n\n"
@@ -120,7 +136,7 @@ final class AssistantServiceTest extends TestCase
 
     public function testStreamedUsageWithoutProviderUsageIsEstimated(): void
     {
-        $this->settings->set(AssistantService::CHAT_MODEL_KEY, 'gpt-admin-model');
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'gpt-admin-model');
         $sse = "data: {\"choices\":[{\"delta\":{\"content\":\"abcd abcd\"}}]}\n\n"
             . "data: [DONE]\n\n";
         $this->httpMock->append(new GuzzleResponse(200, ['Content-Type' => 'text/event-stream'], $sse));

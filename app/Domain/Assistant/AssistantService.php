@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Assistant;
 
 use App\Domain\Ai\AiCallContext;
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Ai\AiUsageRecorder;
 use App\Domain\User;
 use App\Domain\Voice\VoiceNoteService;
@@ -30,8 +31,9 @@ final class AssistantService
     public const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
 
     public const ENABLED_KEY = 'assistant_enabled';
-    public const CHAT_MODEL_KEY = 'assistant_chat_model';
-    public const CHAT_BASE_URL_KEY = 'assistant_chat_base_url';
+
+    /** Reasoning-Aufwand des Desktop-Assistant-Chat; leer erbt den globalen Default. */
+    public const REASONING_KEY = 'assistant_chat_reasoning';
 
     /** Zulässige Aufnahmeformate: Endung => MIME-Typen, die Clients melden. */
     private const AUDIO_FORMATS = [
@@ -57,16 +59,30 @@ final class AssistantService
 
     public function settings(): AssistantSettings
     {
+        // Ein gemeinsames LLM und eine gemeinsame Dienst-Adresse für alle
+        // KI-Funktionen; nur der Reasoning-Aufwand ist hier Bereichssache.
+        $baseUrl = rtrim($this->stringSetting(VoiceNoteService::BASE_URL_KEY, $this->fallbackBaseUrl), '/');
+
         return new AssistantSettings(
             enabled: $this->boolSetting(self::ENABLED_KEY, $this->apiKey !== ''),
             apiKey: trim($this->apiKey),
-            chatBaseUrl: rtrim($this->stringSetting(self::CHAT_BASE_URL_KEY, $this->voiceBaseUrl()), '/'),
-            chatModel: $this->stringSetting(self::CHAT_MODEL_KEY, $this->voicePostprocessModel()),
-            transcribeBaseUrl: rtrim($this->voiceBaseUrl(), '/'),
+            baseUrl: $baseUrl,
+            chatModel: $this->stringSetting(AiModelSettings::DEFAULT_MODEL_KEY, $this->fallbackChatModel),
             transcribeModel: $this->stringSetting(VoiceNoteService::TRANSCRIBE_MODEL_KEY, ''),
             transcribeLanguage: $this->stringSetting(VoiceNoteService::LANGUAGE_KEY, ''),
             transcribeMaxMb: $this->settings->getInt(VoiceNoteService::MAX_MB_KEY, 25) ?? 25,
+            reasoning: $this->reasoningFor(),
         );
+    }
+
+    /** Reasoning-Aufwand des Bereichs; leer erbt den globalen Default. */
+    private function reasoningFor(): string
+    {
+        $value = $this->settings->get(self::REASONING_KEY);
+
+        return $value !== null && $value !== ''
+            ? $value
+            : ($this->settings->get(AiModelSettings::DEFAULT_REASONING_KEY) ?? '');
     }
 
     public function isUsable(): bool
@@ -89,24 +105,9 @@ final class AssistantService
             $this->settings->set(self::ENABLED_KEY, filter_var($input['enabled'], FILTER_VALIDATE_BOOL) ? '1' : '0');
             $changed[] = 'enabled';
         }
-        if (array_key_exists('chat_model', $input)) {
-            $model = trim((string) ($input['chat_model'] ?? ''));
-            if ($model !== '' && preg_match('/^[A-Za-z0-9._:\/-]{1,100}$/', $model) !== 1) {
-                throw new ValidationException('Ungültiger Modellname.');
-            }
-            $this->settings->set(self::CHAT_MODEL_KEY, $model);
-            $changed[] = 'chat_model';
-        }
-        if (array_key_exists('chat_base_url', $input)) {
-            $url = trim((string) ($input['chat_base_url'] ?? ''));
-            if ($url !== '') {
-                if (filter_var($url, FILTER_VALIDATE_URL) === false || !str_starts_with($url, 'https://')) {
-                    throw new ValidationException('Die Adresse des KI-Dienstes muss eine https-URL sein.');
-                }
-                $url = rtrim($url, '/');
-            }
-            $this->settings->set(self::CHAT_BASE_URL_KEY, $url);
-            $changed[] = 'chat_base_url';
+        if (array_key_exists('reasoning', $input)) {
+            $this->settings->set(self::REASONING_KEY, AiModelSettings::validatedReasoning($input['reasoning']));
+            $changed[] = 'reasoning';
         }
 
         return $this->settings();
@@ -128,12 +129,16 @@ final class AssistantService
         $streaming = ($payload['stream'] ?? false) === true;
 
         $payload['model'] = $settings->chatModel;
+        if ($settings->reasoning !== '') {
+            // Bereichseinstellung oder globaler Default schlägt den Client.
+            $payload['reasoning_effort'] = $settings->reasoning;
+        }
         if ($streaming) {
             $payload['stream_options'] = ['include_usage' => true];
         }
 
-        $context = new AiCallContext($user->id, 'desktop_chat');
-        $upstream = $this->request($settings->chatBaseUrl . '/chat/completions', [
+        $context = new AiCallContext($user->id, 'desktop_chat', $settings->reasoning);
+        $upstream = $this->request($settings->baseUrl . '/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $settings->apiKey,
                 'Accept' => 'application/json',
@@ -198,7 +203,6 @@ final class AssistantService
 
         $upload = $this->storeUpload($file, $settings);
         $context = new AiCallContext($user->id, 'desktop_transcribe');
-
         $handle = fopen($upload['path'], 'rb');
         if ($handle === false) {
             throw AssistantServiceException::upstreamUnreachable('Die Aufnahme konnte nicht gelesen werden.');
@@ -214,7 +218,7 @@ final class AssistantService
         }
 
         try {
-            $upstream = $this->request($settings->transcribeBaseUrl . '/audio/transcriptions', [
+            $upstream = $this->request($settings->baseUrl . '/audio/transcriptions', [
                 'headers' => ['Authorization' => 'Bearer ' . $settings->apiKey],
                 'multipart' => $parts,
                 'timeout' => self::CHAT_TIMEOUT_SECONDS,
@@ -310,18 +314,6 @@ final class AssistantService
         }
 
         return $settings;
-    }
-
-    /** Gemeinsame Base-URL der KI-Funktionen (Sprachnotizen). */
-    private function voiceBaseUrl(): string
-    {
-        return $this->stringSetting(VoiceNoteService::BASE_URL_KEY, $this->fallbackBaseUrl);
-    }
-
-    /** Gemeinsames Default-LLM der KI-Funktionen. */
-    private function voicePostprocessModel(): string
-    {
-        return $this->stringSetting(VoiceNoteService::POSTPROCESS_MODEL_KEY, $this->fallbackChatModel);
     }
 
     /**

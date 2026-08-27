@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Controllers\HealthController;
 use App\Domain\AdminService;
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Ai\AiUsageRecorder;
 use App\Domain\Ai\AiUsageService;
 use App\Domain\Assistant\AssistantService;
@@ -440,6 +441,18 @@ return static function (string $rootPath): DI\Container {
             AiModelCostRepository $costs,
             AuditLogRepository $auditLog,
         ): AiUsageService => new AiUsageService($usage, $costs, $auditLog),
+
+        // Gemeinsame KI-Defaults: ein LLM für alle Bereiche, Reasoning
+        // bereichsweise überschreibbar. Die .env liefert nur den Fallback.
+        AiModelSettings::class => static fn (
+            SettingsRepository $settings,
+            AuditLogRepository $auditLog,
+        ): AiModelSettings => new AiModelSettings(
+            $settings,
+            $auditLog,
+            Env::get('VOICE_POSTPROCESS_MODEL', VoiceNoteService::DEFAULT_POSTPROCESS_MODEL)
+                ?? VoiceNoteService::DEFAULT_POSTPROCESS_MODEL,
+        ),
 
         // KI-Engstelle: Jeder OpenAI-Aufruf bucht seinen Verbrauch ins
         // Verbrauchsbuch, sofern der Aufruf einen Kontext mitbringt.

@@ -89,13 +89,14 @@
     </div>
 
     <div class="document-surface overflow-x-auto">
-        <table class="w-full min-w-[52rem] text-sm">
+        <table class="w-full min-w-[58rem] text-sm">
             <thead>
             <tr class="text-left" style="color: var(--color-text-muted);">
                 <th class="px-5 py-4 font-medium">Nutzer</th>
                 <th class="py-4 font-medium">Seiten</th>
                 <th class="py-4 font-medium">Aufgaben</th>
                 <th class="py-4 font-medium">Bilder</th>
+                <th class="py-4 font-medium" title="KI-Verbrauch, rollierend letzte 30 Tage und gesamt">KI-Tokens</th>
                 <th class="py-4 font-medium">Speicher</th>
                 <th class="py-4 font-medium">Kontingent</th>
                 <th class="px-5 py-4"></th>
@@ -115,6 +116,10 @@
                     <td class="py-4" x-text="user.task_count"></td>
                     <td class="py-4" x-text="user.image_count"></td>
                     <td class="py-4">
+                        <p x-text="formatTokens(user.ai_tokens_30d)"></p>
+                        <p class="mt-0.5 text-xs" style="color: var(--color-text-muted);" x-text="'gesamt ' + formatTokens(user.ai_tokens_total)"></p>
+                    </td>
+                    <td class="py-4">
                         <p x-text="usageLabel(user)"></p>
                         <div x-show="user.effective_quota_mb > 0" class="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full" style="background: var(--color-bg-subtle);">
                             <div class="h-full rounded-full" :style="usageBarStyle(user)"></div>
@@ -131,10 +136,10 @@
                 </tr>
             </template>
             <tr x-show="!loading && users.length === 0">
-                <td colspan="7" class="py-8 text-center" style="color: var(--color-text-muted);">Noch keine Nutzer vorhanden.</td>
+                <td colspan="8" class="py-8 text-center" style="color: var(--color-text-muted);">Noch keine Nutzer vorhanden.</td>
             </tr>
             <tr x-show="loading">
-                <td colspan="7" class="py-8 text-center" style="color: var(--color-text-muted);">Lädt…</td>
+                <td colspan="8" class="py-8 text-center" style="color: var(--color-text-muted);">Lädt…</td>
             </tr>
             </tbody>
         </table>

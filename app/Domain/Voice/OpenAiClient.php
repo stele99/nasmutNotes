@@ -82,15 +82,22 @@ final class OpenAiClient
         ?AiCallContext $context = null,
     ): array {
         $resolvedModel = $model ?? $settings->postprocessModel;
-        $payload = $this->send($settings, 'chat/completions', [
-            'json' => [
-                'model' => $resolvedModel,
-                'response_format' => ['type' => 'json_object'],
-                'messages' => [
-                    ['role' => 'system', 'content' => $systemPrompt],
-                    ['role' => 'user', 'content' => $userPrompt],
-                ],
+        $requestPayload = [
+            'model' => $resolvedModel,
+            'response_format' => ['type' => 'json_object'],
+            'messages' => [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ['role' => 'user', 'content' => $userPrompt],
             ],
+        ];
+        // Reasoning-Aufwand nur bei Modellen mitsenden, die ihn erwarten -
+        // der Bereich entscheidet (leer = nicht senden).
+        if ($context !== null && $context->reasoningEffort !== '') {
+            $requestPayload['reasoning_effort'] = $context->reasoningEffort;
+        }
+
+        $payload = $this->send($settings, 'chat/completions', [
+            'json' => $requestPayload,
         ], $resolvedModel, $context);
 
         $content = $payload['choices'][0]['message']['content'] ?? null;

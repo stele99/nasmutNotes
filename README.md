@@ -190,7 +190,7 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 | `SESSION_LIFETIME_DAYS` | Session-Ablauf bei Inaktivität |
 | `RATE_LIMIT_ENABLED` | Rate-Limiting global aktivieren/deaktivieren |
 | `OPENAI_KEY` | API-Schlüssel für die Sprachnotizen und den Desktop-Assistant. **Einzige Quelle** – bewusst nicht im Admin-Dashboard änderbar. Fehlt er, bleibt die Funktion aus |
-| `VOICE_TRANSCRIBE_MODEL` / `VOICE_POSTPROCESS_MODEL` / `VOICE_LANGUAGE` / `VOICE_MAX_SECONDS` / `VOICE_MAX_MB` / `OPENAI_BASE_URL` | Anfangswerte der Sprachnotizen; maßgeblich ist das Admin-Dashboard. Der Desktop-Assistant übernimmt `OPENAI_BASE_URL` und das Nachbearbeitungsmodell als gemeinsamen KI-Default, solange er nichts Eigenes konfiguriert hat |
+| `VOICE_TRANSCRIBE_MODEL` / `VOICE_POSTPROCESS_MODEL` / `VOICE_LANGUAGE` / `VOICE_MAX_SECONDS` / `VOICE_MAX_MB` / `OPENAI_BASE_URL` | Anfangswerte der KI-Funktionen; maßgeblich ist das Admin-Dashboard. `VOICE_POSTPROCESS_MODEL` ist der Fallback für das gemeinsame KI-Modell, `OPENAI_BASE_URL` für die gemeinsame Dienst-Adresse |
 | `VOICE_TMP_PATH` | Ablage der Aufnahme während der Transkription; wird sofort danach gelöscht |
 | `GEOCODER_URL` / `GEOCODER_LANGUAGE` | Adresssuche zum Aufnahmeort (Vorgabe: Nominatim). Leerer `GEOCODER_URL` schaltet sie ab |
 | `LOG_LEVEL` | Monolog-Level (`debug`, `info`, `warning`, `error`) |
@@ -250,10 +250,11 @@ Verbundene Clients* von Hand ein). Danach holt der Client sein Token ab und
 bleibt verbunden - trennen und Wiederverbinden geht jederzeit über
 *Verbundene Clients*.
 
-**Konfiguration (Admin, `/admin/ai`):** Freischaltung, Modell und optional
-eigene Adresse für den Chat-Routing - leer heißt „Standard der KI-Funktionen“
-(gemeinsam mit den Sprachnotizen). Die Transkription nutzt unverändert die
-Einstellungen der Sprachnotizen.
+**Konfiguration (Admin, `/admin/ai`):** Ein KI-Modell und eine Dienst-Adresse
+gelten zentral für alle KI-Funktionen (Nachbearbeitung, NotesVoice, Notiz-KI,
+Desktop-Assistant); der Reasoning-Aufwand (für Reasoning-Modelle) lässt sich
+global vorgeben und je Bereich abweichend setzen. Die Transkription nutzt ihr
+eigenes Audio-Modell aus den Sprachnotizen-Einstellungen.
 
 **Verbrauch & Kosten:** Jeder KI-Aufruf (Desktop-Assistant, Sprachnotizen,
 Notiz-KI) wird ohne Nachrichteninhalte gezählt. Nutzer und Admin sehen Tokens

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Voice;
 
 use App\Domain\Ai\AiCallContext;
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Log\LogColumnType;
 use App\Domain\NotebookService;
@@ -31,7 +32,6 @@ final class VoiceNoteService
     public const TRANSCRIBE_MODEL_KEY = 'voice_transcribe_model';
     public const LANGUAGE_KEY = 'voice_language';
     public const POSTPROCESS_ENABLED_KEY = 'voice_postprocess_enabled';
-    public const POSTPROCESS_MODEL_KEY = 'voice_postprocess_model';
     public const POSTPROCESS_PROMPT_KEY = 'voice_postprocess_prompt';
     public const LOG_PROMPT_KEY = 'voice_log_prompt';
     public const MAX_SECONDS_KEY = 'voice_max_seconds';
@@ -40,11 +40,15 @@ final class VoiceNoteService
     /**
      * NotesVoice (FR-NVOICE): Schnellerfassung direkt in die Zwischenablage,
      * ausgelöst über einen Automations-Token statt der offenen Notiz. Eigenes
-     * Modell und eigene Anweisung, weil hier - anders als bei den übrigen
+     * Reasoning und eigene Anweisung, weil hier - anders als bei den übrigen
      * Diktatwegen - weder Titel noch Notizbuch noch Markdown gebraucht werden.
+     * Das Modell ist das gemeinsame (ai_default_model).
      */
-    public const QUICK_MODEL_KEY = 'voice_quick_model';
     public const QUICK_PROMPT_KEY = 'voice_quick_prompt';
+    public const QUICK_REASONING_KEY = 'voice_quick_reasoning';
+
+    /** Reasoning-Aufwand der Sprachnotizen-Nachbearbeitung (inkl. Log/Task-Diktat). */
+    public const POSTPROCESS_REASONING_KEY = 'voice_postprocess_reasoning';
 
     public const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
     public const DEFAULT_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
@@ -166,14 +170,16 @@ final class VoiceNoteService
             transcribeModel: $this->stringSetting(self::TRANSCRIBE_MODEL_KEY, $this->fallbackTranscribeModel),
             language: $this->stringSetting(self::LANGUAGE_KEY, $this->fallbackLanguage),
             postprocessEnabled: $this->boolSetting(self::POSTPROCESS_ENABLED_KEY, true),
-            postprocessModel: $this->stringSetting(self::POSTPROCESS_MODEL_KEY, $this->fallbackPostprocessModel),
+            // Ein gemeinsames LLM für alle Bereiche (inkl. Notiz-KI und
+            // Desktop-Assistant); nur der Reasoning-Aufwand ist Bereichssache.
+            postprocessModel: $this->stringSetting(AiModelSettings::DEFAULT_MODEL_KEY, $this->fallbackPostprocessModel),
             postprocessPrompt: $this->stringSetting(self::POSTPROCESS_PROMPT_KEY, self::DEFAULT_PROMPT),
             logPrompt: $this->stringSetting(self::LOG_PROMPT_KEY, self::DEFAULT_LOG_PROMPT),
             maxSeconds: max(10, $this->settings->getInt(self::MAX_SECONDS_KEY, $this->fallbackMaxSeconds)
                 ?? $this->fallbackMaxSeconds),
             maxMb: min(self::MAX_UPLOAD_MB, max(1, $this->settings->getInt(self::MAX_MB_KEY, $this->fallbackMaxMb)
                 ?? $this->fallbackMaxMb)),
-            quickModel: $this->stringSetting(self::QUICK_MODEL_KEY, $this->fallbackPostprocessModel),
+            quickModel: $this->stringSetting(AiModelSettings::DEFAULT_MODEL_KEY, $this->fallbackPostprocessModel),
             quickPrompt: $this->stringSetting(self::QUICK_PROMPT_KEY, self::DEFAULT_QUICK_PROMPT),
         );
     }
@@ -182,6 +188,21 @@ final class VoiceNoteService
     public function isUsable(): bool
     {
         return $this->settings()->isUsable();
+    }
+
+    /**
+     * Einstellungen für das Admin-Dashboard, ergänzt um die bereichsbezogenen
+     * Reasoning-Aufwände (das LLM selbst wird zentral verwaltet).
+     *
+     * @return array<string, mixed>
+     */
+    public function adminSettings(): array
+    {
+        $settings = $this->settings()->toAdminArray();
+        $settings['postprocess_reasoning'] = $this->reasoningFor(self::POSTPROCESS_REASONING_KEY);
+        $settings['quick_reasoning'] = $this->reasoningFor(self::QUICK_REASONING_KEY);
+
+        return $settings;
     }
 
     /**
@@ -222,9 +243,26 @@ final class VoiceNoteService
             $changed[] = 'postprocess_enabled';
         }
 
-        if (array_key_exists('postprocess_model', $input)) {
-            $this->settings->set(self::POSTPROCESS_MODEL_KEY, $this->validatedModel($input['postprocess_model']));
-            $changed[] = 'postprocess_model';
+        if (array_key_exists('postprocess_model', $input) || array_key_exists('quick_model', $input)) {
+            throw new ValidationException(
+                'Das LLM wird zentral unter „Gemeinsame KI-Einstellungen“ gesetzt und gilt für alle Bereiche.',
+            );
+        }
+
+        if (array_key_exists('postprocess_reasoning', $input)) {
+            $this->settings->set(
+                self::POSTPROCESS_REASONING_KEY,
+                AiModelSettings::validatedReasoning($input['postprocess_reasoning']),
+            );
+            $changed[] = 'postprocess_reasoning';
+        }
+
+        if (array_key_exists('quick_reasoning', $input)) {
+            $this->settings->set(
+                self::QUICK_REASONING_KEY,
+                AiModelSettings::validatedReasoning($input['quick_reasoning']),
+            );
+            $changed[] = 'quick_reasoning';
         }
 
         if (array_key_exists('postprocess_prompt', $input)) {
@@ -249,11 +287,6 @@ final class VoiceNoteService
             }
             $this->settings->set(self::LOG_PROMPT_KEY, $prompt);
             $changed[] = 'log_prompt';
-        }
-
-        if (array_key_exists('quick_model', $input)) {
-            $this->settings->set(self::QUICK_MODEL_KEY, $this->validatedModel($input['quick_model']));
-            $changed[] = 'quick_model';
         }
 
         if (array_key_exists('quick_prompt', $input)) {
@@ -310,7 +343,11 @@ final class VoiceNoteService
     public function transcribe(User $user, UploadedFileInterface $file): array
     {
         $settings = $this->requireUsableSettings();
-        $context = new AiCallContext($user->id, 'voice_note');
+        $context = new AiCallContext(
+            $user->id,
+            'voice_note',
+            $this->reasoningFor(self::POSTPROCESS_REASONING_KEY),
+        );
         $filename = $this->storeUpload($file, $settings);
 
         try {
@@ -375,7 +412,11 @@ final class VoiceNoteService
     public function transcribeQuick(User $user, UploadedFileInterface $file): array
     {
         $settings = $this->requireUsableSettings();
-        $context = new AiCallContext($user->id, 'voice_quick');
+        $context = new AiCallContext(
+            $user->id,
+            'voice_quick',
+            $this->reasoningFor(self::QUICK_REASONING_KEY),
+        );
         $upload = $this->storeUpload($file, $settings);
 
         try {
@@ -457,7 +498,11 @@ final class VoiceNoteService
         ));
 
         $settings = $this->requireUsableSettings();
-        $context = new AiCallContext($user->id, 'voice_log');
+        $context = new AiCallContext(
+            $user->id,
+            'voice_log',
+            $this->reasoningFor(self::POSTPROCESS_REASONING_KEY),
+        );
         $upload = $this->storeUpload($file, $settings);
 
         try {
@@ -505,7 +550,11 @@ final class VoiceNoteService
     public function transcribeForTasks(User $user, UploadedFileInterface $file): array
     {
         $settings = $this->requireUsableSettings();
-        $context = new AiCallContext($user->id, 'voice_tasks');
+        $context = new AiCallContext(
+            $user->id,
+            'voice_tasks',
+            $this->reasoningFor(self::POSTPROCESS_REASONING_KEY),
+        );
         $upload = $this->storeUpload($file, $settings);
 
         try {
@@ -799,6 +848,16 @@ final class VoiceNoteService
         $value = $this->settings->get($key);
 
         return $value === null ? $default : $value;
+    }
+
+    /** Reasoning-Aufwand eines Bereichs; leer erbt den globalen Default. */
+    private function reasoningFor(string $areaKey): string
+    {
+        $value = $this->settings->get($areaKey);
+
+        return $value !== null && $value !== ''
+            ? $value
+            : ($this->settings->get(AiModelSettings::DEFAULT_REASONING_KEY) ?? '');
     }
 
     private function boolSetting(string $key, bool $default): bool

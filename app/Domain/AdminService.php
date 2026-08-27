@@ -160,6 +160,8 @@ final class AdminService
                     'attachment_bytes' => $attachmentBytes,
                     'content_bytes' => $contentBytes,
                     'total_bytes' => $attachmentBytes + $contentBytes,
+                    'ai_tokens_30d' => (int) $row['ai_tokens_30d'],
+                    'ai_tokens_total' => (int) $row['ai_tokens_total'],
                 ];
             },
             $this->admin->usersWithUsage(),
@@ -178,6 +180,8 @@ final class AdminService
                 'attachment_count' => array_sum(array_column($users, 'attachment_count')),
                 'image_count' => array_sum(array_column($users, 'image_count')),
                 'total_bytes' => array_sum(array_column($users, 'total_bytes')),
+                'ai_tokens_30d' => array_sum(array_column($users, 'ai_tokens_30d')),
+                'ai_tokens_total' => array_sum(array_column($users, 'ai_tokens_total')),
             ],
             'orphans' => [
                 'count' => count($orphans),

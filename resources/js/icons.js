@@ -5,6 +5,7 @@ import {
   Bold,
   BriefcaseBusiness,
   Camera,
+  ChartColumn,
   Check,
   ClipboardPaste,
   ChevronDown,
@@ -12,6 +13,7 @@ import {
   ChevronRight,
   CloudOff,
   Code2,
+  Cpu,
   Download,
   Eye,
   EyeOff,
@@ -71,9 +73,11 @@ import {
   User,
   Utensils,
   WandSparkles,
+  Wallet,
   Wifi,
   Wrench,
   X,
+  Zap,
 } from 'lucide';
 
 const icons = {
@@ -81,6 +85,7 @@ const icons = {
   'book-open': BookOpen,
   briefcase: BriefcaseBusiness,
   camera: Camera,
+  'chart-column': ChartColumn,
   check: Check,
   'clipboard-paste': ClipboardPaste,
   'chevron-down': ChevronDown,
@@ -88,6 +93,7 @@ const icons = {
   'chevron-right': ChevronRight,
   'cloud-off': CloudOff,
   code: Code2,
+  cpu: Cpu,
   download: Download,
   eye: Eye,
   'eye-off': EyeOff,
@@ -149,9 +155,11 @@ const icons = {
   user: User,
   utensils: Utensils,
   'wand-sparkles': WandSparkles,
+  wallet: Wallet,
   wifi: Wifi,
   wrench: Wrench,
   x: X,
+  zap: Zap,
 };
 
 function renderNode([tag, attributes, children]) {

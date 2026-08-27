@@ -40,7 +40,8 @@ final readonly class VoiceSettings
 
     /**
      * Ansicht für das Admin-Dashboard: Der Schlüssel aus der Umgebung wird nie
-     * ausgeliefert, nur seine letzten vier Zeichen zur Wiedererkennung.
+     * ausgeliefert, nur seine letzten vier Zeichen zur Wiedererkennung. Das
+     * LLM wird zentral gesetzt und ist hier deshalb nicht enthalten.
      *
      * @return array<string, mixed>
      */
@@ -54,12 +55,10 @@ final readonly class VoiceSettings
             'transcribe_model' => $this->transcribeModel,
             'language' => $this->language,
             'postprocess_enabled' => $this->postprocessEnabled,
-            'postprocess_model' => $this->postprocessModel,
             'postprocess_prompt' => $this->postprocessPrompt,
             'log_prompt' => $this->logPrompt,
             'max_seconds' => $this->maxSeconds,
             'max_mb' => $this->maxMb,
-            'quick_model' => $this->quickModel,
             'quick_prompt' => $this->quickPrompt,
             'usable' => $this->isUsable(),
         ];

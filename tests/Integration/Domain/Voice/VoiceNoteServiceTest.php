@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain\Voice;
 
+use App\Domain\Ai\AiModelSettings;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\NotebookService;
 use App\Domain\Notes\NoteEncryptionException;
@@ -262,7 +263,7 @@ final class VoiceNoteServiceTest extends TestCase
 
     public function testQuickCaptureReturnsPlainTextWithoutCreatingAnything(): void
     {
-        $this->settings->set(VoiceNoteService::QUICK_MODEL_KEY, 'gpt-4o-quick');
+        $this->settings->set(AiModelSettings::DEFAULT_MODEL_KEY, 'gpt-4o-quick');
         $this->queueTranscription('äh also die Tomaten müssen noch gegossen werden');
         $this->queuePostprocessing(['text' => 'Die Tomaten müssen noch gegossen werden.']);
 
@@ -273,8 +274,7 @@ final class VoiceNoteServiceTest extends TestCase
         // Kein Notizbuch-Matching, kein ProseMirror-Dokument nötig - die
         // Nutzernachricht enthält deshalb kein "Vorhandene Notizbücher".
         self::assertStringNotContainsString('Notizbücher', $this->lastChatRequest());
-        // Eigenes, im Admin-Dashboard gesetztes Modell statt des allgemeinen
-        // Nachbearbeitungsmodells.
+        // Das gemeinsame KI-Modell gilt auch für die Schnellerfassung.
         $payload = json_decode($this->lastRequestBody, true);
         self::assertSame('gpt-4o-quick', $payload['model'] ?? null);
         self::assertSame([], $this->pages->list($this->user, 'updated', null, false));
@@ -377,7 +377,7 @@ final class VoiceNoteServiceTest extends TestCase
             'enabled' => true,
             'transcribe_model' => 'gpt-4o-transcribe',
             'language' => 'EN',
-            'postprocess_model' => 'gpt-4o',
+            'postprocess_reasoning' => 'high',
             'max_seconds' => 120,
             'max_mb' => 10,
             'postprocess_prompt' => '',
@@ -390,9 +390,31 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertSame(10, $settings->maxMb);
         // Eine geleerte Anweisung fällt auf die Standardfassung zurück.
         self::assertSame(VoiceNoteService::DEFAULT_PROMPT, $settings->postprocessPrompt);
+        // Das LLM selbst wird zentral gesetzt; der Versuch wird abgewiesen.
+        self::assertSame('high', $service->adminSettings()['postprocess_reasoning']);
 
         $this->expectException(ValidationException::class);
         $service->updateSettings($this->user, ['transcribe_model' => 'modell mit leerzeichen'], 'iphash');
+    }
+
+    public function testCentralModelCannotBeSetThroughAreaSettings(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service()->updateSettings($this->user, ['postprocess_model' => 'gpt-4o'], 'iphash');
+    }
+
+    public function testReasoningInheritsTheGlobalDefault(): void
+    {
+        $service = $this->service();
+        $this->settings->set(AiModelSettings::DEFAULT_REASONING_KEY, 'medium');
+
+        self::assertSame('medium', $service->adminSettings()['postprocess_reasoning']);
+        self::assertSame('medium', $service->adminSettings()['quick_reasoning']);
+
+        // Bereichseinstellung schlägt den globalen Default.
+        $service->updateSettings($this->user, ['quick_reasoning' => 'low'], 'iphash');
+        self::assertSame('low', $service->adminSettings()['quick_reasoning']);
+        self::assertSame('medium', $service->adminSettings()['postprocess_reasoning']);
     }
 
     public function testApiKeyIsNeverExposedToTheAdminView(): void

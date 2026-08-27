@@ -143,10 +143,12 @@ Standard-OpenAI-Format, JSON-Körper, maximale Anfragegröße 2 MB:
 }
 ```
 
-- **`model` wird serverseitig gesetzt** und überschreibt, was der Client
-  sendet: Der Administrator entscheidet, welches Modell der Desktop-Assistent
-  nutzt (leer konfiguriert = das Standard-LLM der übrigen KI-Funktionen).
-  Der Client kann das Feld weglassen.
+- **`model` und `reasoning_effort` werden serverseitig gesetzt** und
+  überschreiben, was der Client sendet: Der Administrator entscheidet,
+  welches Modell und welcher Reasoning-Aufwand der Desktop-Assistent nutzt
+  (das gemeinsame KI-Modell des Servers; ist kein Reasoning-Aufwand
+  konfiguriert, wird der Parameter nicht mitgeschickt). Der Client kann
+  beide Felder weglassen.
 - Alle übrigen OpenAI-Parameter (`messages`, `temperature`, `tools`,
   `response_format`, `max_tokens`, …) werden unverändert an den KI-Dienst
   durchgereicht; die Antwort kommt unverändert zurück.

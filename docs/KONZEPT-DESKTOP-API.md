@@ -222,13 +222,12 @@ paaren, fertig.
 
 ### 5.1 Was der Server überschreibt, was er durchreicht
 
-Aus der Client-Anfrage wird **nur** `model` ersetzt — gegen
-`assistant_chat_model`, leer konfiguriert gegen das gemeinsame Default-LLM
-der KI-Funktionen (Abschnitt 8). Alles andere wandert unverändert weiter:
-`messages`, `temperature`, `tools`, `response_format`, `max_tokens` und
-jeder Parameter, den der Anbieter künftig einführt. Der Client kann `model`
-weglassen; sendet er eines, wird es stillschweigend ignoriert — der Admin
-entscheidet (FR-DESKAPI-02).
+Aus der Client-Anfrage werden **`model` und `reasoning_effort`** ersetzt —
+beide entscheidet der Server (Abschnitt 8). Alles andere wandert unverändert
+weiter: `messages`, `temperature`, `tools`, `response_format`, `max_tokens`
+und jeder Parameter, den der Anbieter künftig einführt. Der Client kann
+beide Felder weglassen; sendet er sie, werden sie stillschweigend ignoriert
+(FR-DESKAPI-02).
 
 Größe und Form der Anfrage werden grob begrenzt (2 MB Körper, JSON-Objekt
 erforderlich); alles Feinere prüft der Anbieter, dessen Fehler (4xx/5xx mit
@@ -360,20 +359,34 @@ Vorgabe-Modellpfad (`gpt-4o-mini-transcribe`) liefert Usage.
 
 ## 8. Admin-Konfiguration
 
-Neue Einstellungen auf `/admin/ai`, Lagerung wie gehabt in `app_settings`
-mit `.env`-Anfangswerten:
+Alle KI-Funktionen teilen sich **ein LLM, eine Dienst-Adresse und eine
+Reasoning-Vorgabe** — verwaltet auf `/admin/ai` unter „Gemeinsame
+KI-Einstellungen", Lagerung wie gehabt in `app_settings` mit
+`.env`-Anfangswerten:
 
 | Schlüssel | Bedeutung | Fallback-Kette |
 |---|---|---|
-| `assistant_enabled` | Freischaltung | offen → `OPENAI_KEY` vorhanden? |
-| `assistant_chat_model` | LLM für den Desktop-Assistant | offen → `voice_postprocess_model` → `VOICE_POSTPROCESS_MODEL` (env) |
-| `assistant_chat_base_url` | Ziel-Endpoint des Chat-Routing | offen → `voice_openai_base_url` → `OPENAI_BASE_URL` (env) |
+| `ai_default_model` | Das eine LLM für alle Bereiche | offen → `VOICE_POSTPROCESS_MODEL` (env) |
+| `ai_default_reasoning` | Reasoning-Aufwand als Vorgabe | leer = Parameter nicht mitsenden |
+| `voice_openai_base_url` | Adresse des KI-Dienstes (Chat **und** Transkription) | offen → `OPENAI_BASE_URL` (env) |
+| `assistant_enabled` | Freischaltung des Desktop-Assistant | offen → `OPENAI_KEY` vorhanden? |
 
-Die Staffel ist der Kern: **Solange der Admin nichts Eigenes setzt, gilt der
-gemeinsame Default der KI-Funktionen** — der Assistant erbt automatisch
-jede spätere Änderung an den Sprachnotizen-Einstellungen. Das API-Key-Feld
-wird wie gewohnt nie ausgeliefert, nur die letzten vier Zeichen zur
-Wiedererkennung.
+Die Bereiche tragen nur, was wirklich Bereichssache ist: **Reasoning-Aufwand
+pro Bereich** (`voice_postprocess_reasoning`, `voice_quick_reasoning`,
+`note_ai_reasoning`, `assistant_chat_reasoning` — leer erbt die globale
+Vorgabe), Anweisungen/Prompts, und bei den Sprachnotizen das Transkriptions-
+Modell samt Sprache und Limits. Das Transkriptionsmodell bleibt bewusst
+bereichsbezogen: Es ist ein Audio-Modell, das gemeinsame LLM passt dort
+sachlich nicht. Modelfelder je Bereich gibt es bewusst nicht mehr — früher
+angelegte Schlüssel (`voice_postprocess_model`, `voice_quick_model`,
+`note_ai_model`, `assistant_chat_model`) bleiben wertlos in der Tabelle
+liegen.
+
+Reasoning-Aufwand wird nur mitgeschickt, wenn eine Stufe gesetzt ist
+(`minimal`, `low`, `medium`, `high`, `xhigh`, `none`); bei Modellen ohne
+Reasoning-Unterstützung würde der Parameter den Aufruf sonst scheitern
+lassen. Das API-Key-Feld wird wie gewohnt nie ausgeliefert, nur die letzten
+vier Zeichen zur Wiedererkennung.
 
 ## 9. Oberflächen
 
@@ -384,13 +397,17 @@ Wiedererkennung.
   Widerrufen. Die bisherige Token-Liste im Speech2Text-Bereich ist hier
   aufgegangen; das manuelle Anlegen eines Automations-Tokens bleibt
   NotesVoice-Vorbehalt.
-- **Admin, `/admin/ai`:** drei neue Sektionen — Desktop-Assistant
-  (Freischaltung, Modell, Ziel-Endpoint), Modellkosten (Tabelle mit
-  Pflegen/Entfernen, Formular mit Komma-Toleranz), Verbrauch & Kosten
-  (je Nutzer Tokens und Kosten beider Fenster, Gesamtzeile). Alles
-  Alpine-CSP-konform ohne Inline-Ausdrücke; die Bestätigungsseite der
-  Paarung ist eine eigenständige View mit eigener Komponente
-  (`resources/js/assistant/pair.js`).
+- **Admin, `/admin/ai`:** Sprungleiste links (mobil horizontal scrollbar)
+  springt direkt in die Bereiche — Gemeinsames (Modell, Reasoning-Vorgabe,
+  Dienst-Adresse), Sprachnotizen (Audio-Modell, Sprache, Limits, Reasoning,
+  Anweisungen), NotesVoice, Notiz-KI und Desktop-Assistant (je Freischaltung,
+  Reasoning, Anweisung), dazu Modellkosten (Tabelle mit Pflegen/Entfernen,
+  Formular mit Komma-Toleranz) und Verbrauch & Kosten (je Nutzer Tokens und
+  Kosten beider Fenster, Gesamtzeile). Alles Alpine-CSP-konform ohne
+  Inline-Ausdrücke; die Bestätigungsseite der Paarung ist eine eigenständige
+  View mit eigener Komponente (`resources/js/assistant/pair.js`).
+- **Admin, `/admin` (Nutzer & Speicher):** die Nutzertabelle zeigt je Nutzer
+  den KI-Tokenverbrauch (letzte 30 Tage und gesamt), Summen im Kopfblock.
 
 ## 10. Betroffene Komponenten
 
