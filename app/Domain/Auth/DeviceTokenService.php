@@ -69,6 +69,43 @@ final class DeviceTokenService
         return array_map([$this, 'serialize'], $this->tokens->allActiveForUser($user->id));
     }
 
+    /**
+     * Token für einen gepaarten Desktop-Client: Hat derselbe client_id
+     * (stabile UUID des Geräts) bereits einen aktiven Token, wird dieser
+     * widerrufen und ersetzt - neu paaren heißt neu verbinden, nicht
+     * vervielfachen.
+     *
+     * @return array{id: int, token: string, created_at: string}
+     */
+    public function issuePaired(User $user, string $label, string $clientId, ?string $platform, string $ipHash): array
+    {
+        if (count($this->tokens->allActiveForUser($user->id)) >= self::MAX_TOKENS_PER_USER) {
+            throw new ValidationException(
+                'Es sind bereits ' . self::MAX_TOKENS_PER_USER . ' verbundene Geräte vorhanden.'
+                . ' Bitte zuerst ein nicht mehr benötigtes trennen.',
+            );
+        }
+
+        $previous = $this->tokens->findActiveByClientId($user->id, $clientId);
+        if ($previous !== null) {
+            $this->tokens->revoke((int) $previous['id']);
+            $this->auditLog->log($user->id, 'device_token_rotated', 'device_token', (int) $previous['id'], $ipHash, [
+                'client_id' => $clientId,
+            ]);
+        }
+
+        $rawToken = bin2hex(random_bytes(32));
+        $createdAt = gmdate('Y-m-d\TH:i:s.v\Z');
+        $id = $this->tokens->createPaired($user->id, $label, hash('sha256', $rawToken), $clientId, $platform);
+
+        $this->auditLog->log($user->id, 'device_token_paired', 'device_token', $id, $ipHash, [
+            'label' => $label,
+            'client_id' => $clientId,
+        ]);
+
+        return ['id' => $id, 'token' => $rawToken, 'created_at' => $createdAt];
+    }
+
     public function revoke(User $user, int $id, string $ipHash): void
     {
         $token = $this->tokens->findById($id);
@@ -107,6 +144,8 @@ final class DeviceTokenService
         return [
             'id' => (int) $row['id'],
             'label' => (string) $row['label'],
+            'source' => (string) ($row['source'] ?? 'manual'),
+            'platform' => $row['platform'] !== null ? (string) $row['platform'] : null,
             'created_at' => $row['created_at'],
             'last_used_at' => $row['last_used_at'],
         ];

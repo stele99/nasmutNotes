@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Notes;
 
+use App\Domain\Ai\AiCallContext;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\PageService;
 use App\Domain\User;
@@ -169,6 +170,8 @@ final class NoteRewriteService
             $runtime['prompt'] . "\n\nGewählter Stil:\n" . $this->modePrompt($mode)
                 . "\n\nTechnische Pflicht: Antworte ausschließlich als JSON-Objekt {\"text\":\"Markdown\"}. Alle NASMUTKEEP-Platzhalter exakt einmal, unverändert und in derselben Reihenfolge ausgeben. NASMUTKEEPBLOCK bleibt auf einer eigenen Zeile, NASMUTKEEPINLINE an seiner Stelle im Satz.",
             "Zu überarbeitender Notiztext:\n\n{$source}",
+            null,
+            new AiCallContext($user->id, 'note_ai'),
         );
         $rewritten = is_string($result['text'] ?? null) ? trim($result['text']) : '';
         if ($rewritten === '') {

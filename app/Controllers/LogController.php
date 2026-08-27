@@ -187,6 +187,7 @@ final class LogController
 
         try {
             $result = $this->voice->transcribeForLog(
+                $user,
                 $file,
                 $columns,
                 is_string($body['now'] ?? null) ? $body['now'] : null,

@@ -81,6 +81,7 @@
                             <label class="sr-only" for="settings-section-select">Bereich</label>
                             <select id="settings-section-select" x-model="settingsSection" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
                                 <option value="app">App</option>
+                                <option value="clients">Verbundene Clients</option>
                                 <?php if (!empty($voiceEnabled)): ?><option value="speech2text">Speech2Text</option><?php endif; ?>
                                 <option value="sync">Sync</option>
                                 <option value="transfer">Import / Export</option>
@@ -89,6 +90,7 @@
                         </div>
                         <nav class="hidden space-y-1 border-r p-3 sm:block" aria-label="Einstellungen" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
                             <button type="button" @click="selectSettingsSection('app')" class="settings-nav-button" :class="isSettingsSection('app') ? 'is-active' : ''"><span x-icon="home"></span><span>App</span></button>
+                            <button type="button" @click="selectSettingsSection('clients')" class="settings-nav-button" :class="isSettingsSection('clients') ? 'is-active' : ''"><span x-icon="laptop"></span><span>Verbundene Clients</span></button>
                             <?php if (!empty($voiceEnabled)): ?><button type="button" @click="selectSettingsSection('speech2text')" class="settings-nav-button" :class="isSettingsSection('speech2text') ? 'is-active' : ''"><span x-icon="mic"></span><span>Speech2Text</span></button><?php endif; ?>
                             <button type="button" @click="selectSettingsSection('sync')" class="settings-nav-button" :class="isSettingsSection('sync') ? 'is-active' : ''"><span x-icon="wifi"></span><span>Sync</span></button>
                             <button type="button" @click="selectSettingsSection('transfer')" class="settings-nav-button" :class="isSettingsSection('transfer') ? 'is-active' : ''"><span x-icon="upload"></span><span>Import / Export</span></button>
@@ -133,6 +135,63 @@
                                 </div>
                             </section>
 
+                            <?php /* Verbundene Clients: Desktop-Assistant (per Paarung)
+                                     und Automations-Token in einer Liste, dazu der
+                                     eigene KI-Verbrauch. */ ?>
+                            <section x-show="isSettingsSection('clients')" x-cloak>
+                                <h3 class="text-xl font-semibold">Verbundene Clients</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Geräte und Apps, die auf dein Konto zugreifen. Der Desktop-Assistent verbindet sich über einen Code, den er im Browser dieser App öffnet.</p>
+
+                                <div class="mt-5">
+                                    <h4 class="text-sm font-semibold">KI-Verbrauch</h4>
+                                    <p x-show="aiUsageError" x-cloak x-text="aiUsageError" class="mt-2 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                                    <div x-show="aiUsage !== null && !aiUsageError" x-cloak class="mt-3 grid gap-3 sm:grid-cols-2">
+                                        <div class="rounded-lg border p-3" style="border-color: var(--color-border);">
+                                            <p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Letzte 30 Tage</p>
+                                            <p class="mt-1 text-base font-semibold" x-text="aiUsageTokens(aiUsage?.last_30_days)"></p>
+                                            <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="aiUsageCost(aiUsage?.last_30_days)"></p>
+                                        </div>
+                                        <div class="rounded-lg border p-3" style="border-color: var(--color-border);">
+                                            <p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Gesamt</p>
+                                            <p class="mt-1 text-base font-semibold" x-text="aiUsageTokens(aiUsage?.total)"></p>
+                                            <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="aiUsageCost(aiUsage?.total)"></p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <h4 class="text-sm font-semibold">Desktop-Assistent verbinden</h4>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Hat der Client seinen Browser-Link verloren, kannst du den Code hier auch von Hand bestätigen.</p>
+                                    <form @submit.prevent="approvePairCode" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                        <label class="sr-only" for="pair-code-input">Verbindungsgcode</label>
+                                        <input id="pair-code-input" type="text" x-model="pairCodeInput" placeholder="z. B. K7M2-Q4XP" :disabled="pairApproving" class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm font-mono uppercase" style="border-color: var(--color-border); background: var(--color-bg);">
+                                        <button type="submit" class="btn btn-primary shrink-0" :disabled="pairApproving" x-text="pairApproving ? 'Prüfe…' : 'Verbinden'"></button>
+                                    </form>
+                                    <p x-show="pairCodeMessage" x-cloak x-text="pairCodeMessage" class="mt-2 text-sm" style="color: var(--color-success);" role="status"></p>
+                                    <p x-show="pairCodeError" x-cloak x-text="pairCodeError" class="mt-2 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                                </div>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <h4 class="text-sm font-semibold">Geräte</h4>
+                                    <p x-show="deviceTokensLoading" class="mt-3 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
+                                    <p x-show="!deviceTokensLoading && deviceTokens.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Noch keine verbundenen Geräte.</p>
+                                    <ul class="mt-3 space-y-2">
+                                        <template x-for="token in deviceTokens" :key="token.id">
+                                            <li class="flex items-center gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                                                <div class="min-w-0 flex-1">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="truncate text-sm font-medium" x-text="token.label"></p>
+                                                        <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" style="background: var(--color-bg-subtle); color: var(--color-text-muted);" x-text="token.source === 'desktop' ? 'Desktop' : 'Automation'"></span>
+                                                    </div>
+                                                    <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenSummary(token)"></p>
+                                                </div>
+                                                <button type="button" @click="revokeDeviceToken(token)" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);" x-text="token.source === 'desktop' ? 'Trennen' : 'Widerrufen'"></button>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </section>
+
                             <?php if (!empty($voiceEnabled)): ?>
                             <section x-show="isSettingsSection('speech2text')" x-cloak>
                                 <h3 class="text-xl font-semibold">Speech2Text</h3>
@@ -140,7 +199,7 @@
 
                                 <div class="mt-5">
                                     <h4 class="text-sm font-semibold">Automations-Token</h4>
-                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Erlaubt einer iOS-Automation, in deinem Namen zu diktieren - sonst nichts. Jederzeit widerrufbar.</p>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Erlaubt einer iOS-Automation, in deinem Namen zu diktieren - sonst nichts. Die Liste aller Geräte steht im Bereich „Verbundene Clients".</p>
 
                                     <form @submit.prevent="createDeviceToken" class="mt-3 flex flex-col gap-2 sm:flex-row">
                                         <label class="sr-only" for="device-token-label">Name des Geräts</label>
@@ -156,20 +215,6 @@
                                     </div>
 
                                     <p x-show="deviceTokenError" x-cloak x-text="deviceTokenError" class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
-
-                                    <p x-show="deviceTokensLoading" class="mt-3 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
-                                    <p x-show="!deviceTokensLoading && deviceTokens.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Noch kein Automations-Token angelegt.</p>
-                                    <ul class="mt-3 space-y-2">
-                                        <template x-for="token in deviceTokens" :key="token.id">
-                                            <li class="flex items-center gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
-                                                <div class="min-w-0 flex-1">
-                                                    <p class="truncate text-sm font-medium" x-text="token.label"></p>
-                                                    <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenSummary(token)"></p>
-                                                </div>
-                                                <button type="button" @click="revokeDeviceToken(token)" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);">Widerrufen</button>
-                                            </li>
-                                        </template>
-                                    </ul>
                                 </div>
 
                                 <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">

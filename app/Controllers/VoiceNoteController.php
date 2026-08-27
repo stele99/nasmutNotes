@@ -123,8 +123,8 @@ final class VoiceNoteController
             return $limited;
         }
 
-        return $this->guard($response, function () use ($request, $response): Response {
-            $result = $this->voice->transcribeQuick($this->requireAudio($request));
+        return $this->guard($response, function () use ($request, $response, $user): Response {
+            $result = $this->voice->transcribeQuick($user, $this->requireAudio($request));
 
             return JsonResponse::json($response, [
                 'text' => $result['text'],

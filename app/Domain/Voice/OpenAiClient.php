@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Voice;
 
+use App\Domain\Ai\AiCallContext;
+use App\Domain\Ai\AiUsageRecorder;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 
@@ -14,13 +16,19 @@ use GuzzleHttp\ClientInterface;
  *
  * Bewusst kein SDK: Es sind zwei Aufrufe, und Guzzle liegt über
  * league/oauth2-client ohnehin bereits im Projekt.
+ *
+ * Der Client ist zugleich die zentrale Engstelle für das Verbrauchsbuch
+ * (ai_usage_log): Wer einen Kontext mitgibt, bekommt den Aufruf mit Modell
+ * und Tokenzahlen gebucht. Ohne Kontext verhält sich der Client wie bisher.
  */
 final class OpenAiClient
 {
     private const TIMEOUT_SECONDS = 180;
 
-    public function __construct(private readonly ?ClientInterface $http = null)
-    {
+    public function __construct(
+        private readonly ?ClientInterface $http = null,
+        private readonly ?AiUsageRecorder $recorder = null,
+    ) {
     }
 
     /**
@@ -32,6 +40,7 @@ final class OpenAiClient
         VoiceSettings $settings,
         string $filePath,
         string $filename,
+        ?AiCallContext $context = null,
     ): string {
         $handle = fopen($filePath, 'rb');
         if ($handle === false) {
@@ -47,7 +56,7 @@ final class OpenAiClient
             $parts[] = ['name' => 'language', 'contents' => $settings->language];
         }
 
-        $payload = $this->send($settings, 'audio/transcriptions', ['multipart' => $parts]);
+        $payload = $this->send($settings, 'audio/transcriptions', ['multipart' => $parts], $settings->transcribeModel, $context);
 
         $text = $payload['text'] ?? null;
         if (!is_string($text)) {
@@ -65,18 +74,24 @@ final class OpenAiClient
      *
      * @return array<string, mixed>
      */
-    public function completeJson(VoiceSettings $settings, string $systemPrompt, string $userPrompt, ?string $model = null): array
-    {
+    public function completeJson(
+        VoiceSettings $settings,
+        string $systemPrompt,
+        string $userPrompt,
+        ?string $model = null,
+        ?AiCallContext $context = null,
+    ): array {
+        $resolvedModel = $model ?? $settings->postprocessModel;
         $payload = $this->send($settings, 'chat/completions', [
             'json' => [
-                'model' => $model ?? $settings->postprocessModel,
+                'model' => $resolvedModel,
                 'response_format' => ['type' => 'json_object'],
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
                     ['role' => 'user', 'content' => $userPrompt],
                 ],
             ],
-        ]);
+        ], $resolvedModel, $context);
 
         $content = $payload['choices'][0]['message']['content'] ?? null;
         if (!is_string($content) || trim($content) === '') {
@@ -96,8 +111,13 @@ final class OpenAiClient
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */
-    private function send(VoiceSettings $settings, string $path, array $options): array
-    {
+    private function send(
+        VoiceSettings $settings,
+        string $path,
+        array $options,
+        string $model,
+        ?AiCallContext $context = null,
+    ): array {
         $client = $this->http ?? new Client([
             'timeout' => self::TIMEOUT_SECONDS,
             'connect_timeout' => 10,
@@ -135,7 +155,18 @@ final class OpenAiClient
             throw new VoiceServiceException('Der Sprachdienst lieferte eine unlesbare Antwort.');
         }
 
+        $this->record($context, $model, $decoded['usage'] ?? null);
+
         /** @var array<string, mixed> $decoded */
         return $decoded;
+    }
+
+    private function record(?AiCallContext $context, string $model, mixed $usage): void
+    {
+        if ($this->recorder === null) {
+            return;
+        }
+
+        $this->recorder->record($context, $model, is_array($usage) ? $usage : null);
     }
 }

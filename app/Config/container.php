@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 use App\Controllers\HealthController;
 use App\Domain\AdminService;
+use App\Domain\Ai\AiUsageRecorder;
+use App\Domain\Ai\AiUsageService;
+use App\Domain\Assistant\AssistantService;
 use App\Domain\Auth\AuthService;
+use App\Domain\Auth\DevicePairingService;
 use App\Domain\Auth\DeviceTokenService;
 use App\Domain\Auth\GoogleIdTokenVerifier;
 use App\Domain\Auth\IdTokenVerifierInterface;
@@ -35,8 +39,11 @@ use App\Domain\SessionService;
 use App\Domain\Voice\OpenAiClient;
 use App\Domain\Voice\VoiceNoteService;
 use App\Repositories\AdminRepository;
+use App\Repositories\AiModelCostRepository;
+use App\Repositories\AiUsageRepository;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\DevicePairRequestRepository;
 use App\Repositories\DeviceTokenRepository;
 use App\Repositories\InviteRepository;
 use App\Repositories\LogRepository;
@@ -394,6 +401,16 @@ return static function (string $rootPath): DI\Container {
             AuditLogRepository $auditLog,
         ): DeviceTokenService => new DeviceTokenService($tokens, $users, $auditLog),
 
+        DevicePairRequestRepository::class => static fn (PDO $pdo): DevicePairRequestRepository
+            => new DevicePairRequestRepository($pdo),
+
+        DevicePairingService::class => static fn (
+            DevicePairRequestRepository $requests,
+            DeviceTokenService $tokens,
+            UserRepository $users,
+            AuditLogRepository $auditLog,
+        ): DevicePairingService => new DevicePairingService($requests, $tokens, $users, $auditLog),
+
         LogRepository::class => static fn (PDO $pdo): LogRepository => new LogRepository($pdo),
 
         LogExportService::class => static fn (
@@ -409,7 +426,42 @@ return static function (string $rootPath): DI\Container {
             ReverseGeocoder $geocoder,
         ): LogService => new LogService($pdo, $pages, $pageRepository, $log, $geocoder),
 
-        OpenAiClient::class => static fn (): OpenAiClient => new OpenAiClient(),
+        AiModelCostRepository::class => static fn (PDO $pdo): AiModelCostRepository
+            => new AiModelCostRepository($pdo),
+
+        AiUsageRepository::class => static fn (PDO $pdo): AiUsageRepository
+            => new AiUsageRepository($pdo),
+
+        AiUsageRecorder::class => static fn (AiUsageRepository $usage): AiUsageRecorder
+            => new AiUsageRecorder($usage),
+
+        AiUsageService::class => static fn (
+            AiUsageRepository $usage,
+            AiModelCostRepository $costs,
+            AuditLogRepository $auditLog,
+        ): AiUsageService => new AiUsageService($usage, $costs, $auditLog),
+
+        // KI-Engstelle: Jeder OpenAI-Aufruf bucht seinen Verbrauch ins
+        // Verbrauchsbuch, sofern der Aufruf einen Kontext mitbringt.
+        OpenAiClient::class => static fn (AiUsageRecorder $recorder): OpenAiClient
+            => new OpenAiClient(null, $recorder),
+
+        // Desktop-Assistant: Proxy-Konfiguration nach dem Muster der
+        // Sprachnotizen - die .env liefert nur Anfangswerte für den
+        // gemeinsamen Default der KI-Funktionen.
+        AssistantService::class => static fn (
+            SettingsRepository $settings,
+            AiUsageRecorder $recorder,
+        ): AssistantService => new AssistantService(
+            $settings,
+            $recorder,
+            null,
+            Env::get('OPENAI_KEY') ?: (Env::get('OPENAI_API_KEY', '') ?? ''),
+            Env::get('OPENAI_BASE_URL', VoiceNoteService::DEFAULT_BASE_URL) ?? VoiceNoteService::DEFAULT_BASE_URL,
+            Env::get('VOICE_POSTPROCESS_MODEL', VoiceNoteService::DEFAULT_POSTPROCESS_MODEL)
+                ?? VoiceNoteService::DEFAULT_POSTPROCESS_MODEL,
+            $rootPath . '/' . trim(Env::get('VOICE_TMP_PATH', 'var/tmp/voice') ?? 'var/tmp/voice', '/'),
+        ),
 
         // Sprachnotizen: Der .env liefert nur Anfangswerte, maßgeblich sind die
         // im Admin-Dashboard gepflegten Einstellungen (FR-VOICE-05).

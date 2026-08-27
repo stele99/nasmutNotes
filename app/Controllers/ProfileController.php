@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\Ai\AiUsageService;
 use App\Repositories\UserRepository;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
@@ -13,8 +14,10 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 final class ProfileController
 {
-    public function __construct(private readonly UserRepository $users)
-    {
+    public function __construct(
+        private readonly UserRepository $users,
+        private readonly AiUsageService $aiUsage,
+    ) {
     }
 
     public function update(Request $request, Response $response): Response
@@ -60,5 +63,13 @@ final class ProfileController
         }
 
         return JsonResponse::json($response, $result);
+    }
+
+    /** Eigener KI-Verbrauch: rollierend letzte 30 Tage und gesamt. */
+    public function aiUsage(Request $request, Response $response): Response
+    {
+        $user = CurrentUser::require($request);
+
+        return JsonResponse::json($response, $this->aiUsage->userSummary($user));
     }
 }

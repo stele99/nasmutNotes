@@ -66,13 +66,19 @@ final class CsrfMiddleware implements MiddlewareInterface
      * Anfrage einen solchen Header und kein Session-Cookie (Automations-Token,
      * FR-NVOICE), greift CSRF-Schutz also gar nicht erst - alle
      * cookie-authentifizierten Routen bleiben davon unberührt.
+     *
+     * Ohne jeden Session-Cookie gibt es ohnehin nichts zu schützen: Eine
+     * anonyme Anfrage kann keinen Zustandswechsel gegen eine angemeldete
+     * Sitzung rechnen (Paarung des Desktop-Assistant ist der einzige
+     * anonyme Schreibzugriff und zusätzlich rate-limitiert).
      */
     private function isBearerOnlyRequest(Request $request): bool
     {
         $cookies = $request->getCookieParams();
         $hasSessionCookie = isset($cookies[SessionService::COOKIE_NAME]) && $cookies[SessionService::COOKIE_NAME] !== '';
 
-        return !$hasSessionCookie && str_starts_with($request->getHeaderLine('Authorization'), 'Bearer ');
+        return !$hasSessionCookie
+            || str_starts_with($request->getHeaderLine('Authorization'), 'Bearer ');
     }
 
     private function validate(Request $request, string $cookieToken): ?string

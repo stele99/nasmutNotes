@@ -103,7 +103,7 @@ final class TaskController
         set_time_limit(300);
 
         try {
-            $result = $this->voice->transcribeForTasks($file);
+            $result = $this->voice->transcribeForTasks($user, $file);
         } catch (VoiceServiceException $e) {
             $this->logger->warning('Sprachdienst fehlgeschlagen', ['message' => $e->getMessage()]);
 

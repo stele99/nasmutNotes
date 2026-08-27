@@ -6,6 +6,7 @@ use App\Controllers\Admin\AdminDashboardController;
 use App\Controllers\Admin\BackupAdminController;
 use App\Controllers\Admin\InviteAdminController;
 use App\Controllers\AppController;
+use App\Controllers\AssistantController;
 use App\Controllers\AttachmentController;
 use App\Controllers\AuthController;
 use App\Controllers\BoardController;
@@ -83,6 +84,11 @@ return static function (App $app, ContainerInterface $container): void {
         );
         $group->patch('/settings/voice', [AdminDashboardController::class, 'updateVoiceSettings']);
         $group->patch('/settings/note-ai', [AdminDashboardController::class, 'updateNoteAiSettings']);
+        $group->patch('/settings/assistant', [AdminDashboardController::class, 'updateAssistantSettings']);
+        $group->get('/ai-usage', [AdminDashboardController::class, 'aiUsage']);
+        $group->get('/model-costs', [AdminDashboardController::class, 'modelCosts']);
+        $group->post('/model-costs', [AdminDashboardController::class, 'storeModelCost']);
+        $group->delete('/model-costs/{model}', [AdminDashboardController::class, 'destroyModelCost']);
         $group->post('/attachments/purge-orphans', [AdminDashboardController::class, 'purgeOrphans']);
         $group->get('/backups', [BackupAdminController::class, 'index']);
         $group->post('/backups', [BackupAdminController::class, 'store']);
@@ -100,6 +106,8 @@ return static function (App $app, ContainerInterface $container): void {
 
     $app->get('/api/session', [AppController::class, 'session'])->add(new RequireAuthMiddleware(true));
     $app->patch('/api/profile', [ProfileController::class, 'update'])->add(new RequireAuthMiddleware(true));
+    $app->get('/api/profile/ai-usage', [ProfileController::class, 'aiUsage'])
+        ->add(new RequireAuthMiddleware(true));
 
     // Automations-Token für NotesVoice (FR-NVOICE) - selbst verwaltet, sichtbar
     // und widerrufbar nur die eigenen.
@@ -224,6 +232,25 @@ return static function (App $app, ContainerInterface $container): void {
     $deviceTokenAuth = $container->get(DeviceTokenAuthMiddleware::class);
     assert($deviceTokenAuth instanceof DeviceTokenAuthMiddleware);
     $app->post('/api/voice/quick', [VoiceNoteController::class, 'quick'])
+        ->add(new RequireAuthMiddleware(true))
+        ->add($deviceTokenAuth);
+
+    // Desktop-Assistant: Die Proxy-Routen sprechen Standard-OpenAI und
+    // akzeptieren Automations-Token (Bearer), die Pairing-Routen vergeben sie.
+    // Der Token-Auth-Middleware wird zuletzt hinzugefügt, damit sie vor
+    // RequireAuthMiddleware läuft (Slim führt Middleware LIFO aus).
+    $app->post('/api/assistant/pair', [AssistantController::class, 'startPair']);
+    $app->post('/api/assistant/pair/poll', [AssistantController::class, 'pollPair']);
+    $app->post('/api/assistant/pair/approve', [AssistantController::class, 'approvePair'])
+        ->add(new RequireAuthMiddleware(true));
+    $app->get('/assistant/pair', [AssistantController::class, 'pairPage'])
+        ->add(new RequireAuthMiddleware(false));
+
+    $app->group('/api/assistant', function ($group): void {
+        $group->get('/me', [AssistantController::class, 'me']);
+        $group->post('/chat/completions', [AssistantController::class, 'chat']);
+        $group->post('/audio/transcriptions', [AssistantController::class, 'transcribe']);
+    })
         ->add(new RequireAuthMiddleware(true))
         ->add($deviceTokenAuth);
 

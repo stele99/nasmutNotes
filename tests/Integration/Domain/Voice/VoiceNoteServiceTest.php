@@ -163,6 +163,7 @@ final class VoiceNoteServiceTest extends TestCase
         ]);
 
         $result = $this->service()->transcribeForLog(
+            $this->user,
             $this->makeUpload(),
             $columns,
             '2026-07-29T09:40:00+02:00',
@@ -190,6 +191,7 @@ final class VoiceNoteServiceTest extends TestCase
         ]);
 
         $result = $this->service()->transcribeForLog(
+            $this->user,
             $this->makeUpload(),
             $columns,
             '2026-07-29T09:40:00+02:00',
@@ -216,6 +218,7 @@ final class VoiceNoteServiceTest extends TestCase
         ]);
 
         $result = $this->service()->transcribeForLog(
+            $this->user,
             $this->makeUpload(),
             $columns,
             '2026-07-29T09:40:00+02:00',
@@ -263,7 +266,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->queueTranscription('äh also die Tomaten müssen noch gegossen werden');
         $this->queuePostprocessing(['text' => 'Die Tomaten müssen noch gegossen werden.']);
 
-        $result = $this->service()->transcribeQuick($this->makeUpload());
+        $result = $this->service()->transcribeQuick($this->user, $this->makeUpload());
 
         self::assertSame('Die Tomaten müssen noch gegossen werden.', $result['text']);
         self::assertStringContainsString('Tomaten', $result['transcript']);
@@ -282,7 +285,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->settings->set(VoiceNoteService::POSTPROCESS_ENABLED_KEY, '0');
         $this->queueTranscription('Roher Text ohne Nachbearbeitung');
 
-        $result = $this->service()->transcribeQuick($this->makeUpload());
+        $result = $this->service()->transcribeQuick($this->user, $this->makeUpload());
 
         self::assertSame('Roher Text ohne Nachbearbeitung', $result['text']);
         self::assertSame(0, $this->httpMock->count());
@@ -293,7 +296,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->queueTranscription('   ');
 
         $this->expectException(ValidationException::class);
-        $this->service()->transcribeQuick($this->makeUpload());
+        $this->service()->transcribeQuick($this->user, $this->makeUpload());
     }
 
     public function testEmptyTranscriptIsRejectedBeforeAnythingIsStored(): void

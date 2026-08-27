@@ -52,6 +52,19 @@ export function adminDashboard() {
     noteAiHasApiKey: false,
     noteAiModel: '',
     noteAiPrompt: '',
+    // Desktop-Assistant (KI-Proxy für die Desktop-App).
+    assistantEnabled: false,
+    assistantHasApiKey: false,
+    assistantApiKeyHint: '',
+    assistantChatBaseUrl: '',
+    assistantChatModel: '',
+    // Modellkosten-Katalog und Verbrauch über alle Nutzer.
+    aiCosts: [],
+    costModel: '',
+    costInput: '',
+    costOutput: '',
+    costCurrency: 'EUR',
+    aiUsage: null,
 
     async init() {
       await this.refresh();
@@ -70,10 +83,21 @@ export function adminDashboard() {
         this.offlineAttachmentKb = Number(data.offline_attachment_max_kb ?? 250);
         this.applyVoiceSettings(data.voice || {});
         this.applyNoteAiSettings(data.note_ai || {});
+        this.applyAssistantSettings(data.assistant || {});
+        this.aiCosts = data.ai_costs || [];
+        await this.loadAiUsage();
       } catch (error) {
         this.error = error.message || 'Die Übersicht konnte nicht geladen werden.';
       } finally {
         this.loading = false;
+      }
+    },
+
+    async loadAiUsage() {
+      try {
+        this.aiUsage = await apiFetch('/api/admin/ai-usage');
+      } catch (error) {
+        this.aiUsage = null;
       }
     },
 
@@ -193,6 +217,90 @@ export function adminDashboard() {
         this.applyNoteAiSettings(data.note_ai || {});
         this.message = 'Die Standardanweisung wurde wiederhergestellt.';
       });
+    },
+
+    /** Desktop-Assistant: Proxy-Einstellungen für die Desktop-App. */
+    applyAssistantSettings(assistant) {
+      this.assistantEnabled = Boolean(assistant.enabled);
+      this.assistantHasApiKey = Boolean(assistant.has_api_key);
+      this.assistantApiKeyHint = assistant.api_key_hint || '';
+      this.assistantChatBaseUrl = assistant.chat_base_url || '';
+      this.assistantChatModel = assistant.chat_model || '';
+    },
+
+    assistantStatusLabel() {
+      if (!this.assistantEnabled) {
+        return 'ausgeschaltet';
+      }
+
+      return this.assistantChatModel !== '' ? 'aktiv' : 'freigeschaltet, aber ohne Modell unwirksam';
+    },
+
+    assistantApiKeyLabel() {
+      return this.assistantHasApiKey
+        ? `Erkannt (${this.assistantApiKeyHint})`
+        : 'Es fehlt OPENAI_KEY in der .env des Servers.';
+    },
+
+    async saveAssistantSettings() {
+      await this.run(async () => {
+        const data = await apiFetch('/api/admin/settings/assistant', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            enabled: this.assistantEnabled,
+            chat_base_url: this.assistantChatBaseUrl,
+            chat_model: this.assistantChatModel,
+          }),
+        });
+        this.applyAssistantSettings(data.assistant || {});
+        this.message = 'Einstellungen für den Desktop-Assistant gespeichert.';
+      });
+    },
+
+    /** Modellkosten: Euro je 1 Mio. Tokens, Input und Output getrennt. */
+    async saveCost() {
+      const model = this.costModel.trim();
+      if (!model) {
+        this.error = 'Bitte einen Modellnamen eingeben.';
+        return;
+      }
+      await this.run(async () => {
+        await apiFetch('/api/admin/model-costs', {
+          method: 'POST',
+          body: JSON.stringify({
+            model,
+            input_per_1m: this.costInput,
+            output_per_1m: this.costOutput,
+            currency: this.costCurrency,
+          }),
+        });
+        this.costModel = '';
+        this.costInput = '';
+        this.costOutput = '';
+        this.message = `Kosten für „${model}“ gespeichert.`;
+      });
+    },
+
+    async deleteCost(cost) {
+      if (!window.confirm(`Kostenpflege für „${cost.model}“ entfernen? Nutzungen dieses Modells kosten danach nichts mehr, bis ein Preis hinterlegt ist.`)) {
+        return;
+      }
+      await this.run(async () => {
+        await apiFetch(`/api/admin/model-costs/${encodeURIComponent(cost.model)}`, { method: 'DELETE' });
+        this.message = `Kostenpflege für „${cost.model}“ entfernt.`;
+      });
+    },
+
+    formatTokens(value) {
+      return Number(value || 0).toLocaleString('de-DE');
+    },
+
+    formatCost(value, currency) {
+      if (value === null || value === undefined) {
+        return '–';
+      }
+
+      return `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || 'EUR'}`;
     },
 
     usageLabel(user) {

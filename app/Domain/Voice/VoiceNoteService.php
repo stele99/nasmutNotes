@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Voice;
 
+use App\Domain\Ai\AiCallContext;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Log\LogColumnType;
 use App\Domain\NotebookService;
@@ -309,10 +310,11 @@ final class VoiceNoteService
     public function transcribe(User $user, UploadedFileInterface $file): array
     {
         $settings = $this->requireUsableSettings();
+        $context = new AiCallContext($user->id, 'voice_note');
         $filename = $this->storeUpload($file, $settings);
 
         try {
-            $transcript = $this->client->transcribe($settings, $filename['path'], $filename['name']);
+            $transcript = $this->client->transcribe($settings, $filename['path'], $filename['name'], $context);
         } finally {
             @unlink($filename['path']);
         }
@@ -321,7 +323,7 @@ final class VoiceNoteService
             throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
         }
 
-        $refined = $this->refine($user, $settings, $transcript);
+        $refined = $this->refine($user, $settings, $transcript, $context);
         $document = $this->markdown->toDocument($refined['markdown']);
         if (($document['content'] ?? []) === []) {
             $document = $this->markdown->toDocument($transcript);
@@ -370,13 +372,14 @@ final class VoiceNoteService
      *
      * @return array{text: string, transcript: string}
      */
-    public function transcribeQuick(UploadedFileInterface $file): array
+    public function transcribeQuick(User $user, UploadedFileInterface $file): array
     {
         $settings = $this->requireUsableSettings();
+        $context = new AiCallContext($user->id, 'voice_quick');
         $upload = $this->storeUpload($file, $settings);
 
         try {
-            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name']);
+            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name'], $context);
         } finally {
             @unlink($upload['path']);
         }
@@ -385,7 +388,7 @@ final class VoiceNoteService
             throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
         }
 
-        return ['text' => $this->refineQuick($settings, $transcript), 'transcript' => $transcript];
+        return ['text' => $this->refineQuick($settings, $transcript, $context), 'transcript' => $transcript];
     }
 
     /**
@@ -442,7 +445,7 @@ final class VoiceNoteService
      * @param string|null $clientNow Ortszeit des Clients als ISO-Zeitstempel mit Zeitzone
      * @return array{occurred_at: ?string, values: array<int, string>, transcript: string}
      */
-    public function transcribeForLog(UploadedFileInterface $file, array $columns, ?string $clientNow = null): array
+    public function transcribeForLog(User $user, UploadedFileInterface $file, array $columns, ?string $clientNow = null): array
     {
         $columns = array_values(array_filter(
             $columns,
@@ -454,10 +457,11 @@ final class VoiceNoteService
         ));
 
         $settings = $this->requireUsableSettings();
+        $context = new AiCallContext($user->id, 'voice_log');
         $upload = $this->storeUpload($file, $settings);
 
         try {
-            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name']);
+            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name'], $context);
         } finally {
             @unlink($upload['path']);
         }
@@ -479,6 +483,8 @@ final class VoiceNoteService
             "Spalten des Logbuchs:\n" . implode("\n", $lines)
             . "\n\nAktuelle Ortszeit: " . $reference->format('Y-m-d\TH:i')
             . "\n\nTranskript der Aufnahme:\n" . $transcript,
+            null,
+            $context,
         );
 
         return [
@@ -496,13 +502,14 @@ final class VoiceNoteService
      *
      * @return array{titles: array<int, string>, transcript: string}
      */
-    public function transcribeForTasks(UploadedFileInterface $file): array
+    public function transcribeForTasks(User $user, UploadedFileInterface $file): array
     {
         $settings = $this->requireUsableSettings();
+        $context = new AiCallContext($user->id, 'voice_tasks');
         $upload = $this->storeUpload($file, $settings);
 
         try {
-            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name']);
+            $transcript = $this->client->transcribe($settings, $upload['path'], $upload['name'], $context);
         } finally {
             @unlink($upload['path']);
         }
@@ -515,6 +522,8 @@ final class VoiceNoteService
             $settings,
             self::DEFAULT_TASKS_PROMPT,
             "Transkript der Aufnahme:\n" . $transcript,
+            null,
+            $context,
         );
 
         $titles = [];
@@ -614,7 +623,7 @@ final class VoiceNoteService
      *
      * @return array{markdown: string, title: string, notebook_id: ?int, notebook_name: ?string}
      */
-    private function refine(User $user, VoiceSettings $settings, string $transcript): array
+    private function refine(User $user, VoiceSettings $settings, string $transcript, AiCallContext $context): array
     {
         $fallback = [
             'markdown' => $transcript,
@@ -637,7 +646,7 @@ final class VoiceNoteService
             . ($names === [] ? '(keine)' : '- ' . implode("\n- ", $names))
             . "\n\nRoh-Transkript:\n" . $transcript;
 
-        $answer = $this->client->completeJson($settings, $settings->postprocessPrompt, $userPrompt);
+        $answer = $this->client->completeJson($settings, $settings->postprocessPrompt, $userPrompt, null, $context);
 
         $text = trim((string) (is_scalar($answer['text'] ?? null) ? $answer['text'] : ''));
         $title = trim((string) (is_scalar($answer['title'] ?? null) ? $answer['title'] : ''));
@@ -659,7 +668,7 @@ final class VoiceNoteService
      * liefert das Modell nichts Verwertbares, bleibt es beim getrimmten
      * Rohtranskript.
      */
-    private function refineQuick(VoiceSettings $settings, string $transcript): string
+    private function refineQuick(VoiceSettings $settings, string $transcript, AiCallContext $context): string
     {
         if (!$settings->postprocessEnabled) {
             return $transcript;
@@ -670,6 +679,7 @@ final class VoiceNoteService
             $settings->quickPrompt,
             "Transkript der Aufnahme:\n" . $transcript,
             $settings->quickModel,
+            $context,
         );
 
         $text = trim((string) (is_scalar($answer['text'] ?? null) ? $answer['text'] : ''));

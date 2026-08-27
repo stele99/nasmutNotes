@@ -17,6 +17,7 @@ Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
 - Sprachnotizen: Aufnahme im Browser, serverseitige Transkription über OpenAI, optionale Aufbereitung durch ein zweites Modell samt Überschrift und abgeleitetem Notizbuch; Diktat auch in eine geöffnete Notiz. Alle Parameter im Admin-Dashboard, der Schlüssel nur in `OPENAI_KEY`
 - Optionaler Aufnahmeort von Notizen: je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar, mit serverseitig ermittelter Anschrift
 - Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff
+- Desktop-Assistant: Die Desktop-App ruft KI-Funktionen (Chat inkl. Streaming, Audio-Transkription) über diesen Server ab - gekoppelt an die Nutzerkonten per Paarung, mit Verbrauchs- und Kostenübersicht für Nutzer und Admin
 - Automatisierte Tests (PHPUnit) und PHPStan Level 8 für `app/`, `bin/console.php`, `tests/`
 
 Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche (Kap. 6 — Schema ist vorbereitet), Export (5.8), vollständiges Admin-Panel (Nutzerliste/Audit-Ansicht), Papierkorb-Retention-Cron, Versionsverlauf-UI und Listen-Ansicht für Tasks.
@@ -188,8 +189,8 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 | `INVITE_TTL_DAYS` | Standard-Gültigkeit neu erzeugter Invites |
 | `SESSION_LIFETIME_DAYS` | Session-Ablauf bei Inaktivität |
 | `RATE_LIMIT_ENABLED` | Rate-Limiting global aktivieren/deaktivieren |
-| `OPENAI_KEY` | API-Schlüssel für die Sprachnotizen. **Einzige Quelle** – bewusst nicht im Admin-Dashboard änderbar. Fehlt er, bleibt die Funktion aus |
-| `VOICE_TRANSCRIBE_MODEL` / `VOICE_POSTPROCESS_MODEL` / `VOICE_LANGUAGE` / `VOICE_MAX_SECONDS` / `VOICE_MAX_MB` / `OPENAI_BASE_URL` | Anfangswerte der Sprachnotizen; maßgeblich ist das Admin-Dashboard |
+| `OPENAI_KEY` | API-Schlüssel für die Sprachnotizen und den Desktop-Assistant. **Einzige Quelle** – bewusst nicht im Admin-Dashboard änderbar. Fehlt er, bleibt die Funktion aus |
+| `VOICE_TRANSCRIBE_MODEL` / `VOICE_POSTPROCESS_MODEL` / `VOICE_LANGUAGE` / `VOICE_MAX_SECONDS` / `VOICE_MAX_MB` / `OPENAI_BASE_URL` | Anfangswerte der Sprachnotizen; maßgeblich ist das Admin-Dashboard. Der Desktop-Assistant übernimmt `OPENAI_BASE_URL` und das Nachbearbeitungsmodell als gemeinsamen KI-Default, solange er nichts Eigenes konfiguriert hat |
 | `VOICE_TMP_PATH` | Ablage der Aufnahme während der Transkription; wird sofort danach gelöscht |
 | `GEOCODER_URL` / `GEOCODER_LANGUAGE` | Adresssuche zum Aufnahmeort (Vorgabe: Nominatim). Leerer `GEOCODER_URL` schaltet sie ab |
 | `LOG_LEVEL` | Monolog-Level (`debug`, `info`, `warning`, `error`) |
@@ -233,6 +234,35 @@ ist als Round-Trip-Test abgesichert (`ExportImportRoundTripTest`).
 
 Der Papierkorb und mit dir geteilte fremde Seiten bleiben außen vor: Exportiert
 wird, was im eigenen Workspace liegt.
+
+## Desktop-Assistant (KI-Proxy)
+
+Die Desktop-App richtet ihren OpenAI-Client auf diesen Server: Basis-URL
+`https://<server>/api/assistant`, API-Key ist ein Verbindungstoken. Der Server
+rechnet die Anfragen an den konfigurierten KI-Dienst weiter und hält die
+Zügel - Modell und Ziel-Endpoint legt der Administrator fest, der
+API-Schlüssel (`OPENAI_KEY`) verlässt den Server nie.
+
+**Verbinden (Paarung):** Ohne gültigen Token öffnet der Client den Browser
+unter `https://<server>/assistant/pair?code=…`; der angemeldete Nutzer
+bestätigt dort mit einem Klick (oder gibt den Code in *Einstellungen →
+Verbundene Clients* von Hand ein). Danach holt der Client sein Token ab und
+bleibt verbunden - trennen und Wiederverbinden geht jederzeit über
+*Verbundene Clients*.
+
+**Konfiguration (Admin, `/admin/ai`):** Freischaltung, Modell und optional
+eigene Adresse für den Chat-Routing - leer heißt „Standard der KI-Funktionen“
+(gemeinsam mit den Sprachnotizen). Die Transkription nutzt unverändert die
+Einstellungen der Sprachnotizen.
+
+**Verbrauch & Kosten:** Jeder KI-Aufruf (Desktop-Assistant, Sprachnotizen,
+Notiz-KI) wird ohne Nachrichteninhalte gezählt. Nutzer und Admin sehen Tokens
+für die letzten 30 Tage und insgesamt; der Admin pflegt in `/admin/ai` je
+Modell Kosten (€/1M Tokens, Input und Output getrennt) - auch rückwirkend, die
+Verrechnung geschieht zur Anzeigezeit.
+
+Die vollständige Schnittstellen-Dokumentation für den Client liegt in
+[`docs/API-DESKTOP-ASSISTANT.md`](docs/API-DESKTOP-ASSISTANT.md).
 
 ## Sicherung und Wiederherstellung
 

@@ -86,8 +86,9 @@ export function offlineSettings() {
     locationModeHandler: null,
     locationModeSaving: false,
 
-    // Automations-Token für NotesVoice (FR-NVOICE): eigener Diktatweg per
-    // Rückseitentipp-Kurzbefehl, unabhängig vom Session-Cookie.
+    // Automations-Token für NotesVoice (FR-NVOICE) und gepaarte
+    // Desktop-Clients: eigener Diktatweg bzw. KI-Proxy, unabhängig vom
+    // Session-Cookie.
     deviceTokens: [],
     deviceTokensLoading: false,
     deviceTokenLabel: '',
@@ -95,6 +96,14 @@ export function offlineSettings() {
     deviceTokenError: '',
     deviceTokenLastCreated: null,
     deviceTokenCopyLabel: 'Kopieren',
+
+    // Verbundene Clients: manuelle Code-Bestätigung und KI-Verbrauch.
+    pairCodeInput: '',
+    pairApproving: false,
+    pairCodeError: '',
+    pairCodeMessage: '',
+    aiUsage: null,
+    aiUsageError: '',
 
     async init() {
       await this.refreshStats();
@@ -165,7 +174,7 @@ export function offlineSettings() {
       this.error = '';
       this.locationMode = await loadLocationMode(true);
       await this.refreshStats();
-      await this.loadDeviceTokens();
+      await Promise.all([this.loadDeviceTokens(), this.loadAiUsage()]);
     },
 
     selectSettingsSection(section) {
@@ -269,21 +278,75 @@ export function offlineSettings() {
       return this.locationMode === mode;
     },
 
-    /** Ohne freigeschaltete Sprachnotizen steht die Sektion gar nicht im Markup. */
+    /** Gepaarte Desktop-Clients und Automations-Token in einer Liste. */
     async loadDeviceTokens() {
-      if (typeof window.__VOICE__ === 'undefined') {
-        return;
-      }
       this.deviceTokensLoading = true;
       this.deviceTokenError = '';
       try {
         const data = await apiFetch('/api/profile/device-tokens');
         this.deviceTokens = data.device_tokens || [];
       } catch (error) {
-        this.deviceTokenError = error.message || 'Automations-Token konnten nicht geladen werden.';
+        this.deviceTokenError = error.message || 'Verbundene Geräte konnten nicht geladen werden.';
       } finally {
         this.deviceTokensLoading = false;
       }
+    },
+
+    /** Manuelle Bestätigung eines Paarungscodes aus dem Desktop-Assistenten. */
+    async approvePairCode() {
+      if (this.pairApproving) {
+        return;
+      }
+      const code = this.pairCodeInput.trim().toUpperCase();
+      if (!code) {
+        this.pairCodeError = 'Bitte den Code aus dem Desktop-Assistenten eingeben.';
+        return;
+      }
+      this.pairApproving = true;
+      this.pairCodeError = '';
+      this.pairCodeMessage = '';
+      try {
+        await apiFetch('/api/assistant/pair/approve', {
+          method: 'POST',
+          body: JSON.stringify({ user_code: code }),
+        });
+        this.pairCodeInput = '';
+        this.pairCodeMessage = 'Der Desktop-Assistent verbindet sich jetzt. Du kannst den Code weglegen.';
+        await this.loadDeviceTokens();
+      } catch (error) {
+        this.pairCodeError = error.message || 'Der Code konnte nicht bestätigt werden.';
+      } finally {
+        this.pairApproving = false;
+      }
+    },
+
+    async loadAiUsage() {
+      this.aiUsageError = '';
+      try {
+        this.aiUsage = await apiFetch('/api/profile/ai-usage');
+      } catch (error) {
+        this.aiUsageError = error.message || 'Der KI-Verbrauch konnte nicht geladen werden.';
+      }
+    },
+
+    /** @param {{tokens: number}|null} bucket */
+    aiUsageTokens(bucket) {
+      if (!bucket) {
+        return '–';
+      }
+      const tokens = Number(bucket.tokens || 0);
+
+      return `${tokens.toLocaleString('de-DE')} Tokens`;
+    },
+
+    /** @param {{cost: number|null, currency: string|null}|null} bucket */
+    aiUsageCost(bucket) {
+      if (!bucket || bucket.cost === null || bucket.cost === undefined) {
+        return 'Kein Preis hinterlegt';
+      }
+      const currency = bucket.currency || 'EUR';
+
+      return `${Number(bucket.cost).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
     },
 
     async createDeviceToken() {
@@ -342,7 +405,9 @@ export function offlineSettings() {
     },
 
     async revokeDeviceToken(token) {
-      if (!window.confirm(`Automations-Token „${token.label}“ wirklich widerrufen? Die zugehörige Automation funktioniert danach nicht mehr.`)) {
+      const isDesktop = token.source === 'desktop';
+      const action = isDesktop ? 'trennen' : 'widerrufen';
+      if (!window.confirm(`„${token.label}“ wirklich ${action}? Der Zugang funktioniert danach nicht mehr.`)) {
         return;
       }
       this.deviceTokenError = '';
@@ -353,14 +418,16 @@ export function offlineSettings() {
         }
         await this.loadDeviceTokens();
       } catch (error) {
-        this.deviceTokenError = error.message || 'Der Token konnte nicht widerrufen werden.';
+        this.deviceTokenError = error.message || 'Das Gerät konnte nicht getrennt werden.';
       }
     },
 
     deviceTokenSummary(token) {
-      return token.last_used_at
+      const time = token.last_used_at
         ? `Zuletzt genutzt: ${this.conflictTime(token.last_used_at)}`
         : `Erstellt: ${this.conflictTime(token.created_at)} · noch nicht genutzt`;
+
+      return token.platform ? `${token.platform} · ${time}` : time;
     },
 
     async compressOwnImages() {

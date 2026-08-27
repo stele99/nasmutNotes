@@ -16,6 +16,7 @@ import { noteImport } from './noteImport.js';
 import { noteExport } from './noteExport.js';
 import { workspaceShell } from './workspaceShell.js';
 import { offlineSettings } from './offline/settings.js';
+import { assistantPair } from './assistant/pair.js';
 import { initOfflineRuntime } from './offline/runtime.js';
 import { renderIconDirective } from './icons.js';
 import { initViewportMetrics } from './viewport.js';
@@ -35,6 +36,7 @@ Alpine.data('noteImport', noteImport);
 Alpine.data('noteExport', noteExport);
 Alpine.data('workspaceShell', workspaceShell);
 Alpine.data('offlineSettings', offlineSettings);
+Alpine.data('assistantPair', assistantPair);
 Alpine.directive('icon', (el, { expression }) => renderIconDirective(el, expression));
 
 window.Alpine = Alpine;

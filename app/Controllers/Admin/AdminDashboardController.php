@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Domain\AdminService;
+use App\Domain\Ai\AiUsageService;
+use App\Domain\Assistant\AssistantService;
 use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Voice\VoiceNoteService;
 use App\Support\CurrentUser;
@@ -27,6 +29,8 @@ final class AdminDashboardController
         private readonly RateLimiter $rateLimiter,
         private readonly VoiceNoteService $voice,
         private readonly NoteRewriteService $rewriter,
+        private readonly AiUsageService $aiUsage,
+        private readonly AssistantService $assistant,
     ) {
     }
 
@@ -51,7 +55,55 @@ final class AdminDashboardController
         return JsonResponse::json($response, array_merge($this->admin->overview(), [
             'voice' => $this->voice->settings()->toAdminArray(),
             'note_ai' => $this->rewriter->adminSettings(),
+            'assistant' => $this->assistant->settings()->toAdminArray(),
+            'ai_costs' => $this->aiUsage->costs(),
         ]));
+    }
+
+    /** Desktop-Assistant: Freischaltung, Modell und Ziel-Endpoint. */
+    public function updateAssistantSettings(Request $request, Response $response): Response
+    {
+        $settings = $this->assistant->updateSettings(
+            CurrentUser::require($request),
+            (array) ($request->getParsedBody() ?? []),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['assistant' => $settings->toAdminArray()]);
+    }
+
+    /** KI-Verbrauch über alle Nutzer: Tokens und Kosten. */
+    public function aiUsage(Request $request, Response $response): Response
+    {
+        return JsonResponse::json($response, $this->aiUsage->adminOverview());
+    }
+
+    public function modelCosts(Request $request, Response $response): Response
+    {
+        return JsonResponse::json($response, ['costs' => $this->aiUsage->costs()]);
+    }
+
+    public function storeModelCost(Request $request, Response $response): Response
+    {
+        $cost = $this->aiUsage->setCost(
+            CurrentUser::require($request),
+            (array) ($request->getParsedBody() ?? []),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['cost' => $cost], 201);
+    }
+
+    /** @param array<string, string> $args */
+    public function destroyModelCost(Request $request, Response $response, array $args): Response
+    {
+        $this->aiUsage->removeCost(
+            CurrentUser::require($request),
+            (string) ($args['model'] ?? ''),
+            RequestIp::hash($request),
+        );
+
+        return $response->withStatus(204);
     }
 
     /** Sprachnotizen: Freischaltung, Modelle und Anweisung (FR-VOICE-05). */
