@@ -1,4 +1,5 @@
 <div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
+    <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
     <?php /* Mobil decken beide Leisten den Bildschirm vollständig ab; eine
              Überlagerung braucht nur die schmale Notizbuch-Schublade, die
              zwischen `md` und `xl` über der Seitenliste liegt. */ ?>
@@ -22,7 +23,9 @@
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
     <?php include __DIR__ . '/partials/notebook_dialog.php'; ?>
     <?php include __DIR__ . '/partials/info_dialog.php'; ?>
-    <main class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto">
+    <?php include __DIR__ . '/partials/shortcuts_dialog.php'; ?>
+    <?php include __DIR__ . '/partials/toast_host.php'; ?>
+    <main id="main-content" tabindex="-1" class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto">
         <?php /* Die Übersicht ist mobil der Einstieg und hat keine eigene
                  Kopfzeile; der Weg zu den Notizbüchern liegt deshalb hier als
                  fixierter Schalter. */ ?>

@@ -13,11 +13,18 @@ final class ShareRepository
     {
     }
 
-    public function create(int $pageId, string $tokenHash, string $permission, string $mode): int
-    {
+    public function create(
+        int $pageId,
+        string $tokenHash,
+        string $permission,
+        string $mode,
+        ?string $expiresAt = null,
+        ?string $passwordHash = null,
+        bool $requiresLogin = false,
+    ): int {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO share_links (page_id, token_hash, permission, mode, created_at)
-             SELECT :page_id, :token_hash, :permission, :mode, :created_at
+            "INSERT INTO share_links (page_id, token_hash, permission, mode, expires_at, password_hash, requires_login, created_at)
+             SELECT :page_id, :token_hash, :permission, :mode, :expires_at, :password_hash, :requires_login, :created_at
                FROM pages
               WHERE id = :page_id_guard
                 AND (is_encrypted = 0 OR :mode_guard <> 'read_copy')"
@@ -27,6 +34,9 @@ final class ShareRepository
             'token_hash' => $tokenHash,
             'permission' => $permission,
             'mode' => $mode,
+            'expires_at' => $expiresAt,
+            'password_hash' => $passwordHash,
+            'requires_login' => $requiresLogin ? 1 : 0,
             'mode_guard' => $mode,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
             'page_id_guard' => $pageId,
@@ -52,6 +62,8 @@ final class ShareRepository
                     share_links.permission,
                     share_links.mode,
                     share_links.expires_at,
+                    share_links.password_hash,
+                    share_links.requires_login,
                     share_links.created_at,
                     pages.title,
                     pages.type,
@@ -225,7 +237,8 @@ final class ShareRepository
     public function listForPage(int $pageId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, page_id, mode, mode AS permission, expires_at, revoked_at, last_accessed_at, access_count, created_at
+            'SELECT id, page_id, mode, mode AS permission, expires_at, revoked_at, last_accessed_at, access_count, created_at,
+                    (password_hash IS NOT NULL) AS has_password, requires_login
              FROM share_links
              WHERE page_id = :page_id
                AND revoked_at IS NULL

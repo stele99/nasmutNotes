@@ -185,4 +185,24 @@ final class PublicShareService
             throw new NotFoundException('Freigabe nicht gefunden.');
         }
     }
+
+    /** @param array<string, mixed> $share */
+    public function requiresPassword(array $share): bool
+    {
+        return ($share['password_hash'] ?? null) !== null;
+    }
+
+    /** @param array<string, mixed> $share */
+    public function requiresLogin(array $share): bool
+    {
+        return (bool) ($share['requires_login'] ?? false);
+    }
+
+    /** @param array<string, mixed> $share */
+    public function verifyPassword(array $share, string $password): bool
+    {
+        $hash = $share['password_hash'] ?? null;
+
+        return is_string($hash) && $password !== '' && password_verify($password, $hash);
+    }
 }

@@ -32,6 +32,35 @@ if (form instanceof HTMLFormElement) {
   });
 }
 
+const unlockForm = document.querySelector('[data-unlock-form]');
+if (unlockForm instanceof HTMLFormElement) {
+  unlockForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = unlockForm.querySelector('button[type="submit"]');
+    const error = unlockForm.querySelector('[data-unlock-error]');
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    if (error instanceof HTMLElement) error.textContent = '';
+    try {
+      const response = await fetch(unlockForm.action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ password: new FormData(unlockForm).get('password') }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error?.message || 'Das Kennwort konnte nicht geprüft werden.');
+      window.location.reload();
+    } catch (reason) {
+      if (error instanceof HTMLElement) error.textContent = reason.message || 'Das Kennwort konnte nicht geprüft werden.';
+      if (button instanceof HTMLButtonElement) button.disabled = false;
+    }
+  });
+}
+
 const encryptedShare = document.querySelector('[data-encrypted-share]');
 const encryptedForm = document.querySelector('[data-encrypted-share-form]');
 const encryptedPayload = document.querySelector('[data-encrypted-share-envelope]');

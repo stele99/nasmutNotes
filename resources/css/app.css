@@ -97,6 +97,83 @@ textarea::placeholder {
   opacity: 0.8;
 }
 
+/* Skip-Link (NFR-A11Y-05): unsichtbar, bis Tastaturnutzer sie fokussieren -
+   dann springt sie oben links ins Bild, statt permanent Platz zu belegen. */
+.skip-link {
+  position: fixed;
+  top: -3rem;
+  left: 0.75rem;
+  z-index: 200;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: top 150ms ease;
+}
+
+.skip-link:focus {
+  top: 0.75rem;
+}
+
+/* Globale Toast-Benachrichtigungen (NFR-UI-07, NFR-A11Y-03). */
+.toast-host {
+  pointer-events: none;
+}
+
+.toast-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 22rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-success);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+  font-size: 0.875rem;
+  pointer-events: auto;
+  animation: toast-in 150ms ease;
+}
+
+.toast-item.is-error {
+  border-left-color: var(--color-danger);
+}
+
+.toast-dismiss {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.toast-dismiss:hover,
+.toast-dismiss:focus-visible {
+  opacity: 1;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-item {
+    animation: none;
+  }
+}
+
+.shortcut-key {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 .sidebar-search:focus,
 .sidebar-search:focus-visible {
   box-shadow: none;

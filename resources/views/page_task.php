@@ -189,7 +189,12 @@
                 <ul class="task-list mt-4 border-y" style="border-color: var(--color-border);">
                     <template x-for="task in visibleTasks(category)" :key="task.id">
                         <li class="group flex items-center gap-2 border-t px-2 py-2 text-base sm:px-3" style="border-color: color-mix(in srgb, var(--color-border) 70%, transparent);" :class="task.is_done ? 'opacity-60' : ''">
-                            <input type="checkbox" :checked="task.is_done" @change="toggleDone(task)" :disabled="!canEditPage" class="h-5 w-5 shrink-0 sm:h-4 sm:w-4">
+                            <?php /* Trefferfläche 44x44px mobil (NFR-UI-16): Zoom ist gesperrt
+                                     (NFR-UI-14), das Kästchen selbst bleibt aber optisch klein -
+                                     das Label vergrößert nur die klick-/tippbare Fläche. */ ?>
+                            <label class="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center sm:h-4 sm:w-4">
+                                <input type="checkbox" :checked="task.is_done" @change="toggleDone(task)" :disabled="!canEditPage" class="h-5 w-5 sm:h-4 sm:w-4">
+                            </label>
                             <button @click="openTask(task)" class="task-title min-w-0 flex-1 text-left" :class="task.is_done ? 'line-through' : ''" x-text="task.title"></button>
                             <span x-show="task.responsible" class="hidden text-sm sm:inline" style="color: var(--color-text-muted);" x-text="task.responsible"></span>
                             <a
@@ -251,13 +256,16 @@
     <div
         x-show="creatingCategory"
         x-cloak
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="category-dialog-title"
         class="fixed inset-0 z-50 flex items-center justify-center p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeCategoryDialog"
         @keydown.escape.window="closeCategoryDialog"
     >
         <form @submit.prevent="addCategory" class="w-full max-w-sm rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
-            <h2 class="text-xl font-semibold">Neues Kapitel</h2>
+            <h2 id="category-dialog-title" class="text-xl font-semibold">Neues Kapitel</h2>
             <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Gib dem Kapitel einen Namen.</p>
             <input x-ref="categoryName" x-model="newCategoryName" type="text" maxlength="100" placeholder="Kapitelname" class="mt-5 w-full rounded-md border px-3 py-2.5 text-base" style="border-color: var(--color-border); background: var(--color-bg);">
             <div class="mt-5 flex justify-end gap-2">
@@ -270,13 +278,16 @@
     <div
         x-show="importCategory"
         x-cloak
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-dialog-title"
         class="fixed inset-0 z-50 flex items-center justify-center p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeImportDialog"
         @keydown.escape.window="closeImportDialog"
     >
         <form @submit.prevent="importTasks" class="w-full max-w-xl rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
-            <h2 class="text-xl font-semibold">Aufgaben einfügen</h2>
+            <h2 id="import-dialog-title" class="text-xl font-semibold">Aufgaben einfügen</h2>
             <p class="mt-1 text-sm" style="color: var(--color-text-muted);">
                 Eine Zeile erzeugt eine Aufgabe in „<span x-text="importCategory ? importCategory.name : ''"></span>“. Leere Zeilen werden übersprungen.
             </p>
@@ -294,6 +305,9 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
     <div
         x-show="activeTask"
         x-cloak
+        role="dialog"
+        aria-modal="true"
+        aria-label="Aufgabe bearbeiten"
         class="fixed inset-0 flex items-center justify-center z-50"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeTask()"

@@ -3,6 +3,7 @@ import { markNewPageForTitleEdit } from './newPageTitle.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
 import { captureLocationOnCreate } from './geo.js';
 import { nearbySearchMixin } from './nearbySearch.js';
+import { showToast } from './toast.js';
 import {
   cacheDocument,
   cacheNotebooks,
@@ -502,6 +503,7 @@ export function pageList() {
         this.setPages(this.pages.filter((item) => Number(item.id) !== pageId));
         await removeCachedPage(pageId);
         this.notifyPagesChanged();
+        showToast(`„${page.title}" in den Papierkorb verschoben.`);
         if (Number(this.currentPageId) === pageId) {
           await this.navigateTo('/app');
         }
@@ -527,6 +529,7 @@ export function pageList() {
       await apiFetch(`/api/pages/${page.id}/restore`, { method: 'POST' });
       await this.refresh();
       this.notifyPagesChanged();
+      showToast(`„${page.title}" wiederhergestellt.`);
     },
 
     async purgePage(page) {
@@ -536,6 +539,7 @@ export function pageList() {
       await apiFetch(`/api/pages/${page.id}/purge`, { method: 'DELETE' });
       await this.refresh();
       this.notifyPagesChanged();
+      showToast(`„${page.title}" endgültig gelöscht.`);
     },
 
     async emptyTrash() {
@@ -545,6 +549,7 @@ export function pageList() {
       await apiFetch('/api/pages/trash', { method: 'DELETE' });
       await this.refresh();
       this.notifyPagesChanged();
+      showToast('Papierkorb geleert.');
     },
 
     async leave(page) {
@@ -557,6 +562,7 @@ export function pageList() {
       }
       await apiFetch(`/api/pages/${page.id}/share-access`, { method: 'DELETE' });
       this.notifyPagesChanged();
+      showToast(`Freigabe von „${page.title}" verlassen.`);
       if (this.currentPageId === page.id) {
         await this.navigateTo('/app');
       }

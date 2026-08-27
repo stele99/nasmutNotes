@@ -19,9 +19,20 @@ final class ShareService
     ) {
     }
 
-    /** @return array{id: int, page_id: int, permission: string, token: string, created_at: string} */
-    public function create(User $user, int $pageId, string $permission): array
-    {
+    /**
+     * @return array{id: int, page_id: int, permission: string, token: string, created_at: string}
+     *
+     * @param string|null $expiresAt Datum (`YYYY-MM-DD`) oder ISO-8601-Zeitpunkt, muss in der Zukunft liegen.
+     * @param string|null $password Kennwort im Klartext; wird ausschließlich gehasht gespeichert (FR-SHR-05, NFR-SEC-08).
+     */
+    public function create(
+        User $user,
+        int $pageId,
+        string $permission,
+        ?string $expiresAt = null,
+        ?string $password = null,
+        bool $requiresLogin = false,
+    ): array {
         $page = $this->pages->findOwned($user, $pageId);
         if ($page['deleted_at'] !== null) {
             throw new NotFoundException('Diese Seite wurde gelöscht.');
@@ -38,12 +49,18 @@ final class ShareService
             throw new ValidationException('Ungültige Freigabeart.');
         }
 
+        $normalizedExpiresAt = $this->normalizeExpiresAt($expiresAt);
+        $passwordHash = $this->hashPassword($password);
+
         $token = bin2hex(random_bytes(32));
         $shareId = $this->shares->create(
             (int) $page['id'],
             hash('sha256', $token),
             $permission === 'write' ? 'write' : 'read',
             $permission,
+            $normalizedExpiresAt,
+            $passwordHash,
+            $requiresLogin,
         );
 
         return [
@@ -53,6 +70,39 @@ final class ShareService
             'token' => $token,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
         ];
+    }
+
+    private function normalizeExpiresAt(?string $expiresAt): ?string
+    {
+        if ($expiresAt === null || trim($expiresAt) === '') {
+            return null;
+        }
+
+        try {
+            $parsed = new \DateTimeImmutable(trim($expiresAt), new \DateTimeZone('UTC'));
+        } catch (\Exception) {
+            throw new ValidationException('Ungültiges Ablaufdatum.');
+        }
+
+        if ($parsed <= new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) {
+            throw new ValidationException('Das Ablaufdatum muss in der Zukunft liegen.');
+        }
+
+        return $parsed->format('Y-m-d\TH:i:s.v\Z');
+    }
+
+    private function hashPassword(?string $password): ?string
+    {
+        if ($password === null || trim($password) === '') {
+            return null;
+        }
+
+        $password = trim($password);
+        if (mb_strlen($password) > 200) {
+            throw new ValidationException('Das Kennwort darf höchstens 200 Zeichen lang sein.');
+        }
+
+        return password_hash($password, PASSWORD_DEFAULT);
     }
 
     /** @return array<string, mixed> */

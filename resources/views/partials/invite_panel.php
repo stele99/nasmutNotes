@@ -10,6 +10,9 @@
     <div
         x-show="open"
         x-cloak
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invite-dialog-title"
         class="fixed inset-0 z-50 flex items-center justify-center p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeDialog"
@@ -18,7 +21,7 @@
         <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4">
                 <div>
-                    <h2 class="text-xl font-semibold" style="color: var(--color-text);">Person einladen</h2>
+                    <h2 id="invite-dialog-title" class="text-xl font-semibold" style="color: var(--color-text);">Person einladen</h2>
                     <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Erzeuge einen Registrierungslink für jemanden, der die App nutzen soll.</p>
                 </div>
                 <button type="button" @click="closeDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>

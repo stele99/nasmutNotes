@@ -212,6 +212,49 @@ final class ShareServiceTest extends TestCase
         }
     }
 
+    public function testCreateWithPasswordExpiryAndLoginRequirementStoresThemHashedAndValidated(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Geschützt', null);
+        $future = gmdate('Y-m-d', strtotime('+7 days'));
+
+        $share = $this->shares->create($this->userA, (int) $page['id'], 'read', $future, 'geheim123', true);
+
+        $stmt = $this->pdo->prepare('SELECT password_hash, requires_login, expires_at FROM share_links WHERE id = :id');
+        $stmt->execute(['id' => $share['id']]);
+        $row = $stmt->fetch();
+
+        self::assertIsArray($row);
+        self::assertNotNull($row['password_hash']);
+        self::assertNotSame('geheim123', $row['password_hash']);
+        self::assertTrue(password_verify('geheim123', (string) $row['password_hash']));
+        self::assertSame(1, (int) $row['requires_login']);
+        self::assertTrue(str_starts_with((string) $row['expires_at'], $future));
+    }
+
+    public function testCreateRejectsExpiryDateInThePast(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Ungültiges Ablaufdatum', null);
+
+        $this->expectException(\App\Support\ValidationException::class);
+        $this->shares->create($this->userA, (int) $page['id'], 'read', '2000-01-01');
+    }
+
+    public function testCreateWithoutOptionalFieldsLeavesThemNull(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Ohne Extras', null);
+
+        $share = $this->shares->create($this->userA, (int) $page['id'], 'read');
+
+        $stmt = $this->pdo->prepare('SELECT password_hash, requires_login, expires_at FROM share_links WHERE id = :id');
+        $stmt->execute(['id' => $share['id']]);
+        $row = $stmt->fetch();
+
+        self::assertIsArray($row);
+        self::assertNull($row['password_hash']);
+        self::assertSame(0, (int) $row['requires_login']);
+        self::assertNull($row['expires_at']);
+    }
+
     private function makeUser(WorkspaceRepository $workspaces, string $email): User
     {
         $stmt = $this->pdo->prepare(

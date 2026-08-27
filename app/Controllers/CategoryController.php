@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\TaskBoardService;
+use App\Domain\TaskWriteUnavailableException;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -38,7 +39,16 @@ final class CategoryController
         $moveTo = isset($params['move_to']) ? (int) $params['move_to'] : null;
         $cascade = ($params['cascade'] ?? '0') === '1';
 
-        $this->board->deleteCategory(CurrentUser::require($request), (int) $args['id'], $moveTo, $cascade);
+        try {
+            $this->board->deleteCategory(CurrentUser::require($request), (int) $args['id'], $moveTo, $cascade);
+        } catch (TaskWriteUnavailableException $e) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '1'),
+                'TASK_BUSY',
+                $e->getMessage(),
+                503,
+            );
+        }
 
         return $response->withStatus(204);
     }

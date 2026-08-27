@@ -20,6 +20,10 @@ import { assistantPair } from './assistant/pair.js';
 import { initOfflineRuntime } from './offline/runtime.js';
 import { renderIconDirective } from './icons.js';
 import { initViewportMetrics } from './viewport.js';
+import { initFocusTrap } from './focusTrap.js';
+import { initGlobalShortcuts } from './shortcuts.js';
+import { shortcutsOverview } from './shortcutsOverview.js';
+import { toast } from './toast.js';
 
 Alpine.data('theme', theme);
 Alpine.data('pageList', pageList);
@@ -37,6 +41,8 @@ Alpine.data('noteExport', noteExport);
 Alpine.data('workspaceShell', workspaceShell);
 Alpine.data('offlineSettings', offlineSettings);
 Alpine.data('assistantPair', assistantPair);
+Alpine.data('shortcutsOverview', shortcutsOverview);
+Alpine.data('toast', toast);
 Alpine.directive('icon', (el, { expression }) => renderIconDirective(el, expression));
 
 window.Alpine = Alpine;
@@ -44,6 +50,8 @@ window.Alpine = Alpine;
 // Vor Alpine.start(), damit die Maße schon beim ersten Aufbau der Oberfläche
 // stehen und kein Layoutsprung entsteht.
 initViewportMetrics();
+initFocusTrap();
+initGlobalShortcuts();
 
 // Alpine startet unabhängig vom Offline-Init: hängt IndexedDB (blockiertes
 // Upgrade, Privatmodus), darf die App davon nicht ausgebremst werden. Die

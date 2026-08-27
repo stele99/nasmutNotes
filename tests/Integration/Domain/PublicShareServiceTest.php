@@ -154,6 +154,37 @@ final class PublicShareServiceTest extends TestCase
         self::assertSame('write', $share['permission']);
     }
 
+    public function testPasswordProtectedShareGatesAreEnforced(): void
+    {
+        $page = $this->pages->create($this->owner, 'note', 'Kennwortgeschützt', null);
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'read', null, 'geheim123');
+
+        $resolved = $this->publicShares->resolve($share['token']);
+
+        self::assertTrue($this->publicShares->requiresPassword($resolved));
+        self::assertFalse($this->publicShares->verifyPassword($resolved, 'falsch'));
+        self::assertTrue($this->publicShares->verifyPassword($resolved, 'geheim123'));
+    }
+
+    public function testShareWithoutPasswordNeverRequiresOne(): void
+    {
+        $page = $this->pages->create($this->owner, 'note', 'Frei zugänglich', null);
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'read');
+
+        $resolved = $this->publicShares->resolve($share['token']);
+
+        self::assertFalse($this->publicShares->requiresPassword($resolved));
+        self::assertFalse($this->publicShares->requiresLogin($resolved));
+    }
+
+    public function testRequiresLoginFlagIsExposedOnTheResolvedShare(): void
+    {
+        $page = $this->pages->create($this->owner, 'note', 'Nur angemeldet', null);
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'read', null, null, true);
+
+        self::assertTrue($this->publicShares->requiresLogin($this->publicShares->resolve($share['token'])));
+    }
+
     public function testInvalidTokenIsNotFound(): void
     {
         $this->expectException(NotFoundException::class);

@@ -82,6 +82,9 @@ final class ShareController
                 CurrentUser::require($request),
                 (int) $args['id'],
                 (string) ($body['permission'] ?? ''),
+                isset($body['expires_at']) && $body['expires_at'] !== '' ? (string) $body['expires_at'] : null,
+                isset($body['password']) && $body['password'] !== '' ? (string) $body['password'] : null,
+                (bool) ($body['requires_login'] ?? false),
             );
         } catch (NoteEncryptionException $e) {
             return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
@@ -129,6 +132,8 @@ final class ShareController
             'id' => (int) $share['id'],
             'permission' => $share['permission'],
             'expires_at' => $share['expires_at'],
+            'has_password' => (bool) $share['has_password'],
+            'requires_login' => (bool) $share['requires_login'],
             'last_accessed_at' => $share['last_accessed_at'],
             'access_count' => (int) $share['access_count'],
             'created_at' => $share['created_at'],

@@ -4,6 +4,7 @@ import { cacheBoard, readCachedBoard } from './offline/runtime.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
+import { showToast } from './toast.js';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -490,6 +491,7 @@ export function taskBoard() {
         await apiFetch(`/api/categories/${category.id}`, { method: 'DELETE' });
       }
       await this.refresh();
+      showToast(`„${category.name}" gelöscht.`);
     },
 
     async addTask(category, event) {
@@ -777,6 +779,7 @@ export function taskBoard() {
       }
       await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
       await this.refresh();
+      showToast(`„${task.title}" gelöscht.`);
 
       return true;
     },

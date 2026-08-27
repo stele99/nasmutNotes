@@ -7,6 +7,9 @@ export function pageShare() {
     isEncrypted: Boolean(window.__CURRENT_PAGE_IS_ENCRYPTED__),
     currentPermission: window.__CURRENT_PAGE_PERMISSION__ || null,
     permission: 'read',
+    sharePassword: '',
+    shareExpiresAt: '',
+    shareRequiresLogin: false,
     shareDialogOpen: false,
     generatedLink: '',
     copyLabel: 'Kopieren',
@@ -172,6 +175,9 @@ export function pageShare() {
       this.successMessage = '';
       this.generatedLink = '';
       this.copyLabel = 'Kopieren';
+      this.sharePassword = '';
+      this.shareExpiresAt = '';
+      this.shareRequiresLogin = false;
       this.shareDialogOpen = true;
       await this.loadShares();
     },
@@ -194,9 +200,16 @@ export function pageShare() {
       try {
         const data = await apiFetch(`/api/pages/${this.pageId}/shares`, {
           method: 'POST',
-          body: JSON.stringify({ permission: this.permission }),
+          body: JSON.stringify({
+            permission: this.permission,
+            expires_at: this.shareExpiresAt || null,
+            password: this.sharePassword || null,
+            requires_login: this.shareRequiresLogin,
+          }),
         });
         this.generatedLink = data.url;
+        // Kennwort nie im Formular stehen lassen, sobald es beim Server ist.
+        this.sharePassword = '';
         await this.loadShares();
         try {
           await this.copyLink();

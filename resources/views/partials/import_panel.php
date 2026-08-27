@@ -17,6 +17,9 @@
         <div
             x-show="open"
             x-cloak
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-archive-dialog-title"
             class="fixed inset-0 z-[100] flex items-center justify-center p-5"
             style="background-color: rgb(0 0 0 / 0.4);"
             @click.self="closeDialog"
@@ -25,7 +28,7 @@
             <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h2 class="text-xl font-semibold">Notizen importieren</h2>
+                        <h2 id="import-archive-dialog-title" class="text-xl font-semibold">Notizen importieren</h2>
                         <p class="mt-1 text-sm" style="color: var(--color-text-muted);">
                             ZIP-Archiv mit Markdown-Dateien oder eine aus einem Workspace-Export extrahierte <code>.encrypted-note.json</code>-Datei.
                         </p>

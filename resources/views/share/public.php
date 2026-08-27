@@ -23,9 +23,18 @@
         </header>
 
         <?php if (!empty($loginRequired)): ?>
+            <?php /* Schreibfreigaben verlangen ohnehin eine Anmeldung (FR-SHR-06) und
+                     hängen die Seite danach unter „Geteilt" ein; bei Lese- bzw.
+                     Lesen-und-Kopieren-Freigaben ist die Anmeldung nur eine
+                     zusätzliche Einschränkung des Erstellers (FR-SHR-05), ohne
+                     Übernahme in den Workspace - der Hinweistext unterscheidet das. */ ?>
             <section class="mx-auto max-w-lg text-center">
                 <h1 class="text-3xl font-semibold tracking-tight"><?= e((string) $page['title']) ?></h1>
-                <p class="mt-4" style="color: var(--color-text-muted);">Melde dich an, um diese Seite zu lesen und zu bearbeiten. Sie erscheint danach unter „Geteilt“.</p>
+                <p class="mt-4" style="color: var(--color-text-muted);">
+                    <?= ($share['mode'] ?? '') === 'write'
+                        ? 'Melde dich an, um diese Seite zu lesen und zu bearbeiten. Sie erscheint danach unter „Geteilt".'
+                        : 'Der Ersteller dieser Freigabe verlangt eine Anmeldung. Melde dich an, um die Seite zu lesen.' ?>
+                </p>
                 <a href="<?= e((string) $loginUrl) ?>" class="btn btn-primary mt-6">Mit Google anmelden</a>
             </section>
         <?php else: ?>

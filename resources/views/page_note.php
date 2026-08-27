@@ -309,6 +309,9 @@
     <div
         x-show="pdfViewerUrl"
         x-cloak
+        role="dialog"
+        aria-modal="true"
+        aria-label="PDF-Anhang"
         class="fixed inset-0 z-[110] flex flex-col p-3 sm:p-6"
         style="background-color: rgb(0 0 0 / 0.75);"
         @keydown.escape.window="closePdfViewer"

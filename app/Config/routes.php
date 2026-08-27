@@ -48,6 +48,7 @@ return static function (App $app, ContainerInterface $container): void {
 
     $app->get('/invite/{token}', [InviteController::class, 'accept']);
     $app->get('/s/{token}', [PublicShareController::class, 'open']);
+    $app->post('/s/{token}/unlock', [PublicShareController::class, 'unlock']);
     $app->get('/s/{token}/images/{imageToken}', [PublicShareController::class, 'image']);
     $app->get('/s/{token}/files/{attachmentId}', [PublicShareController::class, 'file']);
     $app->post('/s/{token}/copy', [PublicShareController::class, 'copy'])->add(new RequireAuthMiddleware(true));

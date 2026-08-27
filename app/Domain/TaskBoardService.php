@@ -12,6 +12,7 @@ use App\Support\NotFoundException;
 use App\Support\UrlValidator;
 use App\Support\ValidationException;
 use PDO;
+use PDOException;
 
 final class TaskBoardService
 {
@@ -109,16 +110,23 @@ final class TaskBoardService
     public function deleteCategory(User $user, int $categoryId, ?int $moveToId, bool $cascade): void
     {
         $category = $this->resolveOwnedCategory($user, $categoryId);
-        $hasTasks = $this->tasks->countForCategory((int) $category['id']) > 0;
 
-        if ($hasTasks && !$cascade && $moveToId === null) {
-            throw new ValidationException(
-                'Diese Kategorie enthält Tasks. Bitte "move_to" oder "cascade=1" angeben.'
-            );
-        }
-
-        $this->pdo->beginTransaction();
+        // hasTasks wird erst nach dem Lock-Erwerb (BEGIN IMMEDIATE) gelesen, damit
+        // eine parallel eintreffende Task-Anlage in derselben Kategorie nicht
+        // unbemerkt mitgelöscht bzw. übersehen wird.
+        $transactionStarted = false;
         try {
+            $this->beginImmediateTransaction();
+            $transactionStarted = true;
+
+            $hasTasks = $this->tasks->countForCategory((int) $category['id']) > 0;
+
+            if ($hasTasks && !$cascade && $moveToId === null) {
+                throw new ValidationException(
+                    'Diese Kategorie enthält Tasks. Bitte "move_to" oder "cascade=1" angeben.'
+                );
+            }
+
             if ($hasTasks && $moveToId !== null) {
                 $target = $this->resolveOwnedCategory($user, $moveToId);
                 if ((int) $target['page_id'] !== (int) $category['page_id']) {
@@ -130,9 +138,16 @@ final class TaskBoardService
             }
 
             $this->categories->delete((int) $category['id']);
-            $this->pdo->commit();
+
+            $this->commitTransaction();
+            $transactionStarted = false;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
+            }
+            if ($e instanceof PDOException && $this->isSqliteBusy($e)) {
+                throw new TaskWriteUnavailableException($e);
+            }
             throw $e;
         }
 
@@ -157,22 +172,47 @@ final class TaskBoardService
     ): array {
         $category = $this->resolveOwnedCategory($user, $categoryId);
         $title = $this->validateTitle($title);
+        $description = $this->validateDescription($description);
+        $responsible = $this->validateResponsible($responsible);
+        $link = $this->validateLink($link);
 
-        if (!$allowDuplicate) {
-            $duplicate = $this->findTaskByTitle((int) $category['id'], $title);
-            if ($duplicate !== null) {
-                throw new TaskDuplicateTitleException($duplicate);
+        // Duplikatsprüfung und Anlage laufen unter demselben BEGIN IMMEDIATE, damit
+        // zwei nahezu gleichzeitige Requests (z. B. Owner + Write-Share-Nutzer)
+        // nicht beide an derselben veralteten Lesung vorbei denselben Titel anlegen
+        // (FR-TASK-20).
+        $transactionStarted = false;
+        try {
+            $this->beginImmediateTransaction();
+            $transactionStarted = true;
+
+            if (!$allowDuplicate) {
+                $duplicate = $this->findTaskByTitle((int) $category['id'], $title);
+                if ($duplicate !== null) {
+                    throw new TaskDuplicateTitleException($duplicate);
+                }
             }
+
+            $task = $this->tasks->create(
+                (int) $category['id'],
+                $title,
+                $description,
+                $responsible,
+                $link,
+                $isDone,
+            );
+
+            $this->commitTransaction();
+            $transactionStarted = false;
+        } catch (\Throwable $e) {
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
+            }
+            if ($e instanceof PDOException && $this->isSqliteBusy($e)) {
+                throw new TaskWriteUnavailableException($e);
+            }
+            throw $e;
         }
 
-        $task = $this->tasks->create(
-            (int) $category['id'],
-            $title,
-            $this->validateDescription($description),
-            $this->validateResponsible($responsible),
-            $this->validateLink($link),
-            $isDone,
-        );
         $this->touchPage((int) $category['page_id']);
 
         return $task;
@@ -223,8 +263,11 @@ final class TaskBoardService
             throw new ValidationException('Bitte mindestens eine Aufgabe eingeben.');
         }
 
-        $this->pdo->beginTransaction();
+        $transactionStarted = false;
         try {
+            $this->beginImmediateTransaction();
+            $transactionStarted = true;
+
             $tasks = [];
             foreach ($titles as $title) {
                 $tasks[] = $this->tasks->create(
@@ -235,9 +278,16 @@ final class TaskBoardService
                     null,
                 );
             }
-            $this->pdo->commit();
+
+            $this->commitTransaction();
+            $transactionStarted = false;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
+            }
+            if ($e instanceof PDOException && $this->isSqliteBusy($e)) {
+                throw new TaskWriteUnavailableException($e);
+            }
             throw $e;
         }
 
@@ -330,8 +380,16 @@ final class TaskBoardService
         $targetCategoryId = (int) $targetCategory['id'];
         $targetPosition = max(0, $targetPosition);
 
-        $this->pdo->beginTransaction();
+        // BEGIN IMMEDIATE reserviert den Schreibzugriff, bevor die aktuelle
+        // Reihenfolge gelesen wird - sonst kann eine zweite, fast gleichzeitige
+        // Verschiebung im selben Kapitel auf Basis eines veralteten Snapshots
+        // renummerieren und die erste Änderung stillschweigend überschreiben
+        // (FR-TASK-09: Reihenfolge muss nach Neuladen identisch bleiben).
+        $transactionStarted = false;
         try {
+            $this->beginImmediateTransaction();
+            $transactionStarted = true;
+
             if ($sourceCategoryId === $targetCategoryId) {
                 $ids = array_column($this->tasks->listForCategory($sourceCategoryId), 'id');
                 $ids = array_values(array_filter($ids, static fn ($id): bool => (int) $id !== $taskId));
@@ -349,9 +407,15 @@ final class TaskBoardService
                 $this->tasks->renumberCategory($targetCategoryId, array_map('intval', $targetIds));
             }
 
-            $this->pdo->commit();
+            $this->commitTransaction();
+            $transactionStarted = false;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($transactionStarted) {
+                $this->rollBackTransaction();
+            }
+            if ($e instanceof PDOException && $this->isSqliteBusy($e)) {
+                throw new TaskWriteUnavailableException($e);
+            }
             throw $e;
         }
 
@@ -361,6 +425,35 @@ final class TaskBoardService
         assert($updated !== null);
 
         return $updated;
+    }
+
+    private function beginImmediateTransaction(): void
+    {
+        // Reserviert den SQLite-Schreibzugriff vor dem Read-Modify-Write-Ablauf.
+        $this->pdo->exec('BEGIN IMMEDIATE');
+    }
+
+    private function commitTransaction(): void
+    {
+        $this->pdo->exec('COMMIT');
+    }
+
+    private function rollBackTransaction(): void
+    {
+        try {
+            $this->pdo->exec('ROLLBACK');
+        } catch (PDOException) {
+            // Ein fehlgeschlagener Commit kann die Transaktion bereits beendet haben.
+        }
+    }
+
+    private function isSqliteBusy(PDOException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'database is locked')
+            || str_contains($message, 'database is busy')
+            || str_contains($message, 'database table is locked');
     }
 
     /** @param array<string, mixed> $page */

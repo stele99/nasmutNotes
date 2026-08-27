@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Domain\TaskBoardService;
 use App\Domain\TaskDuplicateTitleException;
 use App\Domain\TaskVersionConflictException;
+use App\Domain\TaskWriteUnavailableException;
 use App\Domain\Voice\VoiceNoteService;
 use App\Domain\Voice\VoiceServiceException;
 use App\Support\CurrentUser;
@@ -54,6 +55,13 @@ final class TaskController
                 ],
                 'existing' => self::serialize($e->existingTask),
             ], 409);
+        } catch (TaskWriteUnavailableException $e) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '1'),
+                'TASK_BUSY',
+                $e->getMessage(),
+                503,
+            );
         }
 
         return JsonResponse::json($response, self::serialize($task), 201);
@@ -63,11 +71,21 @@ final class TaskController
     public function import(Request $request, Response $response, array $args): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $tasks = $this->board->importTasks(
-            CurrentUser::require($request),
-            (int) $args['id'],
-            (string) ($body['text'] ?? ''),
-        );
+
+        try {
+            $tasks = $this->board->importTasks(
+                CurrentUser::require($request),
+                (int) $args['id'],
+                (string) ($body['text'] ?? ''),
+            );
+        } catch (TaskWriteUnavailableException $e) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '1'),
+                'TASK_BUSY',
+                $e->getMessage(),
+                503,
+            );
+        }
 
         return JsonResponse::json($response, [
             'created' => count($tasks),
@@ -110,11 +128,20 @@ final class TaskController
             return JsonResponse::error($response, 'VOICE_SERVICE_FAILED', $e->getMessage(), 502);
         }
 
-        $tasks = $this->board->importTasks(
-            $user,
-            (int) $args['id'],
-            implode("\n", $result['titles']),
-        );
+        try {
+            $tasks = $this->board->importTasks(
+                $user,
+                (int) $args['id'],
+                implode("\n", $result['titles']),
+            );
+        } catch (TaskWriteUnavailableException $e) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '1'),
+                'TASK_BUSY',
+                $e->getMessage(),
+                503,
+            );
+        }
 
         return JsonResponse::json($response, [
             'created' => count($tasks),
@@ -174,12 +201,22 @@ final class TaskController
     public function move(Request $request, Response $response, array $args): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $task = $this->board->moveTask(
-            CurrentUser::require($request),
-            (int) $args['id'],
-            (int) ($body['category_id'] ?? 0),
-            (int) ($body['position'] ?? 0),
-        );
+
+        try {
+            $task = $this->board->moveTask(
+                CurrentUser::require($request),
+                (int) $args['id'],
+                (int) ($body['category_id'] ?? 0),
+                (int) ($body['position'] ?? 0),
+            );
+        } catch (TaskWriteUnavailableException $e) {
+            return JsonResponse::error(
+                $response->withHeader('Retry-After', '1'),
+                'TASK_BUSY',
+                $e->getMessage(),
+                503,
+            );
+        }
 
         return JsonResponse::json($response, self::serialize($task));
     }

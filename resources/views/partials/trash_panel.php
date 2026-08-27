@@ -8,6 +8,9 @@
     <div
         x-show="open"
         x-cloak
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trash-dialog-title"
         class="fixed inset-0 z-50 flex items-center justify-center p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeDialog"
@@ -16,7 +19,7 @@
         <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4 border-b px-5 py-4" style="border-color: var(--color-border);">
                 <div>
-                    <h2 class="text-xl font-semibold" style="color: var(--color-text);">Papierkorb</h2>
+                    <h2 id="trash-dialog-title" class="text-xl font-semibold" style="color: var(--color-text);">Papierkorb</h2>
                     <p class="mt-1 text-sm" style="color: var(--color-text-muted);">
                         Gelöschte Seiten bleiben <span x-text="retentionDays"></span> Tage erhalten und lassen sich bis dahin wiederherstellen.
                     </p>

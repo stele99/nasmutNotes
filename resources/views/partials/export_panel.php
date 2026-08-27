@@ -17,6 +17,9 @@
         <div
             x-show="open"
             x-cloak
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-dialog-title"
             class="fixed inset-0 z-[100] flex items-center justify-center p-5"
             style="background-color: rgb(0 0 0 / 0.4);"
             @click.self="closeDialog"
@@ -25,7 +28,7 @@
             <div class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h2 class="text-xl font-semibold">Notizbücher exportieren</h2>
+                        <h2 id="export-dialog-title" class="text-xl font-semibold">Notizbücher exportieren</h2>
                         <p class="mt-1 text-sm" style="color: var(--color-text-muted);">
                             Jede Seite wird zu einer Markdown-Datei mit Frontmatter; Bilder und
                             Anhänge landen je Notizbuch im Unterordner <span class="font-medium" style="color: var(--color-text);">files/</span>.

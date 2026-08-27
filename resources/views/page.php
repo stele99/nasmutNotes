@@ -1,5 +1,6 @@
 <script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_IS_ENCRYPTED__ = <?= !empty($page['is_encrypted']) ? 'true' : 'false' ?>;</script>
 <div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
+    <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
     <?php /* Mobil decken beide Leisten den Bildschirm vollständig ab; eine
              Überlagerung braucht nur die schmale Notizbuch-Schublade, die
              zwischen `md` und `xl` über der Seitenliste liegt. */ ?>
@@ -22,7 +23,11 @@
     </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
     <?php include __DIR__ . '/partials/notebook_dialog.php'; ?>
+    <?php include __DIR__ . '/partials/shortcuts_dialog.php'; ?>
+    <?php include __DIR__ . '/partials/toast_host.php'; ?>
     <main
+        id="main-content"
+        tabindex="-1"
         class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto"
         x-data="pageShare"
         data-page-id="<?= (int) $page['id'] ?>"
@@ -46,6 +51,9 @@
         <div
             x-show="shareDialogOpen"
             x-cloak
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-dialog-title"
             class="fixed inset-0 z-50 flex items-center justify-center p-5"
             style="background-color: rgb(0 0 0 / 0.4);"
             @click.self="closeShareDialog"
@@ -54,7 +62,7 @@
             <form @submit.prevent="generateShareLink" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h2 class="text-xl font-semibold">Seite teilen</h2>
+                        <h2 id="share-dialog-title" class="text-xl font-semibold">Seite teilen</h2>
                         <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Erstelle einen Link für diese Seite. Bei verschlüsselten Notizen muss das Kennwort separat und sicher übermittelt werden.</p>
                     </div>
                     <button type="button" @click="closeShareDialog" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
@@ -82,6 +90,24 @@
                             <span class="block font-medium">Lesen und schreiben</span>
                             <span class="block text-sm" style="color: var(--color-text-muted);">Anmeldung erforderlich. Die Seite wird gemeinsam im Workspace bearbeitet.</span>
                         </span>
+                    </label>
+                </fieldset>
+
+                <?php /* Optionale Einschränkungen (FR-SHR-05): Ablaufdatum, Passwortschutz,
+                         nur angemeldete Nutzer. Gelten für den als Nächstes erzeugten Link. */ ?>
+                <fieldset class="mt-5 space-y-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                    <legend class="px-1 text-sm font-medium">Einschränkungen (optional)</legend>
+                    <div>
+                        <label for="share-expires-at" class="block text-sm font-medium">Ablaufdatum</label>
+                        <input id="share-expires-at" x-model="shareExpiresAt" type="date" class="mt-1.5 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                    </div>
+                    <div>
+                        <label for="share-password" class="block text-sm font-medium">Kennwort</label>
+                        <input id="share-password" x-model="sharePassword" type="password" autocomplete="new-password" placeholder="Ohne Eingabe: kein Kennwortschutz" class="mt-1.5 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                    </div>
+                    <label x-show="permission !== 'write'" class="flex cursor-pointer items-center gap-2 text-sm">
+                        <input x-model="shareRequiresLogin" type="checkbox">
+                        Nur für angemeldete Nutzer
                     </label>
                 </fieldset>
 
