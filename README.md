@@ -262,7 +262,9 @@ Modell Kosten (€/1M Tokens, Input und Output getrennt) - auch rückwirkend, di
 Verrechnung geschieht zur Anzeigezeit.
 
 Die vollständige Schnittstellen-Dokumentation für den Client liegt in
-[`docs/API-DESKTOP-ASSISTANT.md`](docs/API-DESKTOP-ASSISTANT.md).
+[`docs/API-DESKTOP-ASSISTANT.md`](docs/API-DESKTOP-ASSISTANT.md), die
+Begründung der Architekturentscheidungen in
+[`docs/KONZEPT-DESKTOP-API.md`](docs/KONZEPT-DESKTOP-API.md).
 
 ## Sicherung und Wiederherstellung
 
