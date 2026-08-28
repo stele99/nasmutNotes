@@ -22,6 +22,7 @@
     </aside>
     <?php include __DIR__ . '/partials/sidebar.php'; ?>
     <?php include __DIR__ . '/partials/notebook_dialog.php'; ?>
+    <?php include __DIR__ . '/partials/notebook_share_dialog.php'; ?>
     <?php include __DIR__ . '/partials/info_dialog.php'; ?>
     <?php include __DIR__ . '/partials/shortcuts_dialog.php'; ?>
     <?php include __DIR__ . '/partials/toast_host.php'; ?>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use App\Repositories\NotebookRepository;
+use App\Repositories\NotebookShareRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
@@ -26,6 +27,7 @@ final class NotebookService
         private readonly PDO $pdo,
         private readonly NotebookRepository $notebooks,
         private readonly WorkspaceRepository $workspaces,
+        private readonly ?NotebookShareRepository $notebookShares = null,
     ) {
     }
 
@@ -33,6 +35,43 @@ final class NotebookService
     public function list(User $user): array
     {
         return $this->notebooks->listForWorkspace($this->workspaceIdFor($user));
+    }
+
+    /**
+     * Notizbücher für die Navigationsliste: die eigenen plus alle von anderen
+     * geteilten. Eigene tragen `is_shared`, sobald sie mindestens einen
+     * Teilnehmer haben; geteilte zeigen den Namen ihres Eigentümers. Für
+     * Freigabeziele (Kopieren, Import, Spracheingabe) bleibt `list()` auf die
+     * eigenen Notizbücher beschränkt.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listWithShared(User $user): array
+    {
+        if ($this->notebookShares === null) {
+            throw new \RuntimeException('Notizbuch-Freigaben sind nicht verfügbar.');
+        }
+
+        $counts = [];
+        foreach ($this->notebookShares->countForWorkspace($this->workspaceIdFor($user)) as $row) {
+            $counts[(int) $row['notebook_id']] = (int) $row['participant_count'];
+        }
+
+        $notebooks = [];
+        foreach ($this->list($user) as $notebook) {
+            $notebook['is_owner'] = true;
+            $notebook['is_shared'] = ($counts[(int) $notebook['id']] ?? 0) > 0;
+            $notebook['owner_name'] = null;
+            $notebooks[] = $notebook;
+        }
+
+        foreach ($this->notebookShares->listSharedNotebooksForUser($user->id) as $notebook) {
+            $notebook['is_owner'] = false;
+            $notebook['is_shared'] = true;
+            $notebooks[] = $notebook;
+        }
+
+        return $notebooks;
     }
 
     /** @param array<string, mixed> $input

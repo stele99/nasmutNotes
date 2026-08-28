@@ -18,7 +18,7 @@ final class NotebookController
 
     public function index(Request $request, Response $response): Response
     {
-        return JsonResponse::json($response, ['notebooks' => array_map([$this, 'serialize'], $this->notebooks->list(CurrentUser::require($request)))]);
+        return JsonResponse::json($response, ['notebooks' => array_map([$this, 'serialize'], $this->notebooks->listWithShared(CurrentUser::require($request)))]);
     }
 
     public function store(Request $request, Response $response): Response
@@ -56,6 +56,9 @@ final class NotebookController
             'sort_order' => (int) $notebook['sort_order'],
             'is_hidden' => ((int) ($notebook['is_hidden'] ?? 0)) === 1,
             'page_count' => (int) $notebook['page_count'],
+            'is_owner' => (bool) ($notebook['is_owner'] ?? true),
+            'is_shared' => (bool) ($notebook['is_shared'] ?? false),
+            'owner_name' => isset($notebook['owner_name']) ? (string) $notebook['owner_name'] : null,
             'created_at' => $notebook['created_at'],
             'updated_at' => $notebook['updated_at'],
         ];

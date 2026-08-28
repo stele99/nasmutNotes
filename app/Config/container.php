@@ -27,6 +27,7 @@ use App\Domain\Import\ZipImportService;
 use App\Domain\Log\LogExportService;
 use App\Domain\Log\LogService;
 use App\Domain\NotebookService;
+use App\Domain\NotebookShareService;
 use App\Domain\Notes\AttachmentService;
 use App\Domain\Notes\ImageCompressionService;
 use App\Domain\Notes\NoteCryptoEnvelope;
@@ -51,6 +52,7 @@ use App\Repositories\InviteRepository;
 use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
+use App\Repositories\NotebookShareRepository;
 use App\Repositories\NoteContentRepository;
 use App\Repositories\NoteVersionRepository;
 use App\Repositories\PageAttachmentRepository;
@@ -356,7 +358,8 @@ return static function (string $rootPath): DI\Container {
             ShareRepository $shares,
             NotebookService $notebooks,
             ReverseGeocoder $geocoder,
-        ): PageService => new PageService($pages, $workspaces, $shares, $notebooks, $geocoder),
+            NotebookShareRepository $notebookShares,
+        ): PageService => new PageService($pages, $workspaces, $shares, $notebooks, $geocoder, $notebookShares),
 
         PageCopyService::class => static fn (
             PDO $pdo,
@@ -391,7 +394,18 @@ return static function (string $rootPath): DI\Container {
             PDO $pdo,
             NotebookRepository $notebooks,
             WorkspaceRepository $workspaces,
-        ): NotebookService => new NotebookService($pdo, $notebooks, $workspaces),
+            NotebookShareRepository $notebookShares,
+        ): NotebookService => new NotebookService($pdo, $notebooks, $workspaces, $notebookShares),
+
+        NotebookShareRepository::class => static fn (PDO $pdo): NotebookShareRepository
+            => new NotebookShareRepository($pdo),
+
+        NotebookShareService::class => static fn (
+            NotebookRepository $notebooks,
+            NotebookShareRepository $notebookShares,
+            UserRepository $users,
+            WorkspaceRepository $workspaces,
+        ): NotebookShareService => new NotebookShareService($notebooks, $notebookShares, $users, $workspaces),
 
         InviteRepository::class => static fn (PDO $pdo): InviteRepository => new InviteRepository($pdo),
 

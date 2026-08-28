@@ -22,6 +22,7 @@ use App\Controllers\LogController;
 use App\Controllers\MapTileController;
 use App\Controllers\NoteAiController;
 use App\Controllers\NotebookController;
+use App\Controllers\NotebookShareController;
 use App\Controllers\NoteController;
 use App\Controllers\PageAttachmentController;
 use App\Controllers\PageController;
@@ -143,6 +144,10 @@ return static function (App $app, ContainerInterface $container): void {
         $group->post('', [NotebookController::class, 'store']);
         $group->patch('/{id}', [NotebookController::class, 'update']);
         $group->delete('/{id}', [NotebookController::class, 'destroy']);
+        $group->get('/{id}/shares', [NotebookShareController::class, 'index']);
+        $group->post('/{id}/shares', [NotebookShareController::class, 'store']);
+        $group->delete('/{id}/shares/{userId}', [NotebookShareController::class, 'destroy']);
+        $group->delete('/{id}/share-access', [NotebookShareController::class, 'leave']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->group('/api/pages', function ($group): void {

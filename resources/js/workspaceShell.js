@@ -4,6 +4,7 @@ import {
   clearOfflineData,
   getCachedNotebooks,
 } from './offline/runtime.js';
+import { showToast } from './toast.js';
 
 const NOTEBOOK_RAIL_WIDTH_KEY = 'nasmut-notes-notebook-rail-width';
 const NOTEBOOK_RAIL_MIN_WIDTH = 220;
@@ -138,6 +139,14 @@ export function workspaceShell() {
     ],
     notebookError: '',
     notebookSaving: false,
+    notebookShareDialogOpen: false,
+    notebookShareNotebook: null,
+    notebookShareParticipants: [],
+    notebookShareParticipantsLoading: false,
+    notebookShareEmail: '',
+    notebookShareError: '',
+    notebookShareSaving: false,
+    notebookShareRemovingId: null,
 
     async init() {
       // Für den popstate-Listener auf Modulebene - der steht bereits vor
@@ -760,6 +769,135 @@ export function workspaceShell() {
       }
       await this.refreshNotebooks();
       window.dispatchEvent(new Event('pages-changed'));
+    },
+
+    // --------------------------------------------------- Notizbuch teilen
+
+    openNotebookShareDialog(notebook) {
+      if (!navigator.onLine) {
+        window.alert('Notizbuecher koennen nur online geteilt werden.');
+        return;
+      }
+      this.closeNotebookMenu();
+      this.notebookShareNotebook = notebook;
+      this.notebookShareEmail = '';
+      this.notebookShareError = '';
+      this.notebookShareDialogOpen = true;
+      this.loadNotebookParticipants();
+      this.$nextTick(() => this.$refs.notebookShareEmail?.focus());
+    },
+
+    closeNotebookShareDialog() {
+      if (!this.notebookShareSaving && this.notebookShareRemovingId === null) {
+        this.notebookShareDialogOpen = false;
+      }
+    },
+
+    notebookShareTitle() {
+      return `„${this.notebookShareNotebook?.name || 'Notizbuch'}" teilen`;
+    },
+
+    notebookShareSubtitle() {
+      const owner = this.notebookShareNotebook?.owner_name;
+      const source = owner ? `von ${owner} geteilt. ` : '';
+
+      return `${source}Alle Beteiligten dürfen sämtliche Seiten dieses Notizbuchs bearbeiten.`;
+    },
+
+    participantInitials(participant) {
+      const name = String(participant?.name || participant?.email || '').trim();
+      if (!name) {
+        return '?';
+      }
+      const parts = name.split(/\s+/).filter(Boolean);
+      if (parts.length > 1) {
+        return `${Array.from(parts[0])[0] || ''}${Array.from(parts[parts.length - 1])[0] || ''}`.toUpperCase();
+      }
+      return Array.from(parts[0]).slice(0, 2).join('').toUpperCase();
+    },
+
+    async loadNotebookParticipants() {
+      if (!this.notebookShareNotebook) {
+        return;
+      }
+      this.notebookShareParticipantsLoading = true;
+      try {
+        const data = await apiFetch(`/api/notebooks/${this.notebookShareNotebook.id}/shares`);
+        this.notebookShareParticipants = data.participants || [];
+      } catch (error) {
+        this.notebookShareError = error.message || 'Teilnehmer konnten nicht geladen werden.';
+      } finally {
+        this.notebookShareParticipantsLoading = false;
+      }
+    },
+
+    async addNotebookParticipant() {
+      const email = this.notebookShareEmail.trim();
+      if (!email) {
+        this.notebookShareError = 'Bitte gib eine E-Mail-Adresse ein.';
+        return;
+      }
+
+      this.notebookShareSaving = true;
+      this.notebookShareError = '';
+      try {
+        await apiFetch(`/api/notebooks/${this.notebookShareNotebook.id}/shares`, {
+          method: 'POST',
+          body: JSON.stringify({ email }),
+        });
+        this.notebookShareEmail = '';
+        await this.loadNotebookParticipants();
+        await this.refreshNotebooks();
+      } catch (error) {
+        this.notebookShareError = error.message || 'Der Nutzer konnte nicht hinzugefügt werden.';
+      } finally {
+        this.notebookShareSaving = false;
+      }
+    },
+
+    async removeNotebookParticipant(participant) {
+      if (this.notebookShareRemovingId !== null) {
+        return;
+      }
+      if (!window.confirm(`"${participant.name}" aus dem Notizbuch entfernen? Der Nutzer verliert den Zugriff.`)) {
+        return;
+      }
+
+      this.notebookShareRemovingId = Number(participant.id);
+      this.notebookShareError = '';
+      try {
+        await apiFetch(`/api/notebooks/${this.notebookShareNotebook.id}/shares/${participant.id}`, {
+          method: 'DELETE',
+        });
+        await this.loadNotebookParticipants();
+        await this.refreshNotebooks();
+      } catch (error) {
+        this.notebookShareError = error.message || 'Der Teilnehmer konnte nicht entfernt werden.';
+      } finally {
+        this.notebookShareRemovingId = null;
+      }
+    },
+
+    async leaveSharedNotebook(notebook) {
+      if (!navigator.onLine) {
+        window.alert('Freigaben koennen offline nicht verlassen werden.');
+        return;
+      }
+      if (!window.confirm(`„${notebook.name}" verlassen? Du verlierst den Zugriff; die Seiten bleiben beim Eigentümer.`)) {
+        return;
+      }
+      this.closeNotebookMenu();
+      try {
+        await apiFetch(`/api/notebooks/${notebook.id}/share-access`, { method: 'DELETE' });
+        if (this.isActiveNotebook(notebook.id)) {
+          this.selectCollection('unassigned');
+        }
+        await this.refreshNotebooks();
+        window.dispatchEvent(new Event('pages-changed'));
+        showToast(`Notizbuch „${notebook.name}" verlassen.`);
+      } catch (error) {
+        showToast(error.message || 'Das Notizbuch konnte nicht verlassen werden.', 'error');
+      }
     },
 
     async logout() {

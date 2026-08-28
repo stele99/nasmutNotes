@@ -6,6 +6,7 @@ namespace App\Domain;
 
 use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\Notes\NoteEncryptionException;
+use App\Repositories\NotebookShareRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\WorkspaceRepository;
@@ -24,6 +25,7 @@ final class PageService
         private readonly ?ShareRepository $shares = null,
         private readonly ?NotebookService $notebooks = null,
         private readonly ?ReverseGeocoder $geocoder = null,
+        private readonly ?NotebookShareRepository $notebookShares = null,
     ) {
     }
 
@@ -72,7 +74,14 @@ final class PageService
         $icon = $this->validateIcon($icon);
 
         $workspaceId = $this->workspaceIdFor($user);
-        $this->validateNotebookId($notebookId, $workspaceId);
+        $sharedNotebook = $notebookId !== null ? $this->sharedNotebookFor($user, $notebookId) : null;
+        if ($sharedNotebook !== null) {
+            // Die Seite entsteht im Workspace des Eigentümers und gehört
+            // damit dem Eigentümer des geteilten Notizbuchs.
+            $workspaceId = (int) $sharedNotebook['workspace_id'];
+        } else {
+            $this->validateNotebookId($notebookId, $workspaceId);
+        }
 
         return $this->pages->create(
             $workspaceId,
@@ -136,8 +145,21 @@ final class PageService
         if ($collection !== null && !$unassigned && !$shared) {
             throw new ValidationException('Ungültige Seitensammlung.');
         }
+
+        // Geteilte Notizbücher: Der Filter listet dann die Seiten aus dem
+        // Workspace des Eigentümers; der Papierkorb bleibt Eigentümern
+        // vorbehalten, deshalb nur aktive Seiten.
+        $notebookWorkspaceId = null;
+        $isNotebookShared = false;
         if ($notebookId !== null) {
-            $this->validateNotebookId($notebookId, $this->workspaceIdFor($user));
+            $sharedNotebook = $this->sharedNotebookFor($user, $notebookId);
+            if ($sharedNotebook !== null) {
+                $notebookWorkspaceId = (int) $sharedNotebook['workspace_id'];
+                $isNotebookShared = true;
+                $trashed = false;
+            } else {
+                $this->validateNotebookId($notebookId, $this->workspaceIdFor($user));
+            }
         }
         $pages = [];
 
@@ -147,7 +169,7 @@ final class PageService
             }
         } elseif (!$shared) {
             $owned = $this->pages->listForWorkspace(
-                $this->workspaceIdFor($user),
+                $notebookWorkspaceId ?? $this->workspaceIdFor($user),
                 $sort,
                 $typeFilter,
                 $trashed,
@@ -155,7 +177,11 @@ final class PageService
                 $unassigned,
             );
             foreach ($owned as $page) {
-                $pages[(int) $page['id']] = $this->withAccess($page, false, null);
+                $pages[(int) $page['id']] = $this->withAccess(
+                    $page,
+                    $isNotebookShared,
+                    $isNotebookShared ? 'write' : null,
+                );
             }
         }
 
@@ -241,6 +267,13 @@ final class PageService
                     (string) $sharedPage['share_permission'],
                 );
             }
+        }
+
+        // Dritter Zugriffspfad: Seite in einem Notizbuch, das der Nutzer
+        // geteilt bekommen hat - alle Beteiligten dürfen sie bearbeiten.
+        $sharedNotebookPage = $this->notebookShares?->findPageInSharedNotebook($user->id, $pageId);
+        if ($sharedNotebookPage !== null) {
+            return $this->withAccess($sharedNotebookPage, true, 'write');
         }
 
         throw new NotFoundException("Seite #{$pageId} nicht gefunden.");
@@ -464,5 +497,16 @@ final class PageService
             }
             $this->notebooks->assertExistsForWorkspace($notebookId, $workspaceId);
         }
+    }
+
+    /**
+     * Ein Notizbuch, das der Nutzer von jemand anderem geteilt bekommen hat -
+     * andernfalls `null` (eigenes oder fremdes, nicht geteiltes Notizbuch).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function sharedNotebookFor(User $user, int $notebookId): ?array
+    {
+        return $this->notebookShares?->findSharedNotebookForUser($user->id, $notebookId);
     }
 }
