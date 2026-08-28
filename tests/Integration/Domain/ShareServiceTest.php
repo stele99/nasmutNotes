@@ -48,6 +48,7 @@ final class ShareServiceTest extends TestCase
 
         self::assertSame((int) $page['id'], (int) $opened['page_id']);
         self::assertTrue($received['is_shared']);
+        self::assertSame('page', $received['share_source']);
         self::assertSame('write', $received['share_permission']);
         self::assertTrue($received['can_edit']);
         self::assertCount(1, $sharedPages);

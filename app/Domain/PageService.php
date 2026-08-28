@@ -181,6 +181,7 @@ final class PageService
                     $page,
                     $isNotebookShared,
                     $isNotebookShared ? 'write' : null,
+                    $isNotebookShared ? 'notebook' : null,
                 );
             }
         }
@@ -193,6 +194,7 @@ final class PageService
                         $page,
                         true,
                         (string) $page['share_permission'],
+                        'page',
                     );
                 }
             }
@@ -265,6 +267,7 @@ final class PageService
                     $sharedPage,
                     true,
                     (string) $sharedPage['share_permission'],
+                    'page',
                 );
             }
         }
@@ -273,7 +276,7 @@ final class PageService
         // geteilt bekommen hat - alle Beteiligten dürfen sie bearbeiten.
         $sharedNotebookPage = $this->notebookShares?->findPageInSharedNotebook($user->id, $pageId);
         if ($sharedNotebookPage !== null) {
-            return $this->withAccess($sharedNotebookPage, true, 'write');
+            return $this->withAccess($sharedNotebookPage, true, 'write', 'notebook');
         }
 
         throw new NotFoundException("Seite #{$pageId} nicht gefunden.");
@@ -397,12 +400,26 @@ final class PageService
         }
 
         $workspaceId = $this->workspaceIdFor($user);
-        $this->validateNotebookId($notebookId, $workspaceId);
+        $sharedNotebook = $notebookId !== null ? $this->sharedNotebookFor($user, $notebookId) : null;
+        if ($sharedNotebook === null) {
+            $this->validateNotebookId($notebookId, $workspaceId);
+        }
         foreach ($pageIds as $pageId) {
             $page = $this->findOwned($user, $pageId);
             if ($page['deleted_at'] !== null) {
                 throw new ValidationException('Seiten im Papierkorb können nicht verschoben werden.');
             }
+        }
+
+        if ($sharedNotebook !== null) {
+            // Ziel ist ein geteiltes Notizbuch: Die Seiten wechseln in den
+            // Workspace des Notizbuch-Eigentümers - die Eigentümerschaft geht
+            // auf ihn über, der Verschiebende bleibt Teilnehmer.
+            return $this->pages->transferToNotebook(
+                (int) $sharedNotebook['workspace_id'],
+                $pageIds,
+                (int) $notebookId,
+            );
         }
 
         return $this->pages->moveToNotebook($workspaceId, $pageIds, $notebookId);
@@ -449,11 +466,15 @@ final class PageService
      * @param array<string, mixed> $page
      * @return array<string, mixed>
      */
-    private function withAccess(array $page, bool $isShared, ?string $permission): array
+    private function withAccess(array $page, bool $isShared, ?string $permission, ?string $shareSource = null): array
     {
         $page['is_encrypted'] = (bool) ($page['is_encrypted'] ?? false);
         $page['is_shared'] = $isShared;
         $page['share_permission'] = $permission;
+        // Quelle der Freigabe: Eine Seitenfreigabe kann der Empfänger einzeln
+        // verlassen, eine Teilnahme über ein geteiltes Notizbuch nicht - sie
+        // endet nur am Notizbuch.
+        $page['share_source'] = $isShared ? ($shareSource ?? 'page') : null;
         $page['can_edit'] = $page['deleted_at'] === null
             && (!$isShared || $permission === 'write');
         if ($isShared) {

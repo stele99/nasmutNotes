@@ -362,6 +362,29 @@ final class PageRepository
     }
 
     /** @param list<int> $pageIds */
+    public function transferToNotebook(int $workspaceId, array $pageIds, int $notebookId): int
+    {
+        if ($pageIds === []) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($pageIds), '?'));
+        $stmt = $this->pdo->prepare(
+            "UPDATE pages
+                SET workspace_id = ?, notebook_id = ?, updated_at = ?
+              WHERE deleted_at IS NULL AND id IN ({$placeholders})"
+        );
+        $stmt->execute([
+            $workspaceId,
+            $notebookId,
+            gmdate('Y-m-d\TH:i:s.v\Z'),
+            ...$pageIds,
+        ]);
+
+        return $stmt->rowCount();
+    }
+
+    /** @param list<int> $pageIds */
     public function softDeleteMany(int $workspaceId, array $pageIds): int
     {
         if ($pageIds === []) {

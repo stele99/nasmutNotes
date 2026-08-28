@@ -460,6 +460,19 @@ export function workspaceShell() {
       }
 
       this.clearDropTarget();
+      // Ziel ist ein geteiltes Notizbuch, an dem der Ziehende nur Teilnehmer
+      // ist: Die Seiten wechseln in den Workspace des Eigentümers - deshalb
+      // die Eigentumsübergang vorher ausdrücklich bestätigen lassen.
+      const notebook = notebookId !== null
+        ? this.notebooks.find((item) => Number(item.id) === Number(notebookId))
+        : null;
+      if (notebook && notebook.is_shared && !notebook.is_owner) {
+        const owner = notebook.owner_name || 'den Eigentümer';
+        const subject = pageIds.length === 1 ? 'Diese Seite' : 'Diese Seiten';
+        if (!window.confirm(`${subject} nach „${notebook.name}" verschieben? Die Eigentümerschaft geht auf ${owner} über.`)) {
+          return;
+        }
+      }
       window.dispatchEvent(new CustomEvent('page-drop-move', {
         detail: { pageIds, notebookId },
       }));

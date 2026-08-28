@@ -175,12 +175,14 @@ final class NotebookShareServiceTest extends TestCase
         $received = $this->pages->find($this->userB, (int) $page['id']);
 
         self::assertTrue($received['is_shared']);
+        self::assertSame('notebook', $received['share_source']);
         self::assertSame('write', $received['share_permission']);
         self::assertTrue($received['can_edit']);
 
         $receivedList = $this->pages->list($this->userB, 'updated', null, false, (int) $notebook['id']);
         self::assertCount(1, $receivedList);
         self::assertSame((int) $page['id'], (int) $receivedList[0]['id']);
+        self::assertSame('notebook', $receivedList[0]['share_source']);
         self::assertTrue($receivedList[0]['can_edit']);
     }
 
@@ -231,6 +233,36 @@ final class NotebookShareServiceTest extends TestCase
 
         $this->expectException(NotFoundException::class);
         $this->pages->softDelete($this->userB, (int) $page['id']);
+    }
+
+    public function testParticipantMovesOwnPageIntoSharedNotebookWithOwnershipTransfer(): void
+    {
+        $notebook = $this->makeNotebook('Projekte');
+        $this->shares->share($this->userA, (int) $notebook['id'], 'b@example.com');
+        $own = $this->pages->create($this->userB, 'note', 'Meine Notiz', null);
+
+        $moved = $this->pages->moveMany($this->userB, [(int) $own['id']], (int) $notebook['id']);
+
+        self::assertSame(1, $moved);
+
+        $ownerWorkspaceId = $this->workspaces->findByUserId($this->userA->id);
+        $stmt = $this->pdo->prepare('SELECT workspace_id, notebook_id FROM pages WHERE id = :id');
+        $stmt->execute(['id' => (int) $own['id']]);
+        $row = $stmt->fetch();
+        self::assertIsArray($row);
+        self::assertSame($ownerWorkspaceId, (int) $row['workspace_id']);
+        self::assertSame((int) $notebook['id'], (int) $row['notebook_id']);
+
+        // Der frühere Eigentümer bleibt über das geteilte Notizbuch zugreifbar.
+        $received = $this->pages->find($this->userB, (int) $own['id']);
+        self::assertTrue($received['is_shared']);
+        self::assertSame('notebook', $received['share_source']);
+        self::assertTrue($received['can_edit']);
+
+        // Der Notizbuch-Eigentümer sieht die Seite regulär in seinem Notizbuch.
+        $ownerList = $this->pages->list($this->userA, 'updated', null, false, (int) $notebook['id']);
+        self::assertCount(1, $ownerList);
+        self::assertFalse($ownerList[0]['is_shared']);
     }
 
     public function testUnsharedForeignNotebookStaysInaccessible(): void

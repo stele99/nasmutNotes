@@ -69,7 +69,7 @@
                     <div x-show="activeCollection !== 'trash'" class="ml-6 mt-2 flex items-center gap-2">
                         <span class="min-w-0 flex-1 truncate text-[11px] font-normal" style="color: var(--color-text-muted);" x-text="pageMeta(page)"></span>
                         <button x-show="!page.is_shared" @click.stop="remove(page)" class="icon-action icon-action-danger shrink-0 p-1" aria-label="Seite löschen" x-icon="trash"></button>
-                        <button x-show="page.is_shared" @click.stop="leave(page)" class="icon-action icon-action-danger shrink-0 p-1" aria-label="Freigabe verlassen" x-icon="log-out"></button>
+                        <button x-show="page.is_shared && page.share_source === 'page'" @click.stop="leave(page)" class="icon-action icon-action-danger shrink-0 p-1" aria-label="Freigabe verlassen" x-icon="log-out"></button>
                     </div>
                     <div x-show="activeCollection === 'trash'" x-cloak class="ml-6 mt-2 flex items-center gap-2">
                         <span class="min-w-0 flex-1 truncate text-[11px]" style="color: var(--color-text-muted);" x-text="trashRemainingLabel(page)"></span>

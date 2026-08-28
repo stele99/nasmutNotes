@@ -228,6 +228,9 @@ final class PageController
             'voice_template_id' => isset($page['voice_template_id']) ? (int) $page['voice_template_id'] : null,
             'is_shared' => ($page['is_shared'] ?? false) === true,
             'share_permission' => $page['share_permission'] ?? null,
+            // „page" = Seitenfreigabe (verlassbar), „notebook" = Teilnahme
+            // über ein geteiltes Notizbuch (nur am Notizbuch verlassbar).
+            'share_source' => isset($page['share_source']) ? (string) $page['share_source'] : null,
             'can_edit' => ($page['can_edit'] ?? true) === true,
             // Nur die Listenabfrage reichert diese Felder an; einzeln
             // ausgelieferte Seiten liefern hier null bzw. keine Zahlen.
