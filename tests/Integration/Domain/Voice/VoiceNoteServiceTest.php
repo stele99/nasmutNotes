@@ -440,6 +440,9 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertStringContainsString('Bereits vorhandene Notiz', $chatRequest);
         self::assertStringContainsString('Position 1: Rigips', $chatRequest);
         self::assertStringContainsString('ergänzt die vorhandene Notiz', $chatRequest);
+        // Der Client hängt den Text ans Ende an - die Anweisung muss dazu
+        // passen, sonst formuliert das Modell für eine andere Einfügestelle.
+        self::assertStringContainsString('an das Ende der Notiz angehängt', $chatRequest);
     }
 
     /** Das erste Diktat in eine noch vorlagenlose Notiz verlangt eine Wahl. */

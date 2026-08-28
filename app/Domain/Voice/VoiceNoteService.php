@@ -801,12 +801,15 @@ final class VoiceNoteService
         if ($existingMarkdown !== null) {
             $userPrompt .= "Bereits vorhandene Notiz:\n" . $existingMarkdown . "\n\n"
                 . "Roh-Transkript der neuen Aufnahme:\n" . $transcript . "\n\n"
-                . "Diese Aufnahme ergänzt die vorhandene Notiz. Führe sie in genau der Form fort,"
-                . " die die Vorlage vorgibt und die die vorhandene Notiz bereits zeigt:"
-                . " gleiche Gliederung, gleiche Spalten, gleiche Schreibweise."
-                . " Gib in \"text\" ausschließlich den neuen Teil zurück, der unten angefügt wird -"
-                . " wiederhole nichts, was schon dasteht, und gib die vorhandene Notiz nicht erneut aus."
-                . " Zähler, Positionsnummern und Summen führst du an der vorhandenen Notiz weiter.";
+                . "Diese Aufnahme ergänzt die vorhandene Notiz. Dein Text wird unverändert an das"
+                . " Ende der Notiz angehängt; vorhandene Zeilen kannst du nicht mehr ändern."
+                . " Führe die Notiz deshalb in genau der Form fort, die die Vorlage vorgibt und die"
+                . " die vorhandene Notiz bereits zeigt: gleiche Gliederung, gleiche Spalten,"
+                . " gleiche Schreibweise, fortlaufende Positionsnummern."
+                . " Gib in \"text\" ausschließlich den neuen Teil zurück - wiederhole nichts, was"
+                . " schon dasteht, und gib die vorhandene Notiz nicht erneut aus."
+                . " Endet die Notiz mit einer Summe oder einem Abschluss, nenne die aktualisierte"
+                . " Summe am Ende deines Teils, damit sie zum vollständigen Inhalt passt.";
         } else {
             $userPrompt .= "Roh-Transkript:\n" . $transcript;
         }

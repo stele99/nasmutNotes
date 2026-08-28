@@ -1597,7 +1597,13 @@ export function noteEditorPage() {
         this.voiceTemplateId = data.template_id;
       }
 
-      editor.chain().focus().insertContent(nodes).run();
+      // Ohne Einfügemarke ans Ende, nicht an den Anfang: `focus()` ohne
+      // Position fällt auf die Auswahl im Editorzustand zurück, und die steht
+      // bei einer nie angeklickten Notiz noch am Dokumentanfang. Das Diktat
+      // landete so über allem Vorhandenen - während der Server das Modell
+      // gerade anweist, den Text unten anzufügen.
+      editor.chain().focus(this.editorHadFocus ? null : 'end').insertContent(nodes).run();
+      this.editorHadFocus = true;
       this.applyVoiceTitle(data.title);
     },
 
