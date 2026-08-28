@@ -4,6 +4,32 @@ import test from 'node:test';
 const { normalizeAnnotations, serializeAnnotations, annotationTexts, simplifyPath, MAX_ITEMS }
   = await import('../../resources/js/editor/annotations/schema.js');
 const { buildOverlayMarkup } = await import('../../resources/js/editor/annotations/render.js');
+const { imageAnnotatorMixin, readStoredWidths, storedToolWidth, storeToolWidth }
+  = await import('../../resources/js/editor/annotations/annotator.js');
+
+/**
+ * Setzt einen minimalen Browser-Speicher ein und stellt den Zustand danach
+ * wieder her - der Mixin-Code selbst bleibt DOM-frei testbar.
+ */
+function withFakeStorage(run) {
+  const store = new Map();
+  const previous = globalThis.window;
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => store.set(key, String(value)),
+    },
+  };
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = previous;
+    }
+  }
+}
 
 function annotations(items) {
   return { v: 1, space: { w: 1000, h: 800 }, items };
@@ -85,4 +111,140 @@ test('trimmt bei Budgetüberschreitung von hinten statt alles zu verwerfen', () 
   const value = serializeAnnotations(annotations(long));
   assert.ok(value.items.length > 0);
   assert.ok(value.items.length < 150);
+});
+
+test('merkt sich die Strichstärke je Werkzeug im Browser-Speicher', () => {
+  withFakeStorage(() => {
+    storeToolWidth('pen', 12);
+    storeToolWidth('highlighter', 40);
+
+    const mixin = imageAnnotatorMixin();
+    assert.equal(mixin.annoWidth, 12);
+
+    mixin.$refs = {};
+    mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'highlighter' } } });
+    assert.equal(mixin.annoWidth, 40);
+    assert.equal(mixin.annoOpacity, 0.4);
+
+    mixin.annoWidthInput.call(mixin, { target: { value: '20' } });
+    assert.equal(readStoredWidths().highlighter, 20);
+
+    const fresh = imageAnnotatorMixin();
+    fresh.$refs = {};
+    fresh.annoSelectTool.call(fresh, { currentTarget: { dataset: { tool: 'highlighter' } } });
+    assert.equal(fresh.annoWidth, 20);
+  });
+});
+
+test('fällt bei kaputtem oder ungültigem Speicherstand auf die Voreinstellung zurück', () => {
+  withFakeStorage(() => {
+    globalThis.window.localStorage.setItem('notes-anno-widths', '{kaputt');
+    assert.deepEqual(readStoredWidths(), {});
+    assert.equal(storedToolWidth('pen', 6), 6);
+
+    globalThis.window.localStorage.setItem(
+      'notes-anno-widths',
+      JSON.stringify({ pen: 500, select: 9, line: 'dick' }),
+    );
+    assert.deepEqual(readStoredWidths(), {});
+    assert.equal(storedToolWidth('pen', 6), 6);
+
+    storeToolWidth('pen', 500);
+    assert.equal(readStoredWidths().pen, 80);
+    storeToolWidth('pen', 0.4);
+    assert.equal(readStoredWidths().pen, 1);
+  });
+});
+
+test('ohne Browser-Speicher wird der Vorgabewert benutzt', () => {
+  assert.deepEqual(readStoredWidths(), {});
+  assert.equal(storedToolWidth('pen', 6), 6);
+  storeToolWidth('pen', 12);
+});
+
+/**
+ * Ersetzt DOMParser und document durch Stümpfe, damit der Textpfad des
+ * Mixins (Messen im Ziel-SVG, Rendern des Overlays) ohne Browser läuft.
+ */
+function withFakeCanvas(run) {
+  const probe = {
+    setAttribute() {},
+    appendChild() {},
+    remove() {},
+    getBBox: () => ({ width: 120, height: 30 }),
+  };
+  const svg = { appendChild() {}, replaceChildren() {} };
+  const host = { querySelector: () => svg, replaceChildren() {}, appendChild() {} };
+  const previous = { document: globalThis.document, DOMParser: globalThis.DOMParser };
+  globalThis.document = {
+    createElementNS: () => probe,
+    importNode: () => ({}),
+  };
+  globalThis.DOMParser = class {
+    parseFromString() {
+      return { querySelector: () => null, documentElement: {} };
+    }
+  };
+  try {
+    return run({ host, svg });
+  } finally {
+    if (previous.document === undefined) {
+      delete globalThis.document;
+    } else {
+      globalThis.document = previous.document;
+    }
+    if (previous.DOMParser === undefined) {
+      delete globalThis.DOMParser;
+    } else {
+      globalThis.DOMParser = previous.DOMParser;
+    }
+  }
+}
+
+test('der Schieberegler legt beim Textwerkzeug die Schriftgröße fest', () => {
+  withFakeStorage(() => {
+    withFakeCanvas(({ host }) => {
+      const mixin = imageAnnotatorMixin();
+      mixin.$refs = { annoLayer: host, annoPreview: host };
+
+      mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'text' } } });
+      assert.equal(mixin.annoWidth, 44);
+      assert.equal(mixin.annoFontSize, 44);
+      assert.equal(mixin.annoWidthLabel(), 'Schriftgröße');
+
+      mixin.annoWidthInput.call(mixin, { target: { value: '72' } });
+      assert.equal(mixin.annoFontSize, 72);
+      assert.equal(readStoredWidths().text, 72);
+
+      mixin.annoTextAnchor = { x: 10, y: 20 };
+      mixin.annoTextDraft = 'Hallo';
+      mixin.annoConfirmText();
+      assert.equal(mixin.annoItems[0].s, 72);
+
+      const fresh = imageAnnotatorMixin();
+      assert.equal(fresh.annoWidthLabel(), 'Strichstärke');
+      fresh.$refs = { annoLayer: host, annoPreview: host };
+      fresh.annoSelectTool.call(fresh, { currentTarget: { dataset: { tool: 'text' } } });
+      assert.equal(fresh.annoWidth, 72);
+      assert.equal(fresh.annoWidthLabel(), 'Schriftgröße');
+    });
+  });
+});
+
+test('Marker und Zeilenlinien bleiben unabhängig vom Textregler', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {};
+
+    mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'text' } } });
+    mixin.annoWidthInput.call(mixin, { target: { value: '72' } });
+
+    mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'marker' } } });
+    const marker = mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
+    assert.equal(marker.r, 40);
+
+    mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'rules' } } });
+    const rules = mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
+    assert.equal(rules.gap, 70);
+  });
 });

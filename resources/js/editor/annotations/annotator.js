@@ -15,7 +15,8 @@ import { measureTextBox, renderOverlay } from './render.js';
 
 const HISTORY_LIMIT = 50;
 
-/** Voreinstellungen je Werkzeug; alles Übrige kommt aus der Eigenschaftsleiste. */
+/** Voreinstellungen je Werkzeug; alles Übrige kommt aus der Eigenschaftsleiste.
+ *  Beim Textwerkzeug trägt `width` die Schriftgröße, kein Strichstärke. */
 const TOOL_DEFAULTS = {
   pen: { width: 6, opacity: 1 },
   highlighter: { width: 36, opacity: 0.4 },
@@ -23,11 +24,69 @@ const TOOL_DEFAULTS = {
   arrow: { width: 6, opacity: 1 },
   rect: { width: 6, opacity: 1 },
   ellipse: { width: 6, opacity: 1 },
-  text: { width: 6, opacity: 1 },
+  text: { width: 44, opacity: 1 },
   rules: { width: 3, opacity: 1 },
   marker: { width: 6, opacity: 1 },
   mask: { width: 6, opacity: 1 },
 };
+
+/** Feste Größen für Werkzeuge ohne Strichstärke - unabhängig vom Textregler. */
+const MARKER_RADIUS = 40;
+const RULES_LINE_GAP = 70;
+
+/**
+ * Strichstärke je Werkzeug im Browser-Speicher (localStorage) merken
+ * (FR-ANNO-09): Nutzer ziehen sie meist einmal je Werkzeug fest und
+ * erwarten sie beim nächsten Bild wieder. Grenzen und Schlüssel folgen dem
+ * Eigenschaftsregler (min 1, max 80); Unbrauchbares fällt auf die
+ * Voreinstellung zurück.
+ */
+const WIDTH_STORAGE_KEY = 'notes-anno-widths';
+
+export function readStoredWidths() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return {};
+    }
+    const parsed = JSON.parse(window.localStorage.getItem(WIDTH_STORAGE_KEY) ?? '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    const widths = {};
+    for (const [tool, value] of Object.entries(parsed)) {
+      const width = Math.round(Number(value));
+      if (TOOL_DEFAULTS[tool] && Number.isFinite(width) && width >= 1 && width <= 80) {
+        widths[tool] = width;
+      }
+    }
+
+    return widths;
+  } catch (error) {
+    return {};
+  }
+}
+
+export function storedToolWidth(tool, fallback) {
+  const width = readStoredWidths()[tool];
+
+  return typeof width === 'number' ? width : fallback;
+}
+
+export function storeToolWidth(tool, width) {
+  if (!TOOL_DEFAULTS[tool]) {
+    return;
+  }
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    const widths = readStoredWidths();
+    widths[tool] = Math.min(80, Math.max(1, Math.round(Number(width))));
+    window.localStorage.setItem(WIDTH_STORAGE_KEY, JSON.stringify(widths));
+  } catch (error) {
+    // Ohne Speicher (Privatmodus, Quote) gilt die Dicke nur für die Sitzung.
+  }
+}
 
 export function imageAnnotatorMixin() {
   // Außerhalb des Alpine-Zustands: Der laufende Zeigerzug und der Zugriff auf
@@ -44,7 +103,7 @@ export function imageAnnotatorMixin() {
     annoItems: [],
     annoTool: 'pen',
     annoColor: PALETTE[0],
-    annoWidth: 6,
+    annoWidth: storedToolWidth('pen', TOOL_DEFAULTS.pen.width),
     annoOpacity: 1,
     annoFontSize: 44,
     annoSelectedId: '',
@@ -206,8 +265,11 @@ export function imageAnnotatorMixin() {
       this.annoTool = tool;
       const defaults = TOOL_DEFAULTS[tool];
       if (defaults) {
-        this.annoWidth = defaults.width;
+        this.annoWidth = storedToolWidth(tool, defaults.width);
         this.annoOpacity = defaults.opacity;
+      }
+      if (tool === 'text') {
+        this.annoFontSize = this.annoWidth;
       }
       if (tool === 'mask' && !this.annoMaskHintShown) {
         this.annoMaskHintShown = true;
@@ -239,7 +301,19 @@ export function imageAnnotatorMixin() {
 
     annoWidthInput(event) {
       this.annoWidth = Number(event.target.value);
+      storeToolWidth(this.annoTool, this.annoWidth);
+      if (this.annoTool === 'text') {
+        this.annoFontSize = this.annoWidth;
+        this.annoApplyFontSizeToSelection();
+
+        return;
+      }
       this.annoApplyToSelection('w', this.annoWidth);
+    },
+
+    /** Der Regler bedeutet je Werkzeug etwas anderes - für die Bildschirmleser. */
+    annoWidthLabel() {
+      return this.annoTool === 'text' ? 'Schriftgröße' : 'Strichstärke';
     },
 
     annoOpacityInput(event) {
@@ -255,6 +329,25 @@ export function imageAnnotatorMixin() {
       }
       this.annoPushHistory();
       item[key] = value;
+      this.annoRenderAll();
+    },
+
+    /**
+     * Regler am Textwerkzeug: Ein ausgewählter Textkasten ändert seine
+     * Schriftgröße sofort; die gemessenen Maße bw/bh werden nachgezogen, damit
+     * der Hintergrundkasten passend bleibt.
+     */
+    annoApplyFontSizeToSelection() {
+      const item = this.annoSelectedItem();
+      if (!item || item.t !== 'text') {
+        return;
+      }
+      const svg = this.$refs.annoLayer?.querySelector('svg') ?? this.annoEnsureLayerSvg();
+      const box = measureTextBox(svg, item.text, this.annoWidth);
+      this.annoPushHistory();
+      item.s = this.annoWidth;
+      item.bw = box.bw;
+      item.bh = box.bh;
       this.annoRenderAll();
     },
 
@@ -445,7 +538,7 @@ export function imageAnnotatorMixin() {
         case 'ellipse':
           return { ...base, t: 'ellipse', w: width, x: point.x, y: point.y, rw: 1, rh: 1, f: null };
         case 'rules':
-          return { ...base, t: 'rules', w: width, x: point.x, y: point.y, rw: 1, rh: 1, gap: this.annoFontSize * 1.6 };
+          return { ...base, t: 'rules', w: width, x: point.x, y: point.y, rw: 1, rh: 1, gap: RULES_LINE_GAP };
         case 'mask':
           return { ...base, t: 'mask', o: 1, x: point.x, y: point.y, rw: 1, rh: 1 };
         case 'marker':
@@ -454,7 +547,7 @@ export function imageAnnotatorMixin() {
             t: 'marker',
             x: point.x,
             y: point.y,
-            r: this.annoFontSize * 0.9,
+            r: MARKER_RADIUS,
             n: Math.min(99, this.annoItems.filter((item) => item.t === 'marker').length + 1),
           };
         default:
@@ -627,6 +720,13 @@ export function imageAnnotatorMixin() {
         return;
       }
       this.annoTextEditId = item.id;
+      // Größe des vorhandenen Kastens übernehmen, statt sie still zu
+      // überschreiben - auch wenn der Doppelklick aus einem anderen Werkzeug
+      // heraus geschah.
+      this.annoFontSize = item.s;
+      if (this.annoTool === 'text') {
+        this.annoWidth = item.s;
+      }
       this.annoOpenTextDialog({ x: item.x, y: item.y }, item.text);
     },
 

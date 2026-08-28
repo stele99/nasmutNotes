@@ -39,7 +39,7 @@
         <?php endforeach; ?>
         <input type="color" :value="annoColor" @input="annoColorInput" class="anno-swatch anno-swatch-picker" aria-label="Eigene Farbe">
         <span class="toolbar-divider"></span>
-        <label class="sr-only" for="anno-width">Strichstärke</label>
+        <label class="sr-only" for="anno-width" x-text="annoWidthLabel()">Strichstärke</label>
         <input id="anno-width" type="range" min="1" max="80" step="1" :value="annoWidth" @input="annoWidthInput" class="w-24">
         <label class="sr-only" for="anno-opacity">Deckkraft</label>
         <input id="anno-opacity" type="range" min="0.1" max="1" step="0.05" :value="annoOpacity" @input="annoOpacityInput" class="w-20">
