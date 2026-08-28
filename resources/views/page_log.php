@@ -61,11 +61,10 @@
                         <span x-icon="plus"></span><span class="hidden sm:inline">Eintrag</span>
                     </button>
                     <?php /* Diktierter Eintrag: Der Server verteilt das Gesagte auf die
-                             Spalten des Logbuchs (FR-LOG-08). Die laufende Aufnahme
-                             zeigt ihre Zeit auch auf schmalem Schirm - sie ist die
-                             einzige Rückmeldung, dass noch aufgenommen wird. */ ?>
+                             Spalten des Logbuchs (FR-LOG-08). Der Knopf startet nur -
+                             Pause, Fortsetzen und Beenden steuert das Panel darunter. */ ?>
                     <?php if (!empty($voiceEnabled)): ?>
-                        <button x-show="canEditPage && voiceSupported" x-cloak type="button" @click="toggleVoice" :disabled="voiceStatus === 'processing'" class="btn btn-secondary" :class="voiceStatus === 'recording' ? 'is-recording' : ''" title="Eintrag diktieren" aria-label="Eintrag diktieren">
+                        <button x-show="canEditPage && voiceSupported" x-cloak type="button" @click="toggleVoice" :disabled="isVoiceBusy()" class="btn btn-secondary" :class="voiceStatus === 'recording' ? 'is-recording' : ''" title="Eintrag diktieren" aria-label="Eintrag diktieren">
                             <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
                             <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
                             <span :class="voiceStatus === 'recording' ? '' : 'hidden sm:inline'" x-text="voiceStatus === 'recording' ? voiceTimeLabel() : 'Diktieren'"></span>

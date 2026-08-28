@@ -2,7 +2,11 @@
 
 ## Status
 
-- Planungsstand: bereit zur Umsetzung
+- Planungsstand: umgesetzt (Umsetzungsschritte 5.1-5.12, automatisierte Tests
+  7.1-7.3 und 7.5; Backend `composer cs`/`stan`/`test` und Frontend
+  `npm test`/`npm audit`/`npm run build` laufen erfolgreich)
+- Offen: manuelle Pruefmatrix (Abschnitt 8) und die Browserpruefung aus
+  Abschnitt 9, insbesondere `stop()` aus einem pausierten Recorder
 - Betrifft: Browserbasierte Sprachaufnahme, Transkription und Notizspeicherung
 - Nicht betroffen: natives iOS-Aufnahme-Overlay von NotesVoice
 - Neue Abhaengigkeiten: keine

@@ -1556,11 +1556,6 @@ export function noteEditorPage() {
     },
 
     /**
-     * Diktat in die offene Notiz: Der aufbereitete Text wird an der
-     * Einfügemarke eingesetzt (FR-VOICE-02). Gespeichert wird er wie jede
-     * andere Änderung über den Autosave.
-     */
-    /**
      * Wurde in diese Notiz schon einmal diktiert, steht die Vorlage fest -
      * der Mikrofonknopf nimmt dann sofort auf, statt erneut zu fragen.
      */
@@ -1568,6 +1563,23 @@ export function noteEditorPage() {
       return this.noteVoiceTemplateId !== null;
     },
 
+    /**
+     * Wartet, bis kein Speichervorgang mehr läuft - dasselbe 50-ms-Muster wie
+     * beim Sperren verschlüsselter Notizen. saveNow() würde sonst nur die
+     * erneute Ausführung anfordern und sofort zurückkehren.
+     */
+    async waitForPendingSave() {
+      while (this.pendingSave) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    },
+
+    /**
+     * Diktat in die offene Notiz: Der aufbereitete Text wird an der
+     * Einfügemarke eingesetzt (FR-VOICE-02). Das Overlay bleibt offen, bis
+     * der Inhalt über die bestehende Speicherpipeline serverseitig
+     * angekommen ist - ein lokal gequeue-ter Eintrag zählt nicht als Erfolg.
+     */
     async handleVoiceRecording(recording) {
       if (!this.canEditPage || !editor || this.isEncrypted()) {
         throw new Error('Diese Notiz ist schreibgeschützt.');
@@ -1597,6 +1609,8 @@ export function noteEditorPage() {
         this.voiceTemplateId = data.template_id;
       }
 
+      await this.waitForPendingSave();
+
       // Ohne Einfügemarke ans Ende, nicht an den Anfang: `focus()` ohne
       // Position fällt auf die Auswahl im Editorzustand zurück, und die steht
       // bei einer nie angeklickten Notiz noch am Dokumentanfang. Das Diktat
@@ -1604,15 +1618,33 @@ export function noteEditorPage() {
       // gerade anweist, den Text unten anzufügen.
       editor.chain().focus(this.editorHadFocus ? null : 'end').insertContent(nodes).run();
       this.editorHadFocus = true;
-      this.applyVoiceTitle(data.title);
+
+      // Gespeichert wird wie bei jeder anderen Änderung über den Autosave;
+      // hier wird nur der von onChange() gesetzte Debounce sofort ausgeführt.
+      this.voiceStatus = 'saving';
+      await this.saveNow();
+
+      // saveNow() setzt interne Fehler in status und saveError um, statt sie
+      // zu werfen - deshalb hier ausdrücklich prüfen. Auch offline (lokal
+      // gequeue-ter Inhalt) und ein verbliebenes Speichern zählen nicht als
+      // Erfolg, das Overlay bliebe sonst fälschlich zu.
+      if (this.status !== 'saved' || (await hasQueuedNoteChange(this.pageId))) {
+        throw new Error(this.saveError || this.statusLabel() || 'Die Notiz konnte nicht gespeichert werden.');
+      }
+
+      // Ein Titelvorschlag ist eine eigene Speicheroperation; ihr PATCH wird
+      // abgewartet, bevor das Overlay den Erfolg meldet.
+      await this.applyVoiceTitle(data.title);
     },
 
     /**
      * Die aus der Aufnahme gebildete Überschrift überschreibt nur den
      * Vorschlagstitel einer noch unbenannten Notiz - selbst vergebene Titel
-     * bleiben unangetastet (FR-VOICE-03).
+     * bleiben unangetastet (FR-VOICE-03). Abwartbar: Ein Fehler beim
+     * Titel-PATCH verhindert den automatischen Abschluss des Overlays und
+     * erscheint über den bestehenden Voice-Fehlerpfad.
      */
-    applyVoiceTitle(title) {
+    async applyVoiceTitle(title) {
       const suggestion = String(title || '').trim();
       const current = String(this.pageTitle || '').trim();
       if (suggestion === '' || (current !== '' && current !== 'Neue Notiz')) {
@@ -1620,7 +1652,7 @@ export function noteEditorPage() {
       }
 
       this.pageTitle = suggestion;
-      void this.savePageTitle();
+      await this.savePageTitle();
     },
 
     handleImageUploadError(error) {

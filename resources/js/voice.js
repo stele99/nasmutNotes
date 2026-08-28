@@ -71,10 +71,17 @@ export function describeRecorderError(error) {
 }
 
 /**
- * Startet eine Aufnahme und liefert die Steuerung dafür zurück.
+ * Startet eine Aufnahme und liefert die Steuerung dafür zurück. Pausieren
+ * und Fortsetzen nutzen die nativen MediaRecorder-Methoden; der Stream
+ * bleibt während einer Pause geöffnet.
  *
  * @param {{ maxSeconds?: number, onTick?: (seconds: number) => void, onLimit?: () => void }} options
- * @returns {Promise<{ stop: () => Promise<{ blob: Blob, filename: string, seconds: number }>, cancel: () => void }>}
+ * @returns {Promise<{
+ *   stop: () => Promise<{ blob: Blob, filename: string, seconds: number }>,
+ *   pause: () => Promise<void>,
+ *   resume: () => Promise<void>,
+ *   cancel: () => void,
+ * }>}
  */
 export async function startVoiceRecording({ maxSeconds = 300, onTick, onLimit } = {}) {
   if (!isVoiceRecordingSupported()) {
@@ -98,12 +105,23 @@ export async function startVoiceRecording({ maxSeconds = 300, onTick, onLimit } 
     recorder.addEventListener('stop', resolve, { once: true });
   });
 
-  const startedAt = Date.now();
+  // Nur aktive Aufnahmezeit zählen: Abgeschlossene Segmente stehen in
+  // recordedMilliseconds, das laufende Segment beginnt bei segmentStartedAt.
+  // Pausen fließen so weder in die Anzeige noch in das Zeitlimit ein.
+  let recordedMilliseconds = 0;
+  let segmentStartedAt = Date.now();
   let released = false;
+
+  function currentRecordedMilliseconds() {
+    return segmentStartedAt === null
+      ? recordedMilliseconds
+      : recordedMilliseconds + Math.max(0, Date.now() - segmentStartedAt);
+  }
+
   // Der Zeitgeber bedient die Anzeige und beendet die Aufnahme selbsttätig am
   // Limit - sonst liefe sie bis zur Dateigrenze des Dienstes weiter.
   const timer = window.setInterval(() => {
-    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    const seconds = Math.floor(currentRecordedMilliseconds() / 1000);
     if (typeof onTick === 'function') {
       onTick(seconds);
     }
@@ -125,8 +143,42 @@ export async function startVoiceRecording({ maxSeconds = 300, onTick, onLimit } 
   recorder.start();
 
   return {
+    async pause() {
+      // Ein zweites Pause oder eine aus dem pausierten Zustand wäre ein
+      // native InvalidStateError - kontrolliert wirkungslos abfangen.
+      if (recorder.state !== 'recording') {
+        return;
+      }
+      try {
+        recorder.pause();
+      } catch {
+        throw new Error('Die Aufnahme konnte nicht pausiert werden.');
+      }
+      recordedMilliseconds += Math.max(0, Date.now() - segmentStartedAt);
+      segmentStartedAt = null;
+    },
+
+    async resume() {
+      if (recorder.state !== 'paused') {
+        return;
+      }
+      try {
+        recorder.resume();
+      } catch {
+        throw new Error('Die Aufnahme konnte nicht fortgesetzt werden.');
+      }
+      segmentStartedAt = Date.now();
+    },
+
     async stop() {
+      // Funktioniert aus dem laufenden wie aus dem pausierten Zustand - nur
+      // inactive ist ein Fehler. Zuvor endet ein laufendes Segment, damit
+      // keine Pausenzeit in die Dauer einfließt.
       if (recorder.state !== 'inactive') {
+        if (segmentStartedAt !== null) {
+          recordedMilliseconds += Math.max(0, Date.now() - segmentStartedAt);
+          segmentStartedAt = null;
+        }
         recorder.stop();
         await stopped;
       }
@@ -138,7 +190,7 @@ export async function startVoiceRecording({ maxSeconds = 300, onTick, onLimit } 
       return {
         blob,
         filename: filenameFor(type),
-        seconds: Math.round((Date.now() - startedAt) / 1000),
+        seconds: Math.round(recordedMilliseconds / 1000),
       };
     },
 
@@ -165,10 +217,15 @@ export function voiceRecorderMixin() {
   // Bewusst außerhalb des Alpine-Zustands: MediaRecorder und MediaStream
   // vertragen keine reaktive Hülle.
   let controller = null;
+  // Zähler der Startanfragen. Wird bei Verwerfen und Komponentenabbau
+  // erhöht, damit eine verzögerte getUserMedia-Antwort als veraltet erkannt
+  // wird und ihr Stream sofort wieder geschlossen wird.
+  let startGeneration = 0;
 
   return {
     voiceSupported: isVoiceRecordingSupported(),
-    voiceStatus: 'idle', // idle | recording | processing
+    // idle | starting | recording | paused | processing | saving
+    voiceStatus: 'idle',
     voiceSeconds: 0,
     voiceError: '',
     voiceNotice: '',
@@ -186,8 +243,12 @@ export function voiceRecorderMixin() {
       this.voiceError = '';
       this.voiceNotice = '';
       this.voiceSeconds = 0;
+      // Vor dem ersten await setzen: Ein Doppelklick startet sonst parallele
+      // Mikrofonanfragen, und das Popup würde kurz verschwinden.
+      this.voiceStatus = 'starting';
+      const generation = ++startGeneration;
       try {
-        controller = await startVoiceRecording({
+        const next = await startVoiceRecording({
           maxSeconds: this.voiceMaxSeconds,
           onTick: (seconds) => {
             this.voiceSeconds = seconds;
@@ -197,34 +258,69 @@ export function voiceRecorderMixin() {
             void this.stopVoice();
           },
         });
+        if (generation !== startGeneration) {
+          // Veraltet: Die Anfrage gehört zu keiner lebenden Aufnahme mehr.
+          next.cancel();
+          if (this.voiceStatus === 'starting') {
+            this.voiceStatus = 'idle';
+          }
+          return;
+        }
+        controller = next;
         this.voiceStatus = 'recording';
       } catch (error) {
+        if (generation !== startGeneration) {
+          return;
+        }
+        this.voiceStatus = 'idle';
         this.voiceError = describeRecorderError(error);
       }
     },
 
-    async stopVoice() {
+    async pauseVoice() {
       if (!controller || this.voiceStatus !== 'recording') {
+        return;
+      }
+      try {
+        await controller.pause();
+      } catch (error) {
+        this.voiceError = error?.message || 'Die Aufnahme konnte nicht pausiert werden.';
+        return;
+      }
+      this.voiceStatus = 'paused';
+    },
+
+    async resumeVoice() {
+      if (!controller || this.voiceStatus !== 'paused') {
+        return;
+      }
+      try {
+        await controller.resume();
+      } catch (error) {
+        this.voiceError = error?.message || 'Die Aufnahme konnte nicht fortgesetzt werden.';
+        return;
+      }
+      this.voiceStatus = 'recording';
+    },
+
+    async stopVoice() {
+      // Fertig funktioniert aus dem laufenden und dem pausierten Zustand;
+      // processing und saving dürfen nicht erneut ausgelöst werden.
+      if (!controller || (this.voiceStatus !== 'recording' && this.voiceStatus !== 'paused')) {
         return;
       }
 
       this.voiceStatus = 'processing';
-      let recording = null;
+      const active = controller;
+      controller = null;
       try {
-        recording = await controller.stop();
-      } finally {
-        controller = null;
-      }
-
-      if (isTooShort(recording)) {
-        this.voiceStatus = 'idle';
-        this.voiceError = 'Die Aufnahme war zu kurz.';
-        return;
-      }
-
-      try {
+        const recording = await active.stop();
+        if (isTooShort(recording)) {
+          throw new Error('Die Aufnahme war zu kurz.');
+        }
         await this.handleVoiceRecording(recording);
       } catch (error) {
+        // Der Fehler bleibt als Dialog sichtbar; erst der Nutzer schließt ihn.
         this.voiceError = error?.message || 'Die Aufnahme konnte nicht verarbeitet werden.';
       } finally {
         this.voiceStatus = 'idle';
@@ -233,6 +329,9 @@ export function voiceRecorderMixin() {
     },
 
     cancelVoice() {
+      // Auch ein Start, dessen Mikrofonanfrage noch läuft, wird damit
+      // abgebrochen - die verspätete Antwort erkennt die Generation.
+      startGeneration += 1;
       controller?.cancel();
       controller = null;
       this.voiceStatus = 'idle';
@@ -243,7 +342,7 @@ export function voiceRecorderMixin() {
 
     /** Ein Knopf für beides: erst aufnehmen, dann beenden und verarbeiten. */
     toggleVoice() {
-      if (this.voiceStatus === 'recording') {
+      if (this.voiceStatus === 'recording' || this.voiceStatus === 'paused') {
         void this.stopVoice();
         return;
       }
@@ -263,6 +362,20 @@ export function voiceRecorderMixin() {
       const remaining = this.voiceMaxSeconds - this.voiceSeconds;
 
       return remaining <= 30 ? `noch ${formatRecordingTime(Math.max(0, remaining))}` : '';
+    },
+
+    /**
+     * Statuszeile der Aufnahme - als Methode statt als Ausdruck im Template,
+     * weil der Alpine-CSP-Build keine komplexen Ausdrücke erlaubt.
+     */
+    voiceStatusLabel() {
+      return {
+        starting: 'Mikrofon wird vorbereitet…',
+        recording: 'Aufnahme läuft',
+        paused: 'Aufnahme pausiert',
+        processing: 'Die Aufnahme wird transkribiert und aufbereitet…',
+        saving: 'Notiz wird gespeichert…',
+      }[this.voiceStatus] || '';
     },
 
     dismissVoiceError() {
@@ -325,13 +438,13 @@ export function voiceTemplateMixin() {
     },
 
     /**
-     * Läuft schon eine Aufnahme, beendet der Knopf sie wie gehabt. Steht die
-     * Vorlage bereits fest - weil die Notiz schon einmal diktiert wurde -,
-     * beginnt das Diktat sofort; sonst wird erst gewählt.
+     * Öffnet die Vorlagenauswahl oder startet sofort, wenn die Notiz ihre
+     * Vorlage schon kennt. Das Beenden einer laufenden Aufnahme gehört nicht
+     * mehr hierher: Der Schalter ist während des gesamten Voice-Vorgangs
+     * gesperrt, die verbindlichen Aktionen liegen im Aufnahme-Overlay.
      */
     startOrOpenPicker() {
-      if (this.voiceStatus === 'recording') {
-        void this.stopVoice();
+      if (this.voiceStatus !== 'idle') {
         return;
       }
       if (this.hasFixedVoiceTemplate()) {
@@ -383,11 +496,60 @@ export function voiceTemplateMixin() {
         return;
       }
       this.voiceTemplatePickerOpen = false;
+      // Derselbe Event-Turn: startVoice setzt vor seinem ersten await
+      // `starting`, damit Backdrop und Popup zwischen Vorlagenwahl und
+      // Aufnahme nicht sichtbar verschwinden.
       void this.startVoice();
     },
 
     cancelVoiceTemplatePicker() {
       this.voiceTemplatePickerOpen = false;
+    },
+
+    /**
+     * Die eine modale Hülle für den gesamten Notiz-Voice-Fluss: Sie bleibt
+     * offen, solange die Vorlagenauswahl gezeigt wird, ein Voice-Vorgang
+     * läuft oder ein Fehler darauf wartet, bestätigt zu werden.
+     */
+    isVoiceDialogOpen() {
+      return this.voiceTemplatePickerOpen || this.isVoiceBusy() || Boolean(this.voiceError);
+    },
+
+    /**
+     * Der Dialogtitel passt sich dem Ablauf an - als Methode, damit im
+     * Alpine-CSP-Template kein Objektzugriff stehen muss.
+     */
+    voiceDialogTitle() {
+      if (this.voiceTemplatePickerOpen) {
+        return 'Vorlage für das Diktat';
+      }
+
+      return {
+        starting: 'Mikrofon wird vorbereitet…',
+        recording: 'Aufnahme läuft',
+        paused: 'Aufnahme pausiert',
+        processing: 'Aufnahme wird verarbeitet…',
+        saving: 'Notiz wird gespeichert…',
+      }[this.voiceStatus] || 'Sprachnotiz';
+    },
+
+    /**
+     * Zentraler Schluss des Dialogs: Läuft ein Vorgang, bleiben Backdrop-Klick
+     * und Escape wirkungslos - während Aufnahme und Pause ist Verwerfen der
+     * einzige Abbruchweg, während Transkription und Speicherung gibt es
+     * keinen. Bei einem Fehler schließt der ausdrückliche Klick über die
+     * bestehende Methode. Nach Erfolg ist der Dialog schon zu, weil der
+     * Status erst dann auf idle fällt.
+     */
+    closeVoiceDialog() {
+      if (this.isVoiceBusy()) {
+        return;
+      }
+      if (this.voiceTemplatePickerOpen) {
+        this.cancelVoiceTemplatePicker();
+        return;
+      }
+      this.dismissVoiceError();
     },
   };
 }

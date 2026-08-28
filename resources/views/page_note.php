@@ -161,14 +161,14 @@
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button toolbar-more" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
             <?php /* Diktat: Der aufbereitete Text wird an der Einfügemarke eingesetzt
-                     (FR-VOICE-02). Derselbe Knopf beendet die Aufnahme wieder. */ ?>
+                     (FR-VOICE-02). Aufnahme, Pause und Beenden steuert das
+                     Aufnahme-Overlay - der Knopf steht nur für den Start. */ ?>
             <?php if (!empty($voiceEnabled)): ?>
                 <?php /* Wie bei den übrigen Werkzeugknöpfen: Der Fokus soll im
                          Editor bleiben, damit das Diktat an der Einfügemarke
                          landet statt am Dokumentanfang. */ ?>
-                <button type="button" x-show="voiceSupported && canEditPage && !isEncrypted()" x-cloak @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="startOrOpenPicker" :disabled="voiceStatus === 'processing'" class="toolbar-button" :class="voiceStatus === 'recording' ? 'is-recording' : ''" :title="voiceStatus === 'recording' ? 'Aufnahme beenden' : 'Diktat einfügen'" aria-label="Diktat einfügen">
-                    <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
-                    <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
+                <button type="button" x-show="voiceSupported && canEditPage && !isEncrypted()" x-cloak @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="startOrOpenPicker" :disabled="isVoiceBusy()" class="toolbar-button" title="Diktat einfügen" aria-label="Diktat einfügen">
+                    <span x-icon="mic"></span>
                 </button>
             <?php endif; ?>
             <?php if (!empty($aiEnabled)): ?>
@@ -197,7 +197,7 @@
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>
-            <div x-show="!isEncrypted()" class="note-print-hide mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+            <div x-show="!isEncrypted()" class="note-print-hide mb-4"><?php include __DIR__ . '/partials/voice_status.php'; ?></div>
             <?php include __DIR__ . '/partials/voice_template_picker.php'; ?>
         <?php endif; ?>
         <section x-show="isEncrypted() && !isCryptoUnlocked()" x-cloak class="note-lock-screen" aria-labelledby="note-lock-title">

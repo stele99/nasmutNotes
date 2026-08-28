@@ -513,7 +513,10 @@ final class VoiceNoteService
 
     /**
      * Legt aus einer Aufnahme eine fertige Notiz an: Überschrift und Notizbuch
-     * stammen aus der Nachbearbeitung, der Text steht bereits im Inhalt.
+     * stammen aus der Nachbearbeitung, der Text steht bereits im Inhalt. Ist
+     * ein Notizbuch ausdrücklich gewählt (Aufnahme aus einem geöffneten
+     * Notizbuch heraus), hat es Vorrang vor dieser Ableitung; Existenz und
+     * Besitz prüft PageService::create() wie bei der manuellen Anlage.
      *
      * @param array<string, mixed>|null $location Aufnahmeort, falls der Client ihn mitschickt.
      * @return array{page: array<string, mixed>, transcript: string, title: string, notebook_name: ?string}
@@ -524,10 +527,11 @@ final class VoiceNoteService
         int $templateId,
         string $ipHash,
         ?array $location = null,
+        ?int $notebookId = null,
     ): array {
         $result = $this->transcribe($user, $file, $templateId);
 
-        $page = $this->pages->create($user, 'note', $result['title'], null, $result['notebook_id'], $location);
+        $page = $this->pages->create($user, 'note', $result['title'], null, $notebookId ?? $result['notebook_id'], $location);
         $pageId = (int) $page['id'];
 
         try {
@@ -546,14 +550,18 @@ final class VoiceNoteService
 
         $this->auditLog->log($user->id, 'voice_note_created', 'page', $pageId, $ipHash, [
             'characters' => mb_strlen($result['transcript']),
-            'notebook_id' => $result['notebook_id'],
+            'notebook_id' => $notebookId ?? $result['notebook_id'],
         ]);
 
+        $stored = $this->pages->find($user, $pageId);
+
         return [
-            'page' => $this->pages->find($user, $pageId),
+            'page' => $stored,
             'transcript' => $result['transcript'],
             'title' => $result['title'],
-            'notebook_name' => $result['notebook_name'],
+            'notebook_name' => $notebookId !== null
+                ? ($stored['notebook_name'] ?? null)
+                : $result['notebook_name'],
         ];
     }
 

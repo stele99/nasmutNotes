@@ -106,6 +106,7 @@ final class VoiceNoteController
                 $this->requireTemplateId($body),
                 RequestIp::hash($request),
                 $this->locationFrom($request),
+                $this->optionalNotebookId($body),
             );
             $page = $result['page'];
 
@@ -193,6 +194,25 @@ final class VoiceNoteController
     private function optionalTemplateId(array $body): ?int
     {
         $raw = $body['template_id'] ?? null;
+        if (!is_int($raw) && !(is_string($raw) && ctype_digit($raw))) {
+            return null;
+        }
+
+        return (int) $raw;
+    }
+
+    /**
+     * Wunschnotizbuch der Sprachnotiz, ebenfalls ohne Zwang: Aus einem
+     * geöffneten Notizbuch heraus entsteht die Notiz genau dort (FR-VOICE-04);
+     * ohne Feld oder mit unbrauchbarem Wert leitet das Modell das Notizbuch
+     * aus dem Inhalt ab. Ob das gewählte Notizbuch dem Nutzer gehört, prüft
+     * PageService::create() wie bei der manuellen Seitenanlage.
+     *
+     * @param array<string, mixed> $body
+     */
+    private function optionalNotebookId(array $body): ?int
+    {
+        $raw = $body['notebook_id'] ?? null;
         if (!is_int($raw) && !(is_string($raw) && ctype_digit($raw))) {
             return null;
         }

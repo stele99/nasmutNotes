@@ -68,7 +68,7 @@
                     <?php endif; ?>
                 </div>
                 <?php if (!empty($voiceEnabled)): ?>
-                    <div class="mt-3 max-w-2xl"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+                    <?php include __DIR__ . '/partials/voice_status.php'; ?>
                     <?php include __DIR__ . '/partials/voice_template_picker.php'; ?>
                 <?php endif; ?>
                 <div class="mt-4 flex max-w-md items-center gap-2">

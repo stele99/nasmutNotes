@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Domain\Voice;
 
+use App\Controllers\VoiceNoteController;
 use App\Domain\Ai\AiModelSettings;
 use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Import\MarkdownConverter;
@@ -27,6 +28,8 @@ use App\Repositories\SettingsRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\VoiceTemplateRepository;
 use App\Repositories\WorkspaceRepository;
+use App\Support\NotFoundException;
+use App\Support\RateLimiter;
 use App\Support\ValidationException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -36,7 +39,11 @@ use GuzzleHttp\Psr7\Response as GuzzleResponse;
 use PDO;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Log\NullLogger;
+use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Factory\StreamFactory;
+use Slim\Psr7\Response;
 use Slim\Psr7\UploadedFile;
 use Tests\Support\InMemoryDatabaseTrait;
 
@@ -249,6 +256,99 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertNull($result['page']['notebook_id']);
         self::assertNull($result['notebook_name']);
         self::assertCount(1, $this->notebooks->list($this->user));
+    }
+
+    /**
+     * Aus einem geöffneten Notizbuch heraus hat die gewählte Sammlung Vorrang
+     * vor der Ableitung aus dem Inhalt (FR-VOICE-04) - selbst wenn das Modell
+     * ein anderes Notizbuch erkennen würde.
+     */
+    public function testAnExplicitNotebookOverridesTheDerivedOne(): void
+    {
+        $this->notebooks->create($this->user, ['name' => 'Garten']);
+        $chosen = $this->notebooks->create($this->user, ['name' => 'Arbeit']);
+
+        $this->queueTranscription('Hochbeet aufbauen und Tomaten vorziehen');
+        $this->queuePostprocessing([
+            'title' => 'Gartenarbeiten im Frühjahr',
+            'notebook' => 'Garten',
+            'text' => '- Hochbeet aufbauen',
+        ]);
+
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash', null, (int) $chosen['id']);
+
+        self::assertSame((int) $chosen['id'], (int) $result['page']['notebook_id']);
+        self::assertSame('Arbeit', $result['page']['notebook_name']);
+        self::assertSame('Arbeit', $result['notebook_name']);
+    }
+
+    /** Ein fremdes oder unbekanntes Notizbuch wirft ab und hinterlässt keine Seite. */
+    public function testAForeignOrUnknownNotebookIsRejectedWithoutLeavingAPageBehind(): void
+    {
+        $other = $this->makeUser(new WorkspaceRepository($this->pdo), 'c@example.com');
+        $foreign = $this->notebooks->create($other, ['name' => 'Fremd']);
+
+        $this->queueTranscription('Text');
+        $this->queuePostprocessing(['title' => 'Notiz', 'notebook' => '', 'text' => 'Text.']);
+
+        // Derselbe Guard wie bei der manuellen Seitenanlage.
+        try {
+            $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash', null, (int) $foreign['id']);
+            self::fail('Ein fremdes Notizbuch wurde für die Sprachnotiz akzeptiert.');
+        } catch (NotFoundException) {
+        }
+
+        $this->queueTranscription('Text');
+        $this->queuePostprocessing(['title' => 'Notiz', 'notebook' => '', 'text' => 'Text.']);
+        try {
+            $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash', null, 999_999);
+            self::fail('Ein unbekanntes Notizbuch wurde für die Sprachnotiz akzeptiert.');
+        } catch (NotFoundException) {
+        }
+
+        self::assertSame([], $this->pages->list($this->user, 'updated', null, false));
+    }
+
+    /**
+     * Der Controller nimmt notebook_id als Ganzzahl und als Ziffernfolge an
+     * und wertet unbrauchbare Eingaben als nicht vorhanden; die 201-Antwort
+     * nennt das gewählte Notizbuch in page.notebook_id.
+     */
+    public function testStoreAcceptsTheChosenNotebookThroughItsFormField(): void
+    {
+        $chosen = $this->notebooks->create($this->user, ['name' => 'Arbeit']);
+        $templateId = $this->templateId();
+
+        // Ganzzahl.
+        $this->queueTranscription('Erste Aufnahme');
+        $this->queuePostprocessing(['title' => 'Erste', 'notebook' => '', 'text' => 'Erste Aufnahme.']);
+        $response = $this->storeResponse(['template_id' => (string) $templateId, 'notebook_id' => (int) $chosen['id']]);
+        self::assertSame(201, $response->getStatusCode());
+        $payload = $this->responseJson($response);
+        self::assertSame((int) $chosen['id'], $payload['page']['notebook_id']);
+        self::assertSame('Arbeit', $payload['page']['notebook_name']);
+        self::assertSame('Arbeit', $payload['notebook_name']);
+
+        // Ziffernfolge.
+        $this->queueTranscription('Zweite Aufnahme');
+        $this->queuePostprocessing(['title' => 'Zweite', 'notebook' => '', 'text' => 'Zweite Aufnahme.']);
+        $response = $this->storeResponse(['template_id' => (string) $templateId, 'notebook_id' => (string) $chosen['id']]);
+        self::assertSame(201, $response->getStatusCode());
+        self::assertSame((int) $chosen['id'], $this->responseJson($response)['page']['notebook_id']);
+
+        // Unbrauchbare Eingabe: das Notizbuch bleibt abgeleitet (hier: keins).
+        $this->queueTranscription('Dritte Aufnahme');
+        $this->queuePostprocessing(['title' => 'Dritte', 'notebook' => '', 'text' => 'Dritte Aufnahme.']);
+        $response = $this->storeResponse(['template_id' => (string) $templateId, 'notebook_id' => 'nicht-eine-zahl']);
+        self::assertSame(201, $response->getStatusCode());
+        self::assertNull($this->responseJson($response)['page']['notebook_id']);
+
+        // Fehlendes Feld: dasselbe Verhalten.
+        $this->queueTranscription('Vierte Aufnahme');
+        $this->queuePostprocessing(['title' => 'Vierte', 'notebook' => '', 'text' => 'Vierte Aufnahme.']);
+        $response = $this->storeResponse(['template_id' => (string) $templateId]);
+        self::assertSame(201, $response->getStatusCode());
+        self::assertNull($this->responseJson($response)['page']['notebook_id']);
     }
 
     public function testWithoutPostprocessingTheRawTranscriptBecomesTheNote(): void
@@ -698,6 +798,46 @@ final class VoiceNoteServiceTest extends TestCase
             $bytes,
             UPLOAD_ERR_OK,
         );
+    }
+
+    /** Controller mit dem echten Dienst; das Ratelimit ist in Tests aus. */
+    private function controller(): VoiceNoteController
+    {
+        return new VoiceNoteController(
+            $this->service(),
+            new VoiceTemplateService(
+                new VoiceTemplateRepository($this->pdo),
+                new AuditLogRepository($this->pdo),
+            ),
+            new RateLimiter($this->pdo, false),
+            new NullLogger(),
+        );
+    }
+
+    /**
+     * POST /api/voice/notes mit Formularfeldern statt multipart-Parsing -
+     * der Controller liest beides aus getParsedBody().
+     *
+     * @param array<string, mixed> $body
+     */
+    private function storeResponse(array $body): ResponseInterface
+    {
+        $request = (new ServerRequestFactory())
+            ->createServerRequest('POST', 'https://example.test/api/voice/notes')
+            ->withAttribute('user', $this->user)
+            ->withParsedBody($body)
+            ->withUploadedFiles(['audio' => $this->makeUpload()]);
+
+        return $this->controller()->store($request, new Response());
+    }
+
+    /** @return array<string, mixed> */
+    private function responseJson(ResponseInterface $response): array
+    {
+        $response->getBody()->rewind();
+        $raw = (string) $response->getBody();
+
+        return json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
     }
 
     private function makeUser(WorkspaceRepository $workspaces, string $email): User

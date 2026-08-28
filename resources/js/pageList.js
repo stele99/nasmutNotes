@@ -429,12 +429,18 @@ export function pageList() {
 
     /**
      * Aufnahme -> Notiz: Der Server transkribiert, lässt Überschrift und
-     * Notizbuch ableiten und legt die Notiz an (FR-VOICE-02..04). Danach steht
-     * sie fertig da, deshalb wird direkt dorthin gewechselt.
+     * Notizbuch ableiten und legt die Notiz an (FR-VOICE-02..04). Aus einem
+     * geöffneten Notizbuch heraus entsteht sie in genau diesem - dieselbe
+     * Bedingung wie in createPage(); ohne gewählte Sammlung leitet das
+     * Modell das Notizbuch aus dem Inhalt ab. Danach steht die Notiz fertig
+     * da, deshalb wird erst nach der 201-Antwort dorthin gewechselt.
      */
     async handleVoiceRecording(recording) {
       const body = voiceFormData(recording);
       body.append('template_id', String(this.voiceTemplateId));
+      if (this.activeCollection === 'notebook' && this.activeNotebookId) {
+        body.append('notebook_id', String(this.activeNotebookId));
+      }
       const location = await captureLocationOnCreate();
       if (location) {
         body.append('lat', String(location.lat));

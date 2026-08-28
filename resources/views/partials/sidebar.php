@@ -39,7 +39,7 @@
             <?php endif; ?>
         </div>
         <?php if (!empty($voiceEnabled)): ?>
-            <?php include __DIR__ . '/voice_panel.php'; ?>
+            <?php include __DIR__ . '/voice_status.php'; ?>
             <?php include __DIR__ . '/voice_template_picker.php'; ?>
         <?php endif; ?>
         <p x-show="activeCollection === 'shared' || activeCollection === 'favorites'" class="text-xs" style="color: var(--color-text-muted);">In dieser Sammlung können keine Seiten angelegt werden.</p>

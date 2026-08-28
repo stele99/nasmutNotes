@@ -921,6 +921,15 @@ button:disabled,
   padding: 0.625rem 0.75rem;
 }
 
+/* Innerhalb des Aufnahme-Overlays: der Dialog bringt Rahmen und Abstand
+   bereits mit, das Panel liegt dann ohne eigene Hülle darin. */
+.voice-panel-bare {
+  border: 0;
+  border-radius: 0;
+  margin-top: 0;
+  padding: 0;
+}
+
 .voice-dot {
   background: var(--color-danger);
   border-radius: 999px;
@@ -929,6 +938,12 @@ button:disabled,
   height: 0.625rem;
   width: 0.625rem;
   animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+/* Pausierte Aufnahme: der Punkt friert ein, solange nichts aufgenommen wird. */
+.voice-dot.is-paused {
+  animation: none;
+  opacity: 0.6;
 }
 
 @keyframes voice-pulse {
