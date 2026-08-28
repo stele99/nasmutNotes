@@ -163,7 +163,7 @@
             <?php /* Diktat: Der aufbereitete Text wird an der Einfügemarke eingesetzt
                      (FR-VOICE-02). Derselbe Knopf beendet die Aufnahme wieder. */ ?>
             <?php if (!empty($voiceEnabled)): ?>
-                <button type="button" x-show="voiceSupported && canEditPage && !isEncrypted()" x-cloak @click.prevent="toggleVoice" :disabled="voiceStatus === 'processing'" class="toolbar-button" :class="voiceStatus === 'recording' ? 'is-recording' : ''" :title="voiceStatus === 'recording' ? 'Aufnahme beenden' : 'Diktat einfügen'" aria-label="Diktat einfügen">
+                <button type="button" x-show="voiceSupported && canEditPage && !isEncrypted()" x-cloak @click.prevent="startOrOpenPicker" :disabled="voiceStatus === 'processing'" class="toolbar-button" :class="voiceStatus === 'recording' ? 'is-recording' : ''" :title="voiceStatus === 'recording' ? 'Aufnahme beenden' : 'Diktat einfügen'" aria-label="Diktat einfügen">
                     <span x-show="voiceStatus !== 'recording'" x-icon="mic"></span>
                     <span x-show="voiceStatus === 'recording'" x-cloak x-icon="square"></span>
                 </button>
@@ -195,6 +195,7 @@
         <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>
             <div x-show="!isEncrypted()" class="note-print-hide mb-4"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+            <?php include __DIR__ . '/partials/voice_template_picker.php'; ?>
         <?php endif; ?>
         <section x-show="isEncrypted() && !isCryptoUnlocked()" x-cloak class="note-lock-screen" aria-labelledby="note-lock-title">
             <span class="note-lock-icon" x-icon="lock:size-8"></span>

@@ -96,6 +96,20 @@ export function offlineSettings() {
     deviceTokenError: '',
     deviceTokenLastCreated: null,
     deviceTokenCopyLabel: 'Kopieren',
+    speechAutomationOpen: true,
+
+    // Diktier-Vorlagen (FR-VOICE): eigene und globale Anweisungen, aus denen
+    // vor jeder Aufnahme für eine Notiz gewählt wird.
+    templatesOpen: true,
+    voiceTemplates: [],
+    globalVoiceTemplates: [],
+    voiceTemplatesLoading: false,
+    voiceTemplateError: '',
+    voiceTemplateName: '',
+    voiceTemplateInstruction: '',
+    voiceTemplateVocabulary: '',
+    voiceTemplateSaving: false,
+    editingVoiceTemplateId: null,
 
     // Verbundene Clients: manuelle Code-Bestätigung und KI-Verbrauch.
     pairCodeInput: '',
@@ -174,7 +188,7 @@ export function offlineSettings() {
       this.error = '';
       this.locationMode = await loadLocationMode(true);
       await this.refreshStats();
-      await Promise.all([this.loadDeviceTokens(), this.loadAiUsage()]);
+      await Promise.all([this.loadDeviceTokens(), this.loadAiUsage(), this.loadVoiceTemplates()]);
     },
 
     selectSettingsSection(section) {
@@ -183,6 +197,14 @@ export function offlineSettings() {
 
     isSettingsSection(section) {
       return this.settingsSection === section;
+    },
+
+    toggleSpeechAutomation() {
+      this.speechAutomationOpen = !this.speechAutomationOpen;
+    },
+
+    toggleTemplates() {
+      this.templatesOpen = !this.templatesOpen;
     },
 
     closeDialog() {
@@ -347,6 +369,86 @@ export function offlineSettings() {
       const currency = bucket.currency || 'EUR';
 
       return `${Number(bucket.cost).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+    },
+
+    /** Eigene und globale Vorlagen in einer Antwort - global zuerst. */
+    async loadVoiceTemplates() {
+      this.voiceTemplatesLoading = true;
+      this.voiceTemplateError = '';
+      try {
+        const data = await apiFetch('/api/voice/templates');
+        const templates = data.voice_templates || [];
+        this.voiceTemplates = templates.filter((t) => t.scope === 'own');
+        this.globalVoiceTemplates = templates.filter((t) => t.scope === 'global');
+      } catch (error) {
+        this.voiceTemplateError = error.message || 'Vorlagen konnten nicht geladen werden.';
+      } finally {
+        this.voiceTemplatesLoading = false;
+      }
+    },
+
+    /** Legt eine neue Vorlage an oder speichert die gerade bearbeitete. */
+    async saveVoiceTemplate() {
+      if (this.voiceTemplateSaving) {
+        return;
+      }
+      const name = this.voiceTemplateName.trim();
+      const instruction = this.voiceTemplateInstruction.trim();
+      if (!name || !instruction) {
+        this.voiceTemplateError = 'Bitte Name und Anweisung angeben.';
+        return;
+      }
+      this.voiceTemplateSaving = true;
+      this.voiceTemplateError = '';
+      try {
+        const body = JSON.stringify({
+          name,
+          instruction,
+          vocabulary: this.voiceTemplateVocabulary.trim(),
+        });
+        if (this.editingVoiceTemplateId) {
+          await apiFetch(`/api/profile/voice-templates/${this.editingVoiceTemplateId}`, { method: 'PATCH', body });
+        } else {
+          await apiFetch('/api/profile/voice-templates', { method: 'POST', body });
+        }
+        this.cancelEditVoiceTemplate();
+        await this.loadVoiceTemplates();
+      } catch (error) {
+        this.voiceTemplateError = error.message || 'Die Vorlage konnte nicht gespeichert werden.';
+      } finally {
+        this.voiceTemplateSaving = false;
+      }
+    },
+
+    startEditVoiceTemplate(template) {
+      this.editingVoiceTemplateId = template.id;
+      this.voiceTemplateName = template.name;
+      this.voiceTemplateInstruction = template.instruction;
+      this.voiceTemplateVocabulary = template.vocabulary || '';
+      this.voiceTemplateError = '';
+    },
+
+    cancelEditVoiceTemplate() {
+      this.editingVoiceTemplateId = null;
+      this.voiceTemplateName = '';
+      this.voiceTemplateInstruction = '';
+      this.voiceTemplateVocabulary = '';
+    },
+
+    async deleteVoiceTemplate(template) {
+      if (!window.confirm(`Vorlage „${template.name}“ löschen?`)) {
+        return;
+      }
+      this.voiceTemplateError = '';
+      try {
+        await apiFetch(`/api/profile/voice-templates/${template.id}`, { method: 'DELETE' });
+        if (this.editingVoiceTemplateId === template.id) {
+          this.cancelEditVoiceTemplate();
+        }
+        await this.loadVoiceTemplates();
+      } catch (error) {
+        this.voiceTemplateError = error.message || 'Die Vorlage konnte nicht gelöscht werden.';
+      }
     },
 
     async createDeviceToken() {

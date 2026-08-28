@@ -61,13 +61,14 @@
                     <?php /* Sprachnotiz: Aufnehmen, transkribieren lassen und als fertige
                              Notiz mit Überschrift und Notizbuch anlegen (FR-VOICE-01..04). */ ?>
                     <?php if (!empty($voiceEnabled)): ?>
-                        <button type="button" x-show="voiceSupported" x-cloak @click="startVoice" :disabled="isVoiceBusy()" class="btn btn-secondary flex-1 sm:flex-none">
+                        <button type="button" x-show="voiceSupported" x-cloak @click="startOrOpenPicker" :disabled="isVoiceBusy()" class="btn btn-secondary flex-1 sm:flex-none">
                             <span x-icon="mic"></span>Sprachnotiz
                         </button>
                     <?php endif; ?>
                 </div>
                 <?php if (!empty($voiceEnabled)): ?>
                     <div class="mt-3 max-w-2xl"><?php include __DIR__ . '/partials/voice_panel.php'; ?></div>
+                    <?php include __DIR__ . '/partials/voice_template_picker.php'; ?>
                 <?php endif; ?>
                 <div class="mt-4 flex max-w-md items-center gap-2">
                     <form @submit.prevent="search" class="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 py-2.5" style="border-color: var(--color-border); background: var(--color-bg);">

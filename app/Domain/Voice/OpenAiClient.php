@@ -31,16 +31,22 @@ final class OpenAiClient
     ) {
     }
 
+    /** Whisper beachtet nur die ersten paar hundert Zeichen des prompt-Feldes. */
+    private const MAX_VOCABULARY_HINT_LENGTH = 800;
+
     /**
      * Wandelt eine Audiodatei in Text (POST /audio/transcriptions). Ist in den
      * Einstellungen eine Sprache hinterlegt, geht sie als ISO-639-1-Code mit;
-     * sonst erkennt das Modell sie selbst.
+     * sonst erkennt das Modell sie selbst. $vocabularyHint (aus der gewählten
+     * Diktier-Vorlage) geht als "prompt" mit - Whisper nutzt es, um Aussprache
+     * und Schreibweise von Fachbegriffen zu treffen.
      */
     public function transcribe(
         VoiceSettings $settings,
         string $filePath,
         string $filename,
         ?AiCallContext $context = null,
+        ?string $vocabularyHint = null,
     ): string {
         $handle = fopen($filePath, 'rb');
         if ($handle === false) {
@@ -54,6 +60,9 @@ final class OpenAiClient
         ];
         if ($settings->language !== '') {
             $parts[] = ['name' => 'language', 'contents' => $settings->language];
+        }
+        if ($vocabularyHint !== null && trim($vocabularyHint) !== '') {
+            $parts[] = ['name' => 'prompt', 'contents' => mb_substr(trim($vocabularyHint), 0, self::MAX_VOCABULARY_HINT_LENGTH)];
         }
 
         $payload = $this->send($settings, 'audio/transcriptions', ['multipart' => $parts], $settings->transcribeModel, $context);

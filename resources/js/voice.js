@@ -4,6 +4,8 @@
  * von den Alpine-Komponenten (pageList, noteEditorPage).
  */
 
+import { apiFetch } from './api.js';
+
 // Reihenfolge nach Eignung: Opus in WebM liefert bei Sprache die kleinsten
 // Dateien. Safari kann nur MP4, deshalb die Rückfallkette.
 const MIME_CANDIDATES = [
@@ -287,4 +289,66 @@ export function formatRecordingTime(seconds) {
   const minutes = Math.floor(total / 60);
 
   return `${minutes}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Vorlagenauswahl vor dem Diktat einer Notiz (neue Notiz per Diktat oder
+ * Diktat in eine offene Notiz): Vor jeder Aufnahme muss der Nutzer eine
+ * Vorlage wählen, die bestimmt, wie das Diktat aufbereitet wird. Wird in
+ * pageList.js und notePage.js zusätzlich zu voiceRecorderMixin() gemischt -
+ * beide implementieren weiterhin ihr eigenes handleVoiceRecording().
+ */
+export function voiceTemplateMixin() {
+  return {
+    voiceTemplates: [],
+    voiceTemplatesLoaded: false,
+    voiceTemplateId: null,
+    voiceTemplatePickerOpen: false,
+
+    async loadVoiceTemplates() {
+      if (this.voiceTemplatesLoaded) {
+        return;
+      }
+      const data = await apiFetch('/api/voice/templates');
+      this.voiceTemplates = data.voice_templates || [];
+      this.voiceTemplatesLoaded = true;
+      if (this.voiceTemplateId === null && this.voiceTemplates.length > 0) {
+        this.voiceTemplateId = this.voiceTemplates[0].id;
+      }
+    },
+
+    /** Läuft schon eine Aufnahme, beendet der Knopf sie wie gehabt; sonst erst die Vorlage wählen. */
+    startOrOpenPicker() {
+      if (this.voiceStatus === 'recording') {
+        void this.stopVoice();
+        return;
+      }
+      void this.openVoiceTemplatePicker();
+    },
+
+    async openVoiceTemplatePicker() {
+      this.voiceError = '';
+      try {
+        await this.loadVoiceTemplates();
+      } catch (error) {
+        this.voiceError = error?.message || 'Die Vorlagen konnten nicht geladen werden.';
+        return;
+      }
+      if (this.voiceTemplates.length === 0) {
+        this.voiceError = 'Es ist noch keine Diktier-Vorlage angelegt. Unter Einstellungen › Speech2Text › Vorlagen anlegen.';
+        return;
+      }
+      this.voiceTemplatePickerOpen = true;
+    },
+
+    confirmVoiceTemplate(templateId) {
+      this.voiceTemplateId = templateId;
+      this.voiceTemplatePickerOpen = false;
+      void this.startVoice();
+    },
+
+    cancelVoiceTemplatePicker() {
+      this.voiceTemplatePickerOpen = false;
+    },
+  };
 }

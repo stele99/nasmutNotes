@@ -12,7 +12,7 @@ import {
   validateEnvelope,
   validateNewPassword,
 } from './noteCrypto.js';
-import { voiceFormData, voiceRecorderMixin } from './voice.js';
+import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
@@ -65,6 +65,7 @@ export function noteEditorPage() {
 
   return {
     ...voiceRecorderMixin(),
+    ...voiceTemplateMixin(),
     ...pageLocationMixin(),
     ...pageTrashMixin(),
     status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
@@ -1561,6 +1562,7 @@ export function noteEditorPage() {
 
       const body = voiceFormData(recording);
       body.append('page_id', String(this.pageId));
+      body.append('template_id', String(this.voiceTemplateId));
       const data = await apiFetch('/api/voice/transcribe', {
         method: 'POST',
         body,

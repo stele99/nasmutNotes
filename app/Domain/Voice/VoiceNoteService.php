@@ -14,6 +14,7 @@ use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\SettingsRepository;
+use App\Repositories\VoiceTemplateRepository;
 use App\Support\ValidationException;
 use Psr\Http\Message\UploadedFileInterface;
 
@@ -148,6 +149,7 @@ final class VoiceNoteService
         private readonly NotebookService $notebooks,
         private readonly MarkdownConverter $markdown,
         private readonly AuditLogRepository $auditLog,
+        private readonly VoiceTemplateRepository $templates,
         private readonly string $tmpPath,
         private readonly string $apiKey = '',
         private readonly string $fallbackBaseUrl = self::DEFAULT_BASE_URL,
@@ -340,8 +342,9 @@ final class VoiceNoteService
      *     document: array<string, mixed>
      * }
      */
-    public function transcribe(User $user, UploadedFileInterface $file): array
+    public function transcribe(User $user, UploadedFileInterface $file, int $templateId): array
     {
+        $template = $this->resolveTemplate($user, $templateId);
         $settings = $this->requireUsableSettings();
         $context = new AiCallContext(
             $user->id,
@@ -351,7 +354,13 @@ final class VoiceNoteService
         $filename = $this->storeUpload($file, $settings);
 
         try {
-            $transcript = $this->client->transcribe($settings, $filename['path'], $filename['name'], $context);
+            $transcript = $this->client->transcribe(
+                $settings,
+                $filename['path'],
+                $filename['name'],
+                $context,
+                (string) $template['vocabulary'],
+            );
         } finally {
             @unlink($filename['path']);
         }
@@ -360,7 +369,7 @@ final class VoiceNoteService
             throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
         }
 
-        $refined = $this->refine($user, $settings, $transcript, $context);
+        $refined = $this->refine($user, $settings, $transcript, $context, $template);
         $document = $this->markdown->toDocument($refined['markdown']);
         if (($document['content'] ?? []) === []) {
             $document = $this->markdown->toDocument($transcript);
@@ -389,7 +398,7 @@ final class VoiceNoteService
      *     document: array<string, mixed>
      * }
      */
-    public function transcribeForPage(User $user, int $pageId, UploadedFileInterface $file): array
+    public function transcribeForPage(User $user, int $pageId, UploadedFileInterface $file, int $templateId): array
     {
         $page = $this->pages->find($user, $pageId);
         if (($page['type'] ?? null) !== 'note') {
@@ -398,7 +407,7 @@ final class VoiceNoteService
         $this->pages->assertNotEncrypted($page);
         $this->pages->assertCanWrite($user, $pageId);
 
-        return $this->transcribe($user, $file);
+        return $this->transcribe($user, $file, $templateId);
     }
 
     /**
@@ -442,10 +451,11 @@ final class VoiceNoteService
     public function createNote(
         User $user,
         UploadedFileInterface $file,
+        int $templateId,
         string $ipHash,
         ?array $location = null,
     ): array {
-        $result = $this->transcribe($user, $file);
+        $result = $this->transcribe($user, $file, $templateId);
 
         $page = $this->pages->create($user, 'note', $result['title'], null, $result['notebook_id'], $location);
         $pageId = (int) $page['id'];
@@ -670,10 +680,21 @@ final class VoiceNoteService
      * zuordnen. Ist die Nachbearbeitung aus, bleibt es beim Rohtext mit einer
      * aus dem Anfang gebildeten Überschrift.
      *
+     * $template liefert die inhaltliche Umformungsanweisung (z.B. "als
+     * Angebot mit Position/Menge/Preis") und ihr Vokabular - sie ergänzt den
+     * technischen System-Prompt (JSON-Vertrag, Markdown-Regeln), ersetzt ihn
+     * aber nicht.
+     *
+     * @param array<string, mixed> $template
      * @return array{markdown: string, title: string, notebook_id: ?int, notebook_name: ?string}
      */
-    private function refine(User $user, VoiceSettings $settings, string $transcript, AiCallContext $context): array
-    {
+    private function refine(
+        User $user,
+        VoiceSettings $settings,
+        string $transcript,
+        AiCallContext $context,
+        array $template,
+    ): array {
         $fallback = [
             'markdown' => $transcript,
             'title' => $this->titleFromText($transcript),
@@ -691,7 +712,10 @@ final class VoiceNoteService
             $notebooks,
         ));
 
-        $userPrompt = "Vorhandene Notizbücher:\n"
+        $vocabulary = trim((string) $template['vocabulary']);
+        $userPrompt = "Vorlage „" . $template['name'] . "“:\n" . $template['instruction'] . "\n\n"
+            . ($vocabulary !== '' ? "Fachvokabular (korrekte Schreibweisen):\n{$vocabulary}\n\n" : '')
+            . "Vorhandene Notizbücher:\n"
             . ($names === [] ? '(keine)' : '- ' . implode("\n- ", $names))
             . "\n\nRoh-Transkript:\n" . $transcript;
 
@@ -828,6 +852,24 @@ final class VoiceNoteService
         }
 
         throw new ValidationException('Dieses Aufnahmeformat wird nicht unterstützt.');
+    }
+
+    /**
+     * Löst die vor der Aufnahme gewählte Vorlage auf - entweder eine globale
+     * (Admin) oder eine dem Nutzer gehörende. Alles andere lehnt sie ab, damit
+     * niemand mit der Vorlagen-ID eines fremden Nutzers diktieren kann.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveTemplate(User $user, int $templateId): array
+    {
+        $template = $this->templates->findById($templateId);
+        $ownerId = $template !== null && $template['user_id'] !== null ? (int) $template['user_id'] : null;
+        if ($template === null || !($ownerId === null || $ownerId === $user->id)) {
+            throw new ValidationException('Bitte eine Vorlage auswählen.');
+        }
+
+        return $template;
     }
 
     private function requireUsableSettings(): VoiceSettings

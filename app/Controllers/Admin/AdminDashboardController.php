@@ -10,6 +10,7 @@ use App\Domain\Ai\AiUsageService;
 use App\Domain\Assistant\AssistantService;
 use App\Domain\Notes\NoteRewriteService;
 use App\Domain\Voice\VoiceNoteService;
+use App\Domain\Voice\VoiceTemplateService;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
 use App\Support\RateLimiter;
@@ -33,6 +34,7 @@ final class AdminDashboardController
         private readonly AiUsageService $aiUsage,
         private readonly AssistantService $assistant,
         private readonly AiModelSettings $aiModelSettings,
+        private readonly VoiceTemplateService $voiceTemplates,
     ) {
     }
 
@@ -60,6 +62,7 @@ final class AdminDashboardController
             'note_ai' => $this->rewriter->adminSettings(),
             'assistant' => $this->assistant->settings()->toAdminArray(),
             'ai_costs' => $this->aiUsage->costs(),
+            'voice_templates' => $this->voiceTemplates->listGlobal(),
         ]));
     }
 
@@ -117,6 +120,50 @@ final class AdminDashboardController
             (string) ($args['model'] ?? ''),
             RequestIp::hash($request),
         );
+
+        return $response->withStatus(204);
+    }
+
+    /** Globale Diktier-Vorlagen: für alle Nutzer wählbar, nur vom Admin pflegbar. */
+    public function voiceTemplates(Request $request, Response $response): Response
+    {
+        return JsonResponse::json($response, ['voice_templates' => $this->voiceTemplates->listGlobal()]);
+    }
+
+    public function storeVoiceTemplate(Request $request, Response $response): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $template = $this->voiceTemplates->create(
+            null,
+            (string) ($body['name'] ?? ''),
+            (string) ($body['instruction'] ?? ''),
+            (string) ($body['vocabulary'] ?? ''),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['voice_template' => $template], 201);
+    }
+
+    /** @param array<string, string> $args */
+    public function updateVoiceTemplate(Request $request, Response $response, array $args): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $template = $this->voiceTemplates->update(
+            null,
+            (int) ($args['id'] ?? 0),
+            (string) ($body['name'] ?? ''),
+            (string) ($body['instruction'] ?? ''),
+            (string) ($body['vocabulary'] ?? ''),
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, ['voice_template' => $template]);
+    }
+
+    /** @param array<string, string> $args */
+    public function destroyVoiceTemplate(Request $request, Response $response, array $args): Response
+    {
+        $this->voiceTemplates->delete(null, (int) ($args['id'] ?? 0), RequestIp::hash($request));
 
         return $response->withStatus(204);
     }

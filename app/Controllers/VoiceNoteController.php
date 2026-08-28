@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Voice\VoiceNoteService;
 use App\Domain\Voice\VoiceServiceException;
+use App\Domain\Voice\VoiceTemplateService;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
 use App\Support\RateLimiter;
@@ -26,6 +27,7 @@ final class VoiceNoteController
 {
     public function __construct(
         private readonly VoiceNoteService $voice,
+        private readonly VoiceTemplateService $templates,
         private readonly RateLimiter $rateLimiter,
         private readonly LoggerInterface $logger,
     ) {
@@ -43,6 +45,14 @@ final class VoiceNoteController
         ])->withHeader('Cache-Control', 'private, no-store');
     }
 
+    /** Vorlagen, aus denen der Nutzer vor einer Aufnahme wählt (global + eigene). */
+    public function templates(Request $request, Response $response): Response
+    {
+        $user = CurrentUser::require($request);
+
+        return JsonResponse::json($response, ['voice_templates' => $this->templates->listAvailableTo($user)]);
+    }
+
     /** Transkribiert eine Aufnahme, ohne etwas zu speichern. */
     public function transcribe(Request $request, Response $response): Response
     {
@@ -58,7 +68,12 @@ final class VoiceNoteController
             if (!is_int($rawPageId) && !(is_string($rawPageId) && ctype_digit($rawPageId))) {
                 throw new ValidationException('Feld "page_id" fehlt oder ist ungültig.');
             }
-            $result = $this->voice->transcribeForPage($user, (int) $rawPageId, $this->requireAudio($request));
+            $result = $this->voice->transcribeForPage(
+                $user,
+                (int) $rawPageId,
+                $this->requireAudio($request),
+                $this->requireTemplateId($body),
+            );
 
             return JsonResponse::json($response, [
                 'transcript' => $result['transcript'],
@@ -81,9 +96,11 @@ final class VoiceNoteController
         }
 
         return $this->guard($response, function () use ($request, $user, $response): Response {
+            $body = (array) ($request->getParsedBody() ?? []);
             $result = $this->voice->createNote(
                 $user,
                 $this->requireAudio($request),
+                $this->requireTemplateId($body),
                 RequestIp::hash($request),
                 $this->locationFrom($request),
             );
@@ -151,6 +168,17 @@ final class VoiceNoteController
             'lon' => (string) $body['lon'],
             'accuracy' => (string) ($body['accuracy'] ?? ''),
         ];
+    }
+
+    /** @param array<string, mixed> $body */
+    private function requireTemplateId(array $body): int
+    {
+        $raw = $body['template_id'] ?? null;
+        if (!is_int($raw) && !(is_string($raw) && ctype_digit($raw))) {
+            throw new ValidationException('Bitte eine Vorlage auswählen.');
+        }
+
+        return (int) $raw;
     }
 
     private function requireAudio(Request $request): UploadedFileInterface

@@ -197,42 +197,115 @@
                                 <h3 class="text-xl font-semibold">Speech2Text</h3>
                                 <p class="mt-1 text-sm" style="color: var(--color-text-muted);">NotesVoice: Diktat per Doppeltipp auf die Geräterückseite, direkt in die Zwischenablage - ohne diese App zu öffnen.</p>
 
-                                <div class="mt-5">
-                                    <h4 class="text-sm font-semibold">Automations-Token</h4>
-                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Erlaubt einer iOS-Automation, in deinem Namen zu diktieren - sonst nichts. Die Liste aller Geräte steht im Bereich „Verbundene Clients".</p>
+                                <div class="mt-5 border-t pt-5" style="border-color: var(--color-border);">
+                                    <button type="button" @click="toggleSpeechAutomation" class="flex w-full items-center gap-1.5 rounded-md py-1 leading-none hover:bg-black/5 dark:hover:bg-white/10" :aria-expanded="speechAutomationOpen">
+                                        <span x-show="!speechAutomationOpen" class="flex" x-icon="chevron-right"></span>
+                                        <span x-show="speechAutomationOpen" x-cloak class="flex" x-icon="chevron-down"></span>
+                                        <span class="text-sm font-semibold">iPhone Speech Automation</span>
+                                    </button>
 
-                                    <form @submit.prevent="createDeviceToken" class="mt-3 flex flex-col gap-2 sm:flex-row">
-                                        <label class="sr-only" for="device-token-label">Name des Geräts</label>
-                                        <input id="device-token-label" type="text" maxlength="60" x-model="deviceTokenLabel" placeholder="z. B. iPhone von Steffen" :disabled="deviceTokenCreating" class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
-                                        <button type="submit" class="btn btn-primary shrink-0" :disabled="deviceTokenCreating" x-text="deviceTokenCreating ? 'Erstelle…' : 'Token erzeugen'"></button>
-                                    </form>
+                                    <div x-show="speechAutomationOpen" x-cloak class="mt-3 space-y-5">
+                                        <div>
+                                            <h5 class="text-sm font-semibold">Automations-Token</h5>
+                                            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Erlaubt einer iOS-Automation, in deinem Namen zu diktieren - sonst nichts. Die Liste aller Geräte steht im Bereich „Verbundene Clients".</p>
 
-                                    <div x-show="deviceTokenLastCreated" x-cloak class="mt-3 rounded-lg p-3" style="background: var(--color-bg-subtle);">
-                                        <p class="text-sm font-medium">Token für „<span x-text="deviceTokenLastCreated?.label"></span>“ (nur jetzt sichtbar)</p>
-                                        <p class="mt-1.5 break-all font-mono text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenLastCreated?.token"></p>
-                                        <p class="mt-2 text-xs" style="color: var(--color-text-muted);">In den Kurzbefehl einfügen (Anleitung unten) - hier verlässt der Token die Seite und ist danach nicht mehr abrufbar.</p>
-                                        <button type="button" @click="copyDeviceToken" class="btn btn-secondary mt-3 w-full" x-text="deviceTokenCopyLabel"></button>
+                                            <form @submit.prevent="createDeviceToken" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                                <label class="sr-only" for="device-token-label">Name des Geräts</label>
+                                                <input id="device-token-label" type="text" maxlength="60" x-model="deviceTokenLabel" placeholder="z. B. iPhone von Steffen" :disabled="deviceTokenCreating" class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                                <button type="submit" class="btn btn-primary shrink-0" :disabled="deviceTokenCreating" x-text="deviceTokenCreating ? 'Erstelle…' : 'Token erzeugen'"></button>
+                                            </form>
+
+                                            <div x-show="deviceTokenLastCreated" x-cloak class="mt-3 rounded-lg p-3" style="background: var(--color-bg-subtle);">
+                                                <p class="text-sm font-medium">Token für „<span x-text="deviceTokenLastCreated?.label"></span>“ (nur jetzt sichtbar)</p>
+                                                <p class="mt-1.5 break-all font-mono text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenLastCreated?.token"></p>
+                                                <p class="mt-2 text-xs" style="color: var(--color-text-muted);">In den Kurzbefehl einfügen (Anleitung unten) - hier verlässt der Token die Seite und ist danach nicht mehr abrufbar.</p>
+                                                <button type="button" @click="copyDeviceToken" class="btn btn-secondary mt-3 w-full" x-text="deviceTokenCopyLabel"></button>
+                                            </div>
+
+                                            <p x-show="deviceTokenError" x-cloak x-text="deviceTokenError" class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                                        </div>
+
+                                        <div class="border-t pt-5" style="border-color: var(--color-border);">
+                                            <h5 class="text-sm font-semibold">Einrichtung auf dem iPhone</h5>
+                                            <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
+                                                <li>Oben einen Token erzeugen und kopieren (Schritt bleibt geöffnet, bis du ihn kopiert hast).</li>
+                                                <li>App „Kurzbefehle" → neuer Kurzbefehl „NotesVoice" mit den Aktionen:
+                                                    <ol class="mt-1.5 list-[lower-alpha] space-y-1 pl-5" style="color: var(--color-text-muted);">
+                                                        <li>„Audio aufnehmen"</li>
+                                                        <li>„Inhalte von URL abrufen" - Methode POST, Adresse <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">/api/voice/quick</code> dieser App, Kopfzeile <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">Authorization: Bearer &lt;Token&gt;</code>, Anfragetext „Formular" - dort ein Feld hinzufügen, Typ „Datei", Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">audio</code>, Wert die Aufnahme aus Schritt 1 (nicht „Anfragetext: Datei" - das schickt die Aufnahme ohne Feldnamen)</li>
+                                                        <li>„Wörterbuchwert abrufen" - Wörterbuch: die Antwort aus Schritt 2 (Inhalte von URL), Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">text</code></li>
+                                                        <li>„In Zwischenablage kopieren"</li>
+                                                    </ol>
+                                                </li>
+                                                <li>Einstellungen → Bedienungshilfen → Berühren → Rückseitentipp → „Doppeltippen" → Kurzbefehl „NotesVoice" auswählen.</li>
+                                                <li>Doppeltipp auf die Rückseite, sprechen, im Aufnahme-Overlay auf „Fertig" tippen - der aufbereitete Text liegt danach in der Zwischenablage, ohne dass diese App geöffnet wurde.</li>
+                                            </ol>
+                                            <p class="mt-3 text-xs" style="color: var(--color-text-muted);">Der Token steht im Klartext im Kurzbefehl. Bei Verlust des Geräts oder Verdacht auf Missbrauch oben einfach widerrufen - das genügt, ein neuer Token braucht nur die Schritte 1 und 2b erneut.</p>
+                                        </div>
                                     </div>
-
-                                    <p x-show="deviceTokenError" x-cloak x-text="deviceTokenError" class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
                                 </div>
 
-                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
-                                    <h4 class="text-sm font-semibold">Einrichtung auf dem iPhone</h4>
-                                    <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
-                                        <li>Oben einen Token erzeugen und kopieren (Schritt bleibt geöffnet, bis du ihn kopiert hast).</li>
-                                        <li>App „Kurzbefehle" → neuer Kurzbefehl „NotesVoice" mit den Aktionen:
-                                            <ol class="mt-1.5 list-[lower-alpha] space-y-1 pl-5" style="color: var(--color-text-muted);">
-                                                <li>„Audio aufnehmen"</li>
-                                                <li>„Inhalte von URL abrufen" - Methode POST, Adresse <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">/api/voice/quick</code> dieser App, Kopfzeile <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">Authorization: Bearer &lt;Token&gt;</code>, Anfragetext „Formular" - dort ein Feld hinzufügen, Typ „Datei", Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">audio</code>, Wert die Aufnahme aus Schritt 1 (nicht „Anfragetext: Datei" - das schickt die Aufnahme ohne Feldnamen)</li>
-                                                <li>„Wörterbuchwert abrufen" - Wörterbuch: die Antwort aus Schritt 2 (Inhalte von URL), Schlüssel <code class="rounded px-1 text-xs" style="background: var(--color-bg-subtle);">text</code></li>
-                                                <li>„In Zwischenablage kopieren"</li>
-                                            </ol>
-                                        </li>
-                                        <li>Einstellungen → Bedienungshilfen → Berühren → Rückseitentipp → „Doppeltippen" → Kurzbefehl „NotesVoice" auswählen.</li>
-                                        <li>Doppeltipp auf die Rückseite, sprechen, im Aufnahme-Overlay auf „Fertig" tippen - der aufbereitete Text liegt danach in der Zwischenablage, ohne dass diese App geöffnet wurde.</li>
-                                    </ol>
-                                    <p class="mt-3 text-xs" style="color: var(--color-text-muted);">Der Token steht im Klartext im Kurzbefehl. Bei Verlust des Geräts oder Verdacht auf Missbrauch oben einfach widerrufen - das genügt, ein neuer Token braucht nur die Schritte 1 und 2b erneut.</p>
+                                <div class="mt-5 border-t pt-5" style="border-color: var(--color-border);">
+                                    <button type="button" @click="toggleTemplates" class="flex w-full items-center gap-1.5 rounded-md py-1 leading-none hover:bg-black/5 dark:hover:bg-white/10" :aria-expanded="templatesOpen">
+                                        <span x-show="!templatesOpen" class="flex" x-icon="chevron-right"></span>
+                                        <span x-show="templatesOpen" x-cloak class="flex" x-icon="chevron-down"></span>
+                                        <span class="text-sm font-semibold">Vorlagen</span>
+                                    </button>
+
+                                    <div x-show="templatesOpen" x-cloak class="mt-3 space-y-5">
+                                        <p class="text-xs" style="color: var(--color-text-muted);">Vor jeder Diktat-Aufnahme für eine Notiz wählst du eine Vorlage: eine Anweisung, wie das Diktat aufbereitet werden soll (z. B. als Angebot mit Position, Menge und Preis), optional mit eigenem Vokabular für Fachbegriffe.</p>
+
+                                        <div x-show="voiceTemplates.length > 0" x-cloak class="space-y-2">
+                                            <template x-for="template in voiceTemplates" :key="template.id">
+                                                <div class="rounded-lg p-3" style="background: var(--color-bg-subtle);">
+                                                    <div class="flex items-start justify-between gap-2">
+                                                        <span class="text-sm font-medium" x-text="template.name"></span>
+                                                        <span class="flex shrink-0 gap-2">
+                                                            <button type="button" @click="startEditVoiceTemplate(template)" class="text-xs font-medium" style="color: var(--color-text-muted);">Bearbeiten</button>
+                                                            <button type="button" @click="deleteVoiceTemplate(template)" class="text-xs font-medium" style="color: var(--color-danger);">Löschen</button>
+                                                        </span>
+                                                    </div>
+                                                    <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <p x-show="voiceTemplates.length === 0 && !voiceTemplatesLoading" x-cloak class="text-sm" style="color: var(--color-text-muted);">Noch keine eigene Vorlage angelegt.</p>
+
+                                        <form @submit.prevent="saveVoiceTemplate" class="space-y-2 rounded-lg border p-3" style="border-color: var(--color-border);">
+                                            <p class="text-xs font-semibold" x-text="editingVoiceTemplateId ? 'Vorlage bearbeiten' : 'Neue Vorlage'"></p>
+                                            <div>
+                                                <label class="sr-only" for="voice-template-name">Name der Vorlage</label>
+                                                <input id="voice-template-name" type="text" maxlength="80" x-model="voiceTemplateName" placeholder="z. B. Angebot mit Positionen" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                            </div>
+                                            <div>
+                                                <label class="sr-only" for="voice-template-instruction">Anweisung</label>
+                                                <textarea id="voice-template-instruction" x-model="voiceTemplateInstruction" placeholder="Wie soll das Diktat aufbereitet werden?" rows="4" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                                            </div>
+                                            <div>
+                                                <label class="sr-only" for="voice-template-vocabulary">Vokabular (optional)</label>
+                                                <textarea id="voice-template-vocabulary" x-model="voiceTemplateVocabulary" placeholder="Fachbegriffe/Schreibweisen (optional)" rows="2" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                                            </div>
+                                            <div class="flex justify-end gap-2">
+                                                <button x-show="editingVoiceTemplateId" x-cloak type="button" @click="cancelEditVoiceTemplate" class="btn btn-quiet" :disabled="voiceTemplateSaving">Abbrechen</button>
+                                                <button type="submit" class="btn btn-primary" :disabled="voiceTemplateSaving" x-text="editingVoiceTemplateId ? 'Speichern' : 'Anlegen'"></button>
+                                            </div>
+                                        </form>
+
+                                        <p x-show="voiceTemplateError" x-cloak x-text="voiceTemplateError" class="text-sm" style="color: var(--color-danger);" role="alert"></p>
+
+                                        <div x-show="globalVoiceTemplates.length > 0" x-cloak class="border-t pt-4" style="border-color: var(--color-border);">
+                                            <h5 class="text-sm font-semibold">Globale Vorlagen</h5>
+                                            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Vom Administrator angelegt, für alle Nutzer wählbar.</p>
+                                            <div class="mt-2 space-y-2">
+                                                <template x-for="template in globalVoiceTemplates" :key="template.id">
+                                                    <div class="rounded-lg p-3" style="background: var(--color-bg-subtle);">
+                                                        <span class="text-sm font-medium" x-text="template.name"></span>
+                                                        <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
                             <?php endif; ?>

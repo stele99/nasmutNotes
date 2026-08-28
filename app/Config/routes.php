@@ -32,6 +32,7 @@ use App\Controllers\ShareController;
 use App\Controllers\TaskController;
 use App\Controllers\UserInviteController;
 use App\Controllers\VoiceNoteController;
+use App\Controllers\VoiceTemplateController;
 use App\Middleware\DeviceTokenAuthMiddleware;
 use App\Middleware\RequireAdminMiddleware;
 use App\Middleware\RequireAuthMiddleware;
@@ -91,6 +92,10 @@ return static function (App $app, ContainerInterface $container): void {
         $group->get('/model-costs', [AdminDashboardController::class, 'modelCosts']);
         $group->post('/model-costs', [AdminDashboardController::class, 'storeModelCost']);
         $group->delete('/model-costs/{model}', [AdminDashboardController::class, 'destroyModelCost']);
+        $group->get('/voice-templates', [AdminDashboardController::class, 'voiceTemplates']);
+        $group->post('/voice-templates', [AdminDashboardController::class, 'storeVoiceTemplate']);
+        $group->patch('/voice-templates/{id}', [AdminDashboardController::class, 'updateVoiceTemplate']);
+        $group->delete('/voice-templates/{id}', [AdminDashboardController::class, 'destroyVoiceTemplate']);
         $group->post('/attachments/purge-orphans', [AdminDashboardController::class, 'purgeOrphans']);
         $group->get('/backups', [BackupAdminController::class, 'index']);
         $group->post('/backups', [BackupAdminController::class, 'store']);
@@ -117,6 +122,15 @@ return static function (App $app, ContainerInterface $container): void {
         $group->get('', [DeviceTokenController::class, 'index']);
         $group->post('', [DeviceTokenController::class, 'store']);
         $group->delete('/{id}', [DeviceTokenController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
+
+    // Persönliche Diktier-Vorlagen (FR-VOICE): eigene Anweisungen für die
+    // Aufbereitung eines Diktats, wählbar zusätzlich zu den globalen des Admins.
+    $app->group('/api/profile/voice-templates', function ($group): void {
+        $group->get('', [VoiceTemplateController::class, 'index']);
+        $group->post('', [VoiceTemplateController::class, 'store']);
+        $group->patch('/{id}', [VoiceTemplateController::class, 'update']);
+        $group->delete('/{id}', [VoiceTemplateController::class, 'destroy']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->get('/app', [AppController::class, 'shell'])->add(new RequireAuthMiddleware(false));
@@ -222,6 +236,7 @@ return static function (App $app, ContainerInterface $container): void {
 
     $app->group('/api/voice', function ($group): void {
         $group->get('/config', [VoiceNoteController::class, 'config']);
+        $group->get('/templates', [VoiceNoteController::class, 'templates']);
         $group->post('/transcribe', [VoiceNoteController::class, 'transcribe']);
         $group->post('/notes', [VoiceNoteController::class, 'store']);
     })->add(new RequireAuthMiddleware(true));

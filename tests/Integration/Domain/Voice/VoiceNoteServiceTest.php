@@ -23,6 +23,7 @@ use App\Repositories\NoteVersionRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\ShareRepository;
+use App\Repositories\VoiceTemplateRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\ValidationException;
 use GuzzleHttp\Client;
@@ -101,7 +102,7 @@ final class VoiceNoteServiceTest extends TestCase
             'text' => "Für das Frühjahr:\n\n- Hochbeet aufbauen\n- Tomaten vorziehen",
         ]);
 
-        $result = $this->service()->createNote($this->user, $this->makeUpload(), 'iphash');
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
 
         self::assertSame('Gartenarbeiten im Frühjahr', $result['page']['title']);
         self::assertSame('Garten', $result['page']['notebook_name']);
@@ -120,7 +121,7 @@ final class VoiceNoteServiceTest extends TestCase
             ->execute(['id' => (int) $page['id']]);
 
         try {
-            $this->service()->transcribeForPage($this->user, (int) $page['id'], $this->makeUpload());
+            $this->service()->transcribeForPage($this->user, (int) $page['id'], $this->makeUpload(), $this->templateId());
             self::fail('Diktat für verschlüsselte Notiz wurde gestartet.');
         } catch (NoteEncryptionException $exception) {
             self::assertSame('NOTE_ENCRYPTED', $exception->errorCode);
@@ -132,7 +133,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->queueTranscription('Notiz mit Ort');
         $this->queuePostprocessing(['title' => 'Unterwegs', 'notebook' => '', 'text' => 'Notiz mit Ort.']);
 
-        $result = $this->service()->createNote($this->user, $this->makeUpload(), 'iphash', [
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash', [
             'lat' => '48.775846',
             'lon' => '9.182932',
             'accuracy' => '30',
@@ -241,7 +242,7 @@ final class VoiceNoteServiceTest extends TestCase
             'text' => 'Irgendetwas ganz anderes.',
         ]);
 
-        $result = $this->service()->createNote($this->user, $this->makeUpload(), 'iphash');
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
 
         self::assertNull($result['page']['notebook_id']);
         self::assertNull($result['notebook_name']);
@@ -253,7 +254,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->settings->set(VoiceNoteService::POSTPROCESS_ENABLED_KEY, '0');
         $this->queueTranscription('Erster Satz. Zweiter Satz.');
 
-        $result = $this->service()->createNote($this->user, $this->makeUpload(), 'iphash');
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
 
         self::assertSame('Erster Satz', $result['page']['title']);
         self::assertSame('Erster Satz. Zweiter Satz.', $result['transcript']);
@@ -304,7 +305,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->queueTranscription('   ');
 
         try {
-            $this->service()->createNote($this->user, $this->makeUpload(), 'iphash');
+            $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
             self::fail('Eine leere Aufnahme darf keine Notiz anlegen.');
         } catch (ValidationException $e) {
             self::assertStringContainsString('keine Sprache', $e->getMessage());
@@ -324,7 +325,7 @@ final class VoiceNoteServiceTest extends TestCase
         ]);
 
         try {
-            $this->service()->createNote($this->user, $this->makeUpload(), 'iphash');
+            $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
             self::fail('Ein abgelehnter Inhalt darf keine Seite hinterlassen.');
         } catch (ValidationException) {
         }
@@ -339,7 +340,7 @@ final class VoiceNoteServiceTest extends TestCase
         ], (string) json_encode(['error' => ['message' => 'Incorrect API key provided']])));
 
         $this->expectException(VoiceServiceException::class);
-        $this->service()->createNote($this->user, $this->makeUpload(), 'iphash');
+        $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
     }
 
     public function testDisabledFeatureIsRefused(): void
@@ -347,19 +348,19 @@ final class VoiceNoteServiceTest extends TestCase
         $this->settings->set(VoiceNoteService::ENABLED_KEY, '0');
 
         $this->expectException(ValidationException::class);
-        $this->service()->transcribe($this->user, $this->makeUpload());
+        $this->service()->transcribe($this->user, $this->makeUpload(), $this->templateId());
     }
 
     public function testMissingApiKeyIsRefused(): void
     {
         $this->expectException(ValidationException::class);
-        $this->service(apiKey: '')->transcribe($this->user, $this->makeUpload());
+        $this->service(apiKey: '')->transcribe($this->user, $this->makeUpload(), $this->templateId());
     }
 
     public function testUnsupportedFormatIsRefused(): void
     {
         $this->expectException(ValidationException::class);
-        $this->service()->transcribe($this->user, $this->makeUpload(mediaType: 'application/pdf', name: 'brief.pdf'));
+        $this->service()->transcribe($this->user, $this->makeUpload(mediaType: 'application/pdf', name: 'brief.pdf'), $this->templateId());
     }
 
     public function testRecordingAboveTheConfiguredLimitIsRefused(): void
@@ -367,7 +368,7 @@ final class VoiceNoteServiceTest extends TestCase
         $this->settings->set(VoiceNoteService::MAX_MB_KEY, '1');
 
         $this->expectException(ValidationException::class);
-        $this->service()->transcribe($this->user, $this->makeUpload(bytes: 2 * 1024 * 1024));
+        $this->service()->transcribe($this->user, $this->makeUpload(bytes: 2 * 1024 * 1024), $this->templateId());
     }
 
     public function testAdminSettingsAreValidatedAndPersisted(): void
@@ -453,9 +454,16 @@ final class VoiceNoteServiceTest extends TestCase
             $this->notebooks,
             new MarkdownConverter(),
             new AuditLogRepository($this->pdo),
+            new VoiceTemplateRepository($this->pdo),
             $this->tmpPath,
             $apiKey,
         );
+    }
+
+    /** Die per Migration angelegte globale Standard-Vorlage. */
+    private function templateId(): int
+    {
+        return (int) $this->pdo->query('SELECT id FROM voice_templates ORDER BY id LIMIT 1')->fetchColumn();
     }
 
     private function queueTranscription(string $text): void

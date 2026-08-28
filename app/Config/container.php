@@ -39,6 +39,7 @@ use App\Domain\PageService;
 use App\Domain\SessionService;
 use App\Domain\Voice\OpenAiClient;
 use App\Domain\Voice\VoiceNoteService;
+use App\Domain\Voice\VoiceTemplateService;
 use App\Repositories\AdminRepository;
 use App\Repositories\AiModelCostRepository;
 use App\Repositories\AiUsageRepository;
@@ -60,6 +61,7 @@ use App\Repositories\SettingsRepository;
 use App\Repositories\ShareRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\UserRepository;
+use App\Repositories\VoiceTemplateRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\AdminEmails;
 use App\Support\Database;
@@ -405,6 +407,14 @@ return static function (string $rootPath): DI\Container {
         DevicePairRequestRepository::class => static fn (PDO $pdo): DevicePairRequestRepository
             => new DevicePairRequestRepository($pdo),
 
+        VoiceTemplateRepository::class => static fn (PDO $pdo): VoiceTemplateRepository
+            => new VoiceTemplateRepository($pdo),
+
+        VoiceTemplateService::class => static fn (
+            VoiceTemplateRepository $templates,
+            AuditLogRepository $auditLog,
+        ): VoiceTemplateService => new VoiceTemplateService($templates, $auditLog),
+
         DevicePairingService::class => static fn (
             DevicePairRequestRepository $requests,
             DeviceTokenService $tokens,
@@ -486,6 +496,7 @@ return static function (string $rootPath): DI\Container {
             NotebookService $notebooks,
             MarkdownConverter $markdown,
             AuditLogRepository $auditLog,
+            VoiceTemplateRepository $templates,
         ): VoiceNoteService => new VoiceNoteService(
             $settings,
             $client,
@@ -494,6 +505,7 @@ return static function (string $rootPath): DI\Container {
             $notebooks,
             $markdown,
             $auditLog,
+            $templates,
             $rootPath . '/' . trim(Env::get('VOICE_TMP_PATH', 'var/tmp/voice') ?? 'var/tmp/voice', '/'),
             // Das Geheimnis kommt nur aus der Umgebung; OPENAI_API_KEY bleibt als
             // gebräuchlicher Zweitname zulässig.

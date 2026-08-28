@@ -68,6 +68,12 @@ export function adminDashboard() {
     costOutput: '',
     costCurrency: 'EUR',
     aiUsage: null,
+    // Globale Diktier-Vorlagen (FR-VOICE): für alle Nutzer wählbar.
+    voiceTemplates: [],
+    voiceTemplateName: '',
+    voiceTemplateInstruction: '',
+    voiceTemplateVocabulary: '',
+    editingVoiceTemplateId: null,
 
     async init() {
       await this.refresh();
@@ -89,6 +95,7 @@ export function adminDashboard() {
         this.applyNoteAiSettings(data.note_ai || {});
         this.applyAssistantSettings(data.assistant || {});
         this.aiCosts = data.ai_costs || [];
+        this.voiceTemplates = data.voice_templates || [];
         await this.loadAiUsage();
       } catch (error) {
         this.error = error.message || 'Die Übersicht konnte nicht geladen werden.';
@@ -319,6 +326,57 @@ export function adminDashboard() {
       await this.run(async () => {
         await apiFetch(`/api/admin/model-costs/${encodeURIComponent(cost.model)}`, { method: 'DELETE' });
         this.message = `Kostenpflege für „${cost.model}“ entfernt.`;
+      });
+    },
+
+    /** Globale Diktier-Vorlagen: legt an oder speichert die gerade bearbeitete. */
+    async saveVoiceTemplate() {
+      const name = this.voiceTemplateName.trim();
+      const instruction = this.voiceTemplateInstruction.trim();
+      if (!name || !instruction) {
+        this.error = 'Bitte Name und Anweisung angeben.';
+        return;
+      }
+      await this.run(async () => {
+        const body = JSON.stringify({
+          name,
+          instruction,
+          vocabulary: this.voiceTemplateVocabulary.trim(),
+        });
+        if (this.editingVoiceTemplateId) {
+          await apiFetch(`/api/admin/voice-templates/${this.editingVoiceTemplateId}`, { method: 'PATCH', body });
+        } else {
+          await apiFetch('/api/admin/voice-templates', { method: 'POST', body });
+        }
+        this.cancelEditVoiceTemplate();
+        this.message = `Vorlage „${name}“ gespeichert.`;
+      });
+    },
+
+    startEditVoiceTemplate(template) {
+      this.editingVoiceTemplateId = template.id;
+      this.voiceTemplateName = template.name;
+      this.voiceTemplateInstruction = template.instruction;
+      this.voiceTemplateVocabulary = template.vocabulary || '';
+    },
+
+    cancelEditVoiceTemplate() {
+      this.editingVoiceTemplateId = null;
+      this.voiceTemplateName = '';
+      this.voiceTemplateInstruction = '';
+      this.voiceTemplateVocabulary = '';
+    },
+
+    async deleteVoiceTemplate(template) {
+      if (!window.confirm(`Vorlage „${template.name}“ entfernen?`)) {
+        return;
+      }
+      await this.run(async () => {
+        await apiFetch(`/api/admin/voice-templates/${template.id}`, { method: 'DELETE' });
+        if (this.editingVoiceTemplateId === template.id) {
+          this.cancelEditVoiceTemplate();
+        }
+        this.message = `Vorlage „${template.name}“ entfernt.`;
       });
     },
 

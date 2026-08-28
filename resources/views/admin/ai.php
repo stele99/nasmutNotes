@@ -20,6 +20,7 @@
             <a href="#ki-gemeinsam" class="settings-nav-button shrink-0"><span x-icon="cpu"></span><span>Gemeinsames</span></a>
             <a href="#ki-sprachnotizen" class="settings-nav-button shrink-0"><span x-icon="mic"></span><span>Sprachnotizen</span></a>
             <a href="#ki-notesvoice" class="settings-nav-button shrink-0"><span x-icon="zap"></span><span>NotesVoice</span></a>
+            <a href="#ki-vorlagen" class="settings-nav-button shrink-0"><span x-icon="file-text"></span><span>Vorlagen</span></a>
             <a href="#ki-notiz-ki" class="settings-nav-button shrink-0"><span x-icon="wand-sparkles"></span><span>Notiz-KI</span></a>
             <a href="#ki-assistant" class="settings-nav-button shrink-0"><span x-icon="laptop"></span><span>Desktop-Assistant</span></a>
             <a href="#ki-kosten" class="settings-nav-button shrink-0"><span x-icon="wallet"></span><span>Modellkosten</span></a>
@@ -144,6 +145,49 @@
             </div>
 
             <div class="mt-6 flex flex-wrap justify-end gap-2"><button type="button" class="btn btn-primary" :disabled="busy" @click="saveQuickSettings">Speichern</button></div>
+        </div>
+
+        <div id="ki-vorlagen" class="document-surface mb-8 scroll-mt-6 p-5 sm:p-6">
+            <div>
+                <h2 class="text-lg font-semibold">Vorlagen</h2>
+                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Globale Diktier-Vorlagen: für alle Nutzer wählbar, bevor sie eine Notiz per Diktat aufnehmen. Jeder Nutzer kann zusätzlich eigene Vorlagen unter Einstellungen › Speech2Text › Vorlagen anlegen.</p>
+            </div>
+
+            <div x-show="voiceTemplates.length > 0" x-cloak class="mt-5 space-y-2">
+                <template x-for="template in voiceTemplates" :key="template.id">
+                    <div class="rounded-lg border p-3" style="border-color: var(--color-border);">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="text-sm font-medium" x-text="template.name"></span>
+                            <span class="flex shrink-0 gap-2">
+                                <button type="button" @click="startEditVoiceTemplate(template)" class="text-xs font-medium" style="color: var(--color-text-muted);">Bearbeiten</button>
+                                <button type="button" @click="deleteVoiceTemplate(template)" class="text-xs font-medium" style="color: var(--color-danger);">Entfernen</button>
+                            </span>
+                        </div>
+                        <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                    </div>
+                </template>
+            </div>
+            <p x-show="voiceTemplates.length === 0" x-cloak class="mt-4 text-sm" style="color: var(--color-text-muted);">Noch keine globale Vorlage angelegt.</p>
+
+            <form @submit.prevent="saveVoiceTemplate" class="mt-5 space-y-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                <p class="text-xs font-semibold" x-text="editingVoiceTemplateId ? 'Vorlage bearbeiten' : 'Neue Vorlage'"></p>
+                <div>
+                    <label for="voice-template-name" class="block text-sm font-medium">Name</label>
+                    <input id="voice-template-name" type="text" maxlength="80" x-model="voiceTemplateName" placeholder="z. B. Angebot mit Positionen" :disabled="busy" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                </div>
+                <div>
+                    <label for="voice-template-instruction" class="block text-sm font-medium">Anweisung</label>
+                    <textarea id="voice-template-instruction" x-model="voiceTemplateInstruction" placeholder="Wie soll das Diktat aufbereitet werden?" rows="5" :disabled="busy" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                </div>
+                <div>
+                    <label for="voice-template-vocabulary" class="block text-sm font-medium">Vokabular (optional)</label>
+                    <textarea id="voice-template-vocabulary" x-model="voiceTemplateVocabulary" placeholder="Fachbegriffe/Schreibweisen (optional)" rows="2" :disabled="busy" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button x-show="editingVoiceTemplateId" x-cloak type="button" @click="cancelEditVoiceTemplate" class="btn btn-quiet" :disabled="busy">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary" :disabled="busy" x-text="editingVoiceTemplateId ? 'Speichern' : 'Anlegen'"></button>
+                </div>
+            </form>
         </div>
 
         <div id="ki-notiz-ki" class="document-surface mb-8 scroll-mt-6 p-5 sm:p-6">

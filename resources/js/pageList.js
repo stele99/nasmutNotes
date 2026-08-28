@@ -1,6 +1,6 @@
 import { apiFetch } from './api.js';
 import { markNewPageForTitleEdit } from './newPageTitle.js';
-import { voiceFormData, voiceRecorderMixin } from './voice.js';
+import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.js';
 import { captureLocationOnCreate } from './geo.js';
 import { nearbySearchMixin } from './nearbySearch.js';
 import { showToast } from './toast.js';
@@ -124,6 +124,7 @@ const RECENT_PAGE_SIZE = 25;
 export function pageList() {
   return {
     ...voiceRecorderMixin(),
+    ...voiceTemplateMixin(),
     ...nearbySearchMixin(),
     voiceNoticeTimer: null,
     pages: [],
@@ -433,6 +434,7 @@ export function pageList() {
      */
     async handleVoiceRecording(recording) {
       const body = voiceFormData(recording);
+      body.append('template_id', String(this.voiceTemplateId));
       const location = await captureLocationOnCreate();
       if (location) {
         body.append('lat', String(location.lat));
