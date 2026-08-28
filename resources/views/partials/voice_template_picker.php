@@ -14,8 +14,11 @@
          der dynamische aria-label den Dialog statt einer ID - doppelte IDs
          wären ungültig. */ ?>
 <template x-teleport="body">
-<div x-show="isVoiceDialogOpen()" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeVoiceDialog" @keydown.escape.window="closeVoiceDialog">
-    <div class="flex w-full max-w-md flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" :aria-label="voiceDialogTitle()" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+<div x-show="isVoiceDialogOpen()" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeVoiceDialog" @keydown.escape.window="closeVoiceDialog">
+    <div class="relative flex w-full max-w-md flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" :aria-label="voiceDialogTitle()" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+        <?php /* Roter Saum, solange wirklich aufgenommen wird - das Overlay
+                liest sich damit sofort als "Recording". */ ?>
+        <div x-show="voiceStatus === 'recording'" x-cloak class="pointer-events-none absolute inset-0 rounded-xl" style="box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 45%, transparent);" aria-hidden="true"></div>
         <header class="flex items-center justify-between gap-3 border-b px-5 py-4" style="border-color: var(--color-border);">
             <h2 class="font-semibold" x-text="voiceDialogTitle()"></h2>
             <?php /* Läuft ein Vorgang, gibt es keinen Schließen-Schalter:
@@ -42,7 +45,7 @@
         </div>
         <?php /* Aufnahme, Pause, Verarbeitung, Speicherung und Fehler - das
                  Panel ohne eigenen Rahmen, der Dialog bringt ihn mit. */ ?>
-        <div x-show="!voiceTemplatePickerOpen" x-cloak class="px-5 py-4">
+        <div x-show="!voiceTemplatePickerOpen" x-cloak class="px-5 py-5">
             <?php $voicePanelBare = true; include __DIR__ . '/voice_panel.php'; unset($voicePanelBare); ?>
         </div>
     </div>
