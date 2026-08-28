@@ -6,6 +6,11 @@ namespace App\Domain\Notes;
 
 final class ProseMirrorHtmlRenderer
 {
+    public function __construct(
+        private readonly ImageAnnotationSvgRenderer $overlay = new ImageAnnotationSvgRenderer(),
+    ) {
+    }
+
     /** @param array<string, mixed> $document */
     public function render(array $document, string $shareToken): string
     {
@@ -106,6 +111,11 @@ final class ProseMirrorHtmlRenderer
         $width = isset($attrs['width']) ? ' width="' . max(1, (int) $attrs['width']) . '"' : '';
         $height = isset($attrs['height']) ? ' height="' . max(1, (int) $attrs['height']) . '"' : '';
 
-        return '<img src="' . $url . '" alt="' . $alt . '"' . $width . $height . ' loading="lazy">';
+        $image = '<img src="' . $url . '" alt="' . $alt . '"' . $width . $height . ' loading="lazy">';
+        $overlay = $this->overlay->render($attrs['annotations'] ?? null);
+
+        // Ohne Annotationen bleibt es beim nackten <img> - der zusätzliche
+        // Rahmen entsteht nur, wenn er auch etwas zu tragen hat.
+        return $overlay === '' ? $image : '<span class="note-image">' . $image . $overlay . '</span>';
     }
 }

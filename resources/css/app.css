@@ -1322,6 +1322,113 @@ button:disabled,
   transform: scale(1.15);
 }
 
+/* Annotations-Overlay ------------------------------------------------- */
+
+/* Bezugsrahmen für das Overlay. Positioniert wird auf den Kasten des <img>
+   (siehe attachLayer in annotatedImage.js), nicht auf den des Wirts: Das
+   zentrierte Bild ist schmaler als sein Wirt. */
+.note-image-host {
+  position: relative;
+}
+
+.note-image-overlay {
+  display: block;
+  pointer-events: none;
+  position: absolute;
+  user-select: none;
+}
+
+.note-image-overlay-svg {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+/* Öffentliche Freigabe: dort kommt das Overlay serverseitig als <span
+   class="note-image"> mit <img> und <svg> (ProseMirrorHtmlRenderer). */
+.public-note-content .note-image {
+  display: block;
+  position: relative;
+}
+
+.public-note-content .note-image svg {
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+/* Annotationseditor ---------------------------------------------------- */
+
+.anno-viewport {
+  touch-action: pan-x pan-y;
+}
+
+.anno-stage {
+  max-height: 100%;
+  max-width: 100%;
+  position: relative;
+  /* Ohne diese Angabe scrollt jeder Strich die Seite statt zu zeichnen. */
+  touch-action: none;
+  width: min(100%, 1400px);
+}
+
+.anno-image,
+.anno-layer,
+.anno-layer > svg {
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.anno-image {
+  object-fit: fill;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.anno-layer {
+  pointer-events: none;
+}
+
+.anno-selection {
+  border: 2px dashed var(--color-accent);
+  pointer-events: none;
+  position: absolute;
+}
+
+.anno-handle {
+  background: var(--color-bg);
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  bottom: -8px;
+  height: 16px;
+  pointer-events: auto;
+  position: absolute;
+  right: -8px;
+  width: 16px;
+}
+
+.anno-swatch {
+  border: 2px solid var(--color-border);
+  border-radius: 50%;
+  height: 22px;
+  width: 22px;
+}
+
+.anno-swatch.is-active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.anno-swatch-picker {
+  background: none;
+  padding: 0;
+}
+
 .image-upload-placeholder {
   align-items: center;
   background: var(--color-bg-subtle);
@@ -1799,6 +1906,7 @@ button:disabled,
   }
 
   .prose-editor img,
+  .note-image-overlay,
   .prose-editor li,
   .prose-editor tr {
     break-inside: avoid;

@@ -160,6 +160,9 @@
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button toolbar-more" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button toolbar-more" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
+            <button x-show="!isEncrypted() && imageSelected" x-cloak type="button"
+                    @click.prevent="openImageAnnotator" class="toolbar-button"
+                    title="Bild beschriften" aria-label="Bild beschriften" x-icon="pencil"></button>
             <?php /* Diktat: Der aufbereitete Text wird an der Einfügemarke eingesetzt
                      (FR-VOICE-02). Aufnahme, Pause und Beenden steuert das
                      Aufnahme-Overlay - der Knopf steht nur für den Start. */ ?>
@@ -196,6 +199,7 @@
             <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+        <p x-show="annoError" x-cloak x-text="annoError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <?php if (!empty($voiceEnabled)): ?>
             <div x-show="!isEncrypted()" class="note-print-hide mb-4"><?php include __DIR__ . '/partials/voice_status.php'; ?></div>
             <?php include __DIR__ . '/partials/voice_template_picker.php'; ?>
@@ -356,6 +360,11 @@
             aria-label="Vollbild schließen"
             x-icon="x"
         ></button>
+        <button x-show="canEditPage && !isShared" type="button"
+                @click.stop="openImageAnnotatorFromViewer"
+                class="sidebar-toggle absolute left-3 top-3 flex rounded-full"
+                style="background-color: rgb(0 0 0 / 0.5); color: #ffffff;"
+                aria-label="Bild beschriften" x-icon="pencil"></button>
     </div>
 
     <div x-show="compressionOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCompressionDialog" @keydown.escape.window="closeCompressionDialog" role="dialog" aria-modal="true" aria-labelledby="compression-dialog-title">
@@ -511,4 +520,6 @@
             </div>
         </div>
     </div>
+
+    <?php include __DIR__ . '/partials/image_annotation_dialog.php'; ?>
 </div>

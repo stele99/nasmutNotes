@@ -6,6 +6,8 @@
  * Speicherversuch an derselben Validierung scheitert. Deshalb wird schon beim
  * Einfügen zurechtgezogen, statt den Fehler erst beim Sync zu bemerken.
  */
+import { normalizeAnnotations } from './annotations/schema.js';
+
 export const MAX_HEADING_LEVEL = 3;
 export const HEADING_LEVELS = [1, 2, 3];
 
@@ -15,7 +17,7 @@ export const HEADING_LEVELS = [1, 2, 3];
  */
 const ALLOWED_IMAGE_SRC = /^\/(api\/attachments\/[a-f0-9]{64}|offline-attachments\/[a-f0-9-]+)$/;
 
-const NEEDS_CLEANUP = /<h[456][\s>]|<img[\s>]/i;
+const NEEDS_CLEANUP = /<h[456][\s>]|<img[\s>]|data-annotations/i;
 
 /**
  * Pflichteltern für Fragmente aus der Zwischenablage, gleiche Tabelle wie in
@@ -74,6 +76,21 @@ export function sanitizePastedHtml(html) {
   for (const image of parsed.body.querySelectorAll('img')) {
     if (!ALLOWED_IMAGE_SRC.test(image.getAttribute('src') || '')) {
       image.remove();
+      continue;
+    }
+    const raw = image.getAttribute('data-annotations');
+    if (raw !== null) {
+      let value = null;
+      try {
+        value = normalizeAnnotations(JSON.parse(raw));
+      } catch (error) {
+        value = null;
+      }
+      if (value === null) {
+        image.removeAttribute('data-annotations');
+      } else {
+        image.setAttribute('data-annotations', JSON.stringify(value));
+      }
     }
   }
 
@@ -120,6 +137,14 @@ export function sanitizeNoteDoc(doc) {
       if (child?.type === 'image' && !ALLOWED_IMAGE_SRC.test(child.attrs?.src || '')) {
         changed = true;
         continue;
+      }
+      if (child?.type === 'image' && child.attrs?.annotations != null) {
+        const value = normalizeAnnotations(child.attrs.annotations);
+        if (JSON.stringify(value) !== JSON.stringify(child.attrs.annotations)) {
+          changed = true;
+          content.push({ ...child, attrs: { ...child.attrs, annotations: value } });
+          continue;
+        }
       }
       content.push(walk(child));
     }

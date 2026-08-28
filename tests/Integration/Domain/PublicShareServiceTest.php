@@ -91,6 +91,68 @@ final class PublicShareServiceTest extends TestCase
         self::assertSame('read_copy', $this->publicShares->resolve($share['token'])['mode']);
     }
 
+    public function testAnnotatedImageRendersOverlayFrameInPublicView(): void
+    {
+        $page = $this->pages->create($this->owner, 'note', 'Annotiert', null);
+        $document = json_encode([
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => [
+                    'src' => '/api/attachments/' . str_repeat('a', 64),
+                    'alt' => 'Screenshot',
+                    'annotations' => [
+                        'v' => 1,
+                        'space' => ['w' => 1000, 'h' => 800],
+                        'items' => [[
+                            'id' => 'abcd1234',
+                            't' => 'line',
+                            'c' => '#e11d48',
+                            'w' => 4,
+                            'x1' => 10,
+                            'y1' => 20,
+                            'x2' => 30,
+                            'y2' => 40,
+                            'head' => 'end',
+                        ]],
+                    ],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+        $this->pdo->prepare('UPDATE note_contents SET content = :content WHERE page_id = :page')
+            ->execute(['content' => $document, 'page' => (int) $page['id']]);
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'read');
+
+        $view = $this->publicShares->view($share['token']);
+        $html = (string) $view['note_html'];
+
+        self::assertStringContainsString('<span class="note-image">', $html);
+        self::assertStringContainsString('<img src="/s/', $html);
+        self::assertStringContainsString('<svg viewBox="0 0 1000 800"', $html);
+    }
+
+    public function testPlainImageRendersWithoutOverlayFrame(): void
+    {
+        $page = $this->pages->create($this->owner, 'note', 'Unannotiert', null);
+        $document = json_encode([
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'image',
+                'attrs' => ['src' => '/api/attachments/' . str_repeat('a', 64), 'alt' => 'Screenshot'],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+        $this->pdo->prepare('UPDATE note_contents SET content = :content WHERE page_id = :page')
+            ->execute(['content' => $document, 'page' => (int) $page['id']]);
+        $share = $this->shares->create($this->owner, (int) $page['id'], 'read');
+
+        $view = $this->publicShares->view($share['token']);
+        $html = (string) $view['note_html'];
+
+        self::assertStringContainsString('<img src="/s/', $html);
+        self::assertStringNotContainsString('note-image', $html);
+        self::assertStringNotContainsString('<svg', $html);
+    }
+
     public function testEncryptedReadShareReturnsEnvelopeForBrowserDecryption(): void
     {
         $page = $this->pages->create($this->owner, 'note', 'Altfreigabe', null);

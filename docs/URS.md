@@ -243,6 +243,23 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-CRYPT-09 | Workspace-Exporte schreiben verschlüsselte Notizen als gekennzeichnete `.encrypted-note.json`-Dateien mit Umschlag und unverschlüsselten Metadaten, niemals als leere Markdown-Datei. Titel, Notizbuch, Standort, Zeitstempel, Ciphertextgröße und Zugriffsmuster bleiben grundsätzlich unverschlüsselte Metadaten. | M |
 | FR-CRYPT-10 | Die Funktion verspricht keine rückwirkende physische Löschung historischer Klartexte aus alten Browser-Speichern, Exporten, Backups, WAL-Dateien, Storage-Snapshots oder Datenträgerblöcken. UI und Betriebsdokumentation benennen diese Grenze ausdrücklich. | M |
 
+### 5.4b Bild-Annotationen *(neu in v3.7)*
+
+| ID | Anforderung | Prio |
+|---|---|---|
+| FR-ANNO-01 | Bilder in Notizen können mit Annotationen versehen werden. Die Bilddatei wird dabei nicht verändert; die Annotationen liegen als Overlay über dem Bild. | M |
+| FR-ANNO-02 | Annotationen sind jederzeit erneut bearbeitbar: verschieben, skalieren, Eigenschaften ändern, löschen. | M |
+| FR-ANNO-03 | Werkzeuge mindestens: Freihand, Marker, Linie, Pfeil, Rechteck, Ellipse, Textkasten, Zeilenlinien, nummerierter Marker, Abdeckung. | M |
+| FR-ANNO-04 | Annotationen werden als Attribut des Bildknotens im ProseMirror-JSON gespeichert; keine eigene Tabelle, keine eigene Datei. | M |
+| FR-ANNO-05 | Serverseitige Allowlist-Validierung mit Grenzen für Elementzahl, Punktzahl, Textlänge und JSON-Größe je Bild und je Dokument. | M |
+| FR-ANNO-06 | Annotationen skalieren verlustfrei mit der Anzeigegröße und bleiben nach serverseitiger Bildkompression positionsgenau. | M |
+| FR-ANNO-07 | Annotationen erscheinen im Editor, im Lesemodus, im Bildbetrachter, im Druck/PDF und in der öffentlichen Freigabe. | M |
+| FR-ANNO-08 | Annotationen sind Teil des Notizinhalts und damit von Autosave, Versionsverlauf, Wiederherstellung, Konfliktbehandlung, Seitenkopie und Offlinebetrieb erfasst. | M |
+| FR-ANNO-09 | Der Annotationseditor ist mit Maus, Touch und Stift bedienbar und bietet Undo/Redo. | S |
+| FR-ANNO-10 | Texte aus Annotationen sind über die Volltextsuche auffindbar. | S |
+| FR-ANNO-11 | Beim Export enthält das Archiv das unveränderte Bild, die Annotationstexte im Markdown und das Overlay als SVG-Sidecar. | S |
+| FR-ANNO-12 | Das Werkzeug „Abdecken" weist darauf hin, dass es Bildinhalte nicht dauerhaft entfernt. | M |
+
 ### 5.5 Task-Seiten
 
 | ID | Anforderung | Prio |

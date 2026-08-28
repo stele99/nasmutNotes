@@ -1,8 +1,17 @@
+import { annotationTexts } from './editor/annotations/schema.js';
+
 function inlineText(node) {
   if (!node || typeof node !== 'object') return '';
   if (node.type === 'text') return String(node.text || '');
   if (node.type === 'hardBreak') return '\n';
-  if (node.type === 'image') return `[Bild: ${node.attrs?.alt || node.attrs?.title || 'ohne Beschreibung'}]`;
+  if (node.type === 'image') {
+    const texts = annotationTexts(node.attrs?.annotations);
+    const label = node.attrs?.alt || node.attrs?.title || 'ohne Beschreibung';
+
+    return texts.length === 0
+      ? `[Bild: ${label}]`
+      : `[Bild: ${label} · Bildnotizen: ${texts.join(' · ')}]`;
+  }
   return Array.isArray(node.content) ? node.content.map(inlineText).join('') : '';
 }
 

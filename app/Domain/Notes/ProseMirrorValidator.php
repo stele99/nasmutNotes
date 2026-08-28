@@ -12,6 +12,19 @@ use App\Support\UrlValidator;
  */
 final class ProseMirrorValidator
 {
+    /**
+     * Vorgabewert statt DI-Eintrag: Die Tests erzeugen den Validator an
+     * mehreren Stellen mit `new ProseMirrorValidator()`, und PHP-DI verdrahtet
+     * die Abhängigkeit im Betrieb ohnehin selbst.
+     */
+    public function __construct(
+        private readonly ImageAnnotationValidator $annotations = new ImageAnnotationValidator(),
+    ) {
+    }
+
+    /** Summe aller Annotations-Bytes des gerade geprüften Dokuments. */
+    private int $annotationBytes = 0;
+
     private const NODE_TYPES = [
         'doc', 'paragraph', 'heading', 'text',
         'bulletList', 'orderedList', 'listItem',
@@ -30,6 +43,7 @@ final class ProseMirrorValidator
             throw new NoteContentException('Wurzelelement muss vom Typ "doc" sein.');
         }
 
+        $this->annotationBytes = 0;
         $this->validateNode($doc);
     }
 
@@ -137,6 +151,16 @@ final class ProseMirrorValidator
                 throw new NoteContentException("Ungültiges Bildattribut: {$key}.");
             }
         }
+
+        $annotations = $attrs['annotations'] ?? null;
+        if ($annotations !== null) {
+            $this->annotationBytes += $this->annotations->validate($annotations);
+            if ($this->annotationBytes > ImageAnnotationValidator::MAX_BYTES_PER_DOCUMENT) {
+                throw new NoteContentException(
+                    'Die Bildnotizen dieser Notiz sind insgesamt zu umfangreich.',
+                );
+            }
+        }
     }
 
     /**
@@ -171,6 +195,12 @@ final class ProseMirrorValidator
             $parts[] = $node['text'];
 
             return;
+        }
+
+        if ($type === 'image') {
+            foreach (ImageAnnotationValidator::texts($node['attrs']['annotations'] ?? null) as $text) {
+                $parts[] = $text . "\n";
+            }
         }
 
         foreach ((array) ($node['content'] ?? []) as $child) {

@@ -178,6 +178,66 @@ final class NotebookExportServiceTest extends TestCase
         self::assertStringContainsString('![Schema](files/schema.png)', $entries['Bilder/Mit Bild.md']);
     }
 
+    /** Annotierte Bilder: Sidecar-SVG im Archiv und Textliste im Markdown. */
+    public function testAnnotatedImagesGetSidecarSvgAndMarkdownLabels(): void
+    {
+        $notebook = $this->notebooks->create($this->user, ['name' => 'Notizen']);
+        $page = $this->pages->create($this->user, 'note', 'Mit Pfeil', null, (int) $notebook['id']);
+        $token = $this->attachImage((int) $page['id'], 'foto.png');
+
+        $this->notes->save($this->user, (int) $page['id'], [
+            'type' => 'doc',
+            'content' => [
+                ['type' => 'image', 'attrs' => [
+                    'src' => "/api/attachments/{$token}",
+                    'alt' => 'Foto',
+                    'annotations' => [
+                        'v' => 1,
+                        'space' => ['w' => 1000, 'h' => 800],
+                        'items' => [
+                            ['id' => 'abcd1234', 't' => 'line', 'c' => '#e11d48', 'w' => 4, 'x1' => 10, 'y1' => 20, 'x2' => 30, 'y2' => 40, 'head' => 'end'],
+                            ['id' => 'text0001', 't' => 'text', 'c' => '#111827', 'x' => 5, 'y' => 6, 's' => 20, 'bw' => 100, 'bh' => 25, 'f' => null, 'text' => 'Falscher Pfad'],
+                        ],
+                    ],
+                ]],
+            ],
+        ], 1);
+
+        $entries = $this->exportEntries([(int) $notebook['id']]);
+
+        self::assertArrayHasKey('Notizen/files/foto.png', $entries);
+        self::assertArrayHasKey('Notizen/files/foto.annotations.svg', $entries);
+        $sidecar = $entries['Notizen/files/foto.annotations.svg'];
+        self::assertStringStartsWith('<?xml version="1.0"', $sidecar);
+        self::assertStringContainsString('xmlns="http://www.w3.org/2000/svg"', $sidecar);
+        self::assertStringContainsString('viewBox="0 0 1000 800"', $sidecar);
+
+        $markdown = $entries['Notizen/Mit Pfeil.md'];
+        self::assertStringContainsString('![Foto](files/foto.png)', $markdown);
+        self::assertStringContainsString('_Bildnotizen: 1. Falscher Pfad_', $markdown);
+    }
+
+    /** Ohne Annotationen entsteht auch kein Sidecar. */
+    public function testPlainImagesGetNoSidecarSvg(): void
+    {
+        $notebook = $this->notebooks->create($this->user, ['name' => 'Bilder']);
+        $page = $this->pages->create($this->user, 'note', 'Ohne Notizen', null, (int) $notebook['id']);
+        $token = $this->attachImage((int) $page['id'], 'schlicht.png');
+
+        $this->notes->save($this->user, (int) $page['id'], [
+            'type' => 'doc',
+            'content' => [
+                ['type' => 'image', 'attrs' => ['src' => "/api/attachments/{$token}", 'alt' => 'Foto']],
+            ],
+        ], 1);
+
+        $entries = $this->exportEntries([(int) $notebook['id']]);
+
+        self::assertArrayHasKey('Bilder/files/schlicht.png', $entries);
+        self::assertArrayNotHasKey('Bilder/files/schlicht.annotations.svg', $entries);
+        self::assertStringNotContainsString('_Bildnotizen:', $entries['Bilder/Ohne Notizen.md']);
+    }
+
     public function testPageAttachmentsAreExportedAndListed(): void
     {
         $notebook = $this->notebooks->create($this->user, ['name' => 'Doku']);

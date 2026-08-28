@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Export;
 
+use App\Domain\Notes\ImageAnnotationValidator;
+
 /**
  * Gegenstück zum MarkdownConverter des Imports: ProseMirror-JSON zurück nach
  * Markdown (FR-EXP-01/03).
@@ -323,7 +325,24 @@ final class MarkdownRenderer
         }
 
         // Ein Bild, dessen Datei fehlt, wird nicht als toter Link ausgegeben.
-        return $target === null ? '' : '![' . $alt . '](' . $this->url($target) . ')';
+        if ($target === null) {
+            return '';
+        }
+
+        $markdown = '![' . $alt . '](' . $this->url($target) . ')';
+        $texts = ImageAnnotationValidator::texts($attrs['annotations'] ?? null);
+        if ($texts !== []) {
+            // Annotationen lassen sich in Markdown nicht darstellen, ohne sie
+            // einzubrennen - was dieses Konzept ausschließt. Damit trotzdem
+            // nichts verloren geht, wandern die Texte unter das Bild.
+            $labels = [];
+            foreach ($texts as $index => $text) {
+                $labels[] = ($index + 1) . '. ' . $this->escape(str_replace("\n", ' ', $text));
+            }
+            $markdown .= "\n\n_Bildnotizen: " . implode(' · ', $labels) . '_';
+        }
+
+        return $markdown;
     }
 
     private function url(string $url): string

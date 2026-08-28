@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Export;
 
+use App\Domain\Notes\ImageAnnotationSvgRenderer;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\CategoryRepository;
@@ -61,6 +62,7 @@ final class NotebookExportService
         private readonly MarkdownRenderer $markdown,
         private readonly AuditLogRepository $auditLog,
         private readonly string $tmpPath,
+        private readonly ImageAnnotationSvgRenderer $overlay = new ImageAnnotationSvgRenderer(),
     ) {
     }
 
@@ -261,7 +263,69 @@ final class NotebookExportService
 
         $zip->addFromString($folder . '/' . $name . '.md', $markdown);
 
+        if (($page['type'] ?? 'note') === 'note') {
+            foreach ($this->annotationSidecars($pageId, $imageTargets) as $target => $svg) {
+                $zip->addFromString($folder . '/' . $target, $svg);
+                ++$written;
+            }
+        }
+
         return $written;
+    }
+
+    /**
+     * Ein Overlay je annotiertem Bild, benannt nach der Bilddatei:
+     * `files/bild-ab12cd34ef56.png` → `files/bild-ab12cd34ef56.annotations.svg`.
+     *
+     * @param array<string, string> $imageTargets Token-Hash → Pfad im Archiv
+     *
+     * @return array<string, string> Pfad im Archiv → SVG-Inhalt
+     */
+    private function annotationSidecars(int $pageId, array $imageTargets): array
+    {
+        $row = $this->contents->find($pageId);
+        if ($row === null) {
+            return [];
+        }
+        $document = json_decode((string) $row['content'], true);
+        if (!is_array($document)) {
+            return [];
+        }
+
+        $sidecars = [];
+        $this->collectSidecars($document, $imageTargets, $sidecars);
+
+        return $sidecars;
+    }
+
+    /**
+     * @param array<string, mixed>  $node
+     * @param array<string, string> $imageTargets
+     * @param array<string, string> $sidecars
+     */
+    private function collectSidecars(array $node, array $imageTargets, array &$sidecars): void
+    {
+        if (($node['type'] ?? null) === 'image') {
+            $src = (string) ($node['attrs']['src'] ?? '');
+            $svg = $this->overlay->render($node['attrs']['annotations'] ?? null);
+            if ($svg !== '' && preg_match('#^/api/attachments/([a-f0-9]{64})$#', $src, $matches) === 1) {
+                $target = $imageTargets[hash('sha256', $matches[1])] ?? null;
+                if ($target !== null) {
+                    $name = preg_replace('/\.[^.]+$/', '', $target) . '.annotations.svg';
+                    // Der Namensraum fehlt im eingebetteten SVG (es steht in
+                    // HTML) und wird hier nachgetragen: Eine eigenständige
+                    // .svg-Datei öffnet sonst kein Programm.
+                    $sidecars[(string) $name] = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+                        . str_replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ', $svg) . "\n";
+                }
+            }
+        }
+
+        foreach ((array) ($node['content'] ?? []) as $child) {
+            if (is_array($child)) {
+                $this->collectSidecars($child, $imageTargets, $sidecars);
+            }
+        }
     }
 
     /** @param array<string, mixed> $page */

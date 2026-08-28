@@ -15,6 +15,7 @@ import {
 import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
+import { imageAnnotatorMixin } from './editor/annotations/annotator.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
 import { viewportShift } from './viewport.js';
 import {
@@ -68,6 +69,7 @@ export function noteEditorPage() {
     ...voiceTemplateMixin(),
     ...pageLocationMixin(),
     ...pageTrashMixin(),
+    ...imageAnnotatorMixin(),
     status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
     version: 0,
     pageId: null,
@@ -127,6 +129,7 @@ export function noteEditorPage() {
     pdfViewerUrl: '',
     pdfViewerName: '',
     inTable: false,
+    imageSelected: false,
     historyOpen: false,
     historyLoading: false,
     historyError: '',
@@ -552,6 +555,9 @@ export function noteEditorPage() {
         scrollInset,
       });
       this.bindImageViewer();
+      // Das Mixin darf den Editor nicht selbst halten - er liegt bewusst
+      // außerhalb der Alpine-Reaktivität.
+      this.annoSetEditorAccessor(() => editor);
       this.syncToolbar();
     },
 
@@ -2273,6 +2279,7 @@ export function noteEditorPage() {
         return;
       }
       this.inTable = editor.isActive('table');
+      this.imageSelected = editor.isActive('image');
       for (const button of toolbar.querySelectorAll('[data-editor-command]')) {
         const command = button.dataset.editorCommand;
         const active = {
