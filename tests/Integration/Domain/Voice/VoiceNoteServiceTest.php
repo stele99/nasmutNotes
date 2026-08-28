@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Domain\Voice;
 
 use App\Domain\Ai\AiModelSettings;
+use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\NotebookService;
 use App\Domain\Notes\NoteEncryptionException;
@@ -402,6 +403,69 @@ final class VoiceNoteServiceTest extends TestCase
         self::assertStringContainsString('Rigips, Trockenbau', $chatRequest);
     }
 
+    /** Die diktierte Notiz merkt sich, mit welcher Vorlage sie entstanden ist. */
+    public function testADictatedNoteRemembersItsTemplate(): void
+    {
+        $templateId = $this->templates()->create($this->user->id, 'Angebot', 'Als Angebot', '');
+        $this->queueTranscription('Erste Position');
+        $this->queuePostprocessing(['title' => 'Angebot', 'notebook' => '', 'text' => '- Position 1']);
+
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $templateId, 'iphash');
+
+        self::assertSame($templateId, $this->storedTemplateId((int) $result['page']['id']));
+    }
+
+    /**
+     * Zweites Diktat in dieselbe Notiz: Die Vorlage steht schon fest, und das
+     * Modell bekommt die vorhandene Notiz als Vorbild für die Fortsetzung.
+     */
+    public function testASecondDictationReusesTheTemplateAndContinuesTheNote(): void
+    {
+        $templateId = $this->templates()->create($this->user->id, 'Angebot', 'Als Angebot mit Positionen', '');
+        $this->queueTranscription('Erste Position');
+        $this->queuePostprocessing(['title' => 'Angebot', 'notebook' => '', 'text' => '- Position 1: Rigips']);
+        $created = $this->service()->createNote($this->user, $this->makeUpload(), $templateId, 'iphash');
+        $pageId = (int) $created['page']['id'];
+
+        $this->queueTranscription('Zweite Position');
+        $this->queuePostprocessing(['title' => '', 'notebook' => '', 'text' => '- Position 2: Estrich']);
+
+        // Ohne Vorlagenangabe - sie hängt bereits an der Notiz.
+        $result = $this->service()->transcribeForPage($this->user, $pageId, $this->makeUpload());
+
+        self::assertSame($templateId, $result['template_id']);
+        $chatRequest = $this->lastChatRequest();
+        self::assertStringContainsString('Als Angebot mit Positionen', $chatRequest);
+        // Der bisherige Inhalt und die Anweisung zum Fortführen gehen mit.
+        self::assertStringContainsString('Bereits vorhandene Notiz', $chatRequest);
+        self::assertStringContainsString('Position 1: Rigips', $chatRequest);
+        self::assertStringContainsString('ergänzt die vorhandene Notiz', $chatRequest);
+    }
+
+    /** Das erste Diktat in eine noch vorlagenlose Notiz verlangt eine Wahl. */
+    public function testDictationIntoANoteWithoutATemplateStillRequiresOne(): void
+    {
+        $page = $this->pages->create($this->user, 'note', 'Handgetippt', null);
+        $pageId = (int) $page['id'];
+        $this->notes->save($this->user, $pageId, $this->markdownDocument('Vorhandener Text'), 1);
+
+        try {
+            $this->service()->transcribeForPage($this->user, $pageId, $this->makeUpload());
+            self::fail('Diktat ohne Vorlage wurde angenommen.');
+        } catch (ValidationException $e) {
+            self::assertStringContainsString('Vorlage', $e->getMessage());
+        }
+
+        // Mit Wahl klappt es - und die Vorlage bleibt danach an der Notiz.
+        $templateId = $this->templates()->create($this->user->id, 'Protokoll', 'Als Protokoll', '');
+        $this->queueTranscription('Nachtrag');
+        $this->queuePostprocessing(['title' => '', 'notebook' => '', 'text' => 'Nachtrag']);
+
+        $this->service()->transcribeForPage($this->user, $pageId, $this->makeUpload(), $templateId);
+
+        self::assertSame($templateId, $this->storedTemplateId($pageId));
+    }
+
     /** Das Vokabular geht zusätzlich als "prompt" an die Transkription. */
     public function testVocabularyIsSentAsTranscriptionPrompt(): void
     {
@@ -562,6 +626,8 @@ final class VoiceNoteServiceTest extends TestCase
                 new VoiceTemplateRepository($this->pdo),
                 new AuditLogRepository($this->pdo),
             ),
+            new PageRepository($this->pdo),
+            new MarkdownRenderer(),
             $this->tmpPath,
             $apiKey,
         );
@@ -570,6 +636,22 @@ final class VoiceNoteServiceTest extends TestCase
     private function templates(): VoiceTemplateRepository
     {
         return new VoiceTemplateRepository($this->pdo);
+    }
+
+    /** Die an der Notiz hinterlegte Vorlage, direkt aus der Datenbank. */
+    private function storedTemplateId(int $pageId): ?int
+    {
+        $stmt = $this->pdo->prepare('SELECT voice_template_id FROM pages WHERE id = :id');
+        $stmt->execute(['id' => $pageId]);
+        $value = $stmt->fetchColumn();
+
+        return $value === null || $value === false ? null : (int) $value;
+    }
+
+    /** @return array<string, mixed> */
+    private function markdownDocument(string $markdown): array
+    {
+        return new MarkdownConverter()->toDocument($markdown);
     }
 
     /** Die per Migration angelegte globale Standard-Vorlage. */

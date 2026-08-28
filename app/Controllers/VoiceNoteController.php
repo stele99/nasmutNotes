@@ -68,11 +68,13 @@ final class VoiceNoteController
             if (!is_int($rawPageId) && !(is_string($rawPageId) && ctype_digit($rawPageId))) {
                 throw new ValidationException('Feld "page_id" fehlt oder ist ungültig.');
             }
+            // Kennt die Notiz schon eine Vorlage, gilt sie weiter - der Client
+            // muss dann keine mitschicken und fragt auch nicht mehr danach.
             $result = $this->voice->transcribeForPage(
                 $user,
                 (int) $rawPageId,
                 $this->requireAudio($request),
-                $this->requireTemplateId($body),
+                $this->optionalTemplateId($body),
             );
 
             return JsonResponse::json($response, [
@@ -82,6 +84,7 @@ final class VoiceNoteController
                 'notebook_id' => $result['notebook_id'],
                 'notebook_name' => $result['notebook_name'],
                 'document' => $result['document'],
+                'template_id' => $result['template_id'],
             ]);
         });
     }
@@ -173,9 +176,25 @@ final class VoiceNoteController
     /** @param array<string, mixed> $body */
     private function requireTemplateId(array $body): int
     {
+        $templateId = $this->optionalTemplateId($body);
+        if ($templateId === null) {
+            throw new ValidationException('Bitte eine Vorlage auswählen.');
+        }
+
+        return $templateId;
+    }
+
+    /**
+     * Wie requireTemplateId, aber ohne Zwang - für das Diktat in eine Notiz,
+     * die ihre Vorlage bereits kennt.
+     *
+     * @param array<string, mixed> $body
+     */
+    private function optionalTemplateId(array $body): ?int
+    {
         $raw = $body['template_id'] ?? null;
         if (!is_int($raw) && !(is_string($raw) && ctype_digit($raw))) {
-            throw new ValidationException('Bitte eine Vorlage auswählen.');
+            return null;
         }
 
         return (int) $raw;

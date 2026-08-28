@@ -223,6 +223,9 @@ final class PageController
             'created_at' => $page['created_at'],
             'updated_at' => $page['updated_at'],
             'is_encrypted' => (bool) ($page['is_encrypted'] ?? false),
+            // Beim Diktat verwendete Vorlage: Ein weiteres Diktat in diese
+            // Notiz greift sie wieder auf, ohne erneut zu fragen (FR-VOICE-12).
+            'voice_template_id' => isset($page['voice_template_id']) ? (int) $page['voice_template_id'] : null,
             'is_shared' => ($page['is_shared'] ?? false) === true,
             'share_permission' => $page['share_permission'] ?? null,
             'can_edit' => ($page['can_edit'] ?? true) === true,

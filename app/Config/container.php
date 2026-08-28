@@ -497,6 +497,8 @@ return static function (string $rootPath): DI\Container {
             MarkdownConverter $markdown,
             AuditLogRepository $auditLog,
             VoiceTemplateService $templates,
+            PageRepository $pageRepository,
+            MarkdownRenderer $markdownRenderer,
         ): VoiceNoteService => new VoiceNoteService(
             $settings,
             $client,
@@ -506,6 +508,8 @@ return static function (string $rootPath): DI\Container {
             $markdown,
             $auditLog,
             $templates,
+            $pageRepository,
+            $markdownRenderer,
             $rootPath . '/' . trim(Env::get('VOICE_TMP_PATH', 'var/tmp/voice') ?? 'var/tmp/voice', '/'),
             // Das Geheimnis kommt nur aus der Umgebung; OPENAI_API_KEY bleibt als
             // gebräuchlicher Zweitname zulässig.

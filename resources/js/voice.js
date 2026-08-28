@@ -324,13 +324,29 @@ export function voiceTemplateMixin() {
       }
     },
 
-    /** Läuft schon eine Aufnahme, beendet der Knopf sie wie gehabt; sonst erst die Vorlage wählen. */
+    /**
+     * Läuft schon eine Aufnahme, beendet der Knopf sie wie gehabt. Steht die
+     * Vorlage bereits fest - weil die Notiz schon einmal diktiert wurde -,
+     * beginnt das Diktat sofort; sonst wird erst gewählt.
+     */
     startOrOpenPicker() {
       if (this.voiceStatus === 'recording') {
         void this.stopVoice();
         return;
       }
+      if (this.hasFixedVoiceTemplate()) {
+        void this.startVoice();
+        return;
+      }
       void this.openVoiceTemplatePicker();
+    },
+
+    /**
+     * Nur die Notizseite kennt eine an der Notiz hinterlegte Vorlage; überall
+     * sonst wird vor jeder Aufnahme gewählt.
+     */
+    hasFixedVoiceTemplate() {
+      return false;
     },
 
     async openVoiceTemplatePicker() {

@@ -72,6 +72,11 @@ export function noteEditorPage() {
     version: 0,
     pageId: null,
     canEditPage: Boolean(window.__CURRENT_PAGE_CAN_EDIT__),
+    // Vorlage, mit der diese Notiz diktiert wurde. Steht sie fest, beginnt
+    // ein weiteres Diktat ohne Rückfrage (FR-VOICE-12).
+    noteVoiceTemplateId: typeof window.__CURRENT_PAGE_VOICE_TEMPLATE__ === 'number'
+      ? window.__CURRENT_PAGE_VOICE_TEMPLATE__
+      : null,
     saveTimer: null,
     retryDelay: 1000,
     pendingSave: false,
@@ -1555,6 +1560,14 @@ export function noteEditorPage() {
      * Einfügemarke eingesetzt (FR-VOICE-02). Gespeichert wird er wie jede
      * andere Änderung über den Autosave.
      */
+    /**
+     * Wurde in diese Notiz schon einmal diktiert, steht die Vorlage fest -
+     * der Mikrofonknopf nimmt dann sofort auf, statt erneut zu fragen.
+     */
+    hasFixedVoiceTemplate() {
+      return this.noteVoiceTemplateId !== null;
+    },
+
     async handleVoiceRecording(recording) {
       if (!this.canEditPage || !editor || this.isEncrypted()) {
         throw new Error('Diese Notiz ist schreibgeschützt.');
@@ -1562,7 +1575,11 @@ export function noteEditorPage() {
 
       const body = voiceFormData(recording);
       body.append('page_id', String(this.pageId));
-      body.append('template_id', String(this.voiceTemplateId));
+      // Kennt die Notiz ihre Vorlage schon, entscheidet der Server; nur beim
+      // ersten Diktat kommt die Wahl aus dem Dialog.
+      if (this.noteVoiceTemplateId === null && this.voiceTemplateId !== null) {
+        body.append('template_id', String(this.voiceTemplateId));
+      }
       const data = await apiFetch('/api/voice/transcribe', {
         method: 'POST',
         body,
@@ -1571,6 +1588,13 @@ export function noteEditorPage() {
       const nodes = Array.isArray(data.document?.content) ? data.document.content : [];
       if (nodes.length === 0) {
         throw new Error('In der Aufnahme wurde kein Text erkannt.');
+      }
+
+      // Ab jetzt hängt die Vorlage an der Notiz - das nächste Diktat startet
+      // ohne Rückfrage und führt den Text in derselben Form fort.
+      if (typeof data.template_id === 'number') {
+        this.noteVoiceTemplateId = data.template_id;
+        this.voiceTemplateId = data.template_id;
       }
 
       editor.chain().focus().insertContent(nodes).run();

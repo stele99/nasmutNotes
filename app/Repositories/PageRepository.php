@@ -389,6 +389,17 @@ final class PageRepository
         $stmt->execute(['now' => $updatedAt ?? gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
     }
 
+    /**
+     * Merkt die beim Diktat verwendete Vorlage an der Notiz. Bewusst ohne
+     * updated_at: Das Diktat selbst schreibt gleich darauf den Inhalt und
+     * setzt den Zeitstempel - eine Vorauswahl ist keine Änderung am Text.
+     */
+    public function setVoiceTemplate(int $id, ?int $templateId): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE pages SET voice_template_id = :template_id WHERE id = :id');
+        $stmt->execute(['id' => $id, 'template_id' => $templateId]);
+    }
+
     public function setEncryptionState(int $id, bool $encrypted, string $updatedAt): void
     {
         $stmt = $this->pdo->prepare(

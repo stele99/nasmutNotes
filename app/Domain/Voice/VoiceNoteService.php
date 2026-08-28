@@ -6,6 +6,7 @@ namespace App\Domain\Voice;
 
 use App\Domain\Ai\AiCallContext;
 use App\Domain\Ai\AiModelSettings;
+use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Log\LogColumnType;
 use App\Domain\NotebookService;
@@ -13,6 +14,7 @@ use App\Domain\Notes\NoteService;
 use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
+use App\Repositories\PageRepository;
 use App\Repositories\SettingsRepository;
 use App\Support\ValidationException;
 use Psr\Http\Message\UploadedFileInterface;
@@ -57,6 +59,9 @@ final class VoiceNoteService
 
     /** Obergrenze der OpenAI-Transkription; größere Dateien lehnt sie ab. */
     public const MAX_UPLOAD_MB = 25;
+
+    /** So viel bisheriger Notizinhalt geht als Vorbild für eine Ergänzung mit. */
+    private const MAX_CONTEXT_CHARS = 12000;
 
     public const DEFAULT_PROMPT = <<<'PROMPT'
         Du bereitest diktierte Sprachnotizen auf. Du bekommst das Roh-Transkript einer Aufnahme.
@@ -149,6 +154,8 @@ final class VoiceNoteService
         private readonly MarkdownConverter $markdown,
         private readonly AuditLogRepository $auditLog,
         private readonly VoiceTemplateService $templates,
+        private readonly PageRepository $pageRepository,
+        private readonly MarkdownRenderer $markdownRenderer,
         private readonly string $tmpPath,
         private readonly string $apiKey = '',
         private readonly string $fallbackBaseUrl = self::DEFAULT_BASE_URL,
@@ -332,17 +339,26 @@ final class VoiceNoteService
      * Überschriftsvorschlag und abgeleitetem Notizbuch - ohne etwas zu
      * speichern. Genutzt beim Diktat in eine offene Notiz.
      *
+     * $existingMarkdown schaltet den Ergänzungsmodus ein: Das Modell bekommt
+     * die bereits vorhandene Notiz zu sehen und führt sie in der Form der
+     * Vorlage fort, statt eine eigenständige Notiz zu formulieren.
+     *
      * @return array{
      *     transcript: string,
      *     markdown: string,
      *     title: string,
      *     notebook_id: ?int,
      *     notebook_name: ?string,
-     *     document: array<string, mixed>
+     *     document: array<string, mixed>,
+     *     template_id: int
      * }
      */
-    public function transcribe(User $user, UploadedFileInterface $file, int $templateId): array
-    {
+    public function transcribe(
+        User $user,
+        UploadedFileInterface $file,
+        int $templateId,
+        ?string $existingMarkdown = null,
+    ): array {
         $settings = $this->requireUsableSettings();
         $template = $this->templates->resolveAccessible($user, $templateId);
         $context = new AiCallContext(
@@ -368,7 +384,7 @@ final class VoiceNoteService
             throw new ValidationException('In der Aufnahme wurde keine Sprache erkannt.');
         }
 
-        $refined = $this->refine($user, $settings, $transcript, $context, $template);
+        $refined = $this->refine($user, $settings, $transcript, $context, $template, $existingMarkdown);
         $document = $this->markdown->toDocument($refined['markdown']);
         if (($document['content'] ?? []) === []) {
             $document = $this->markdown->toDocument($transcript);
@@ -381,6 +397,7 @@ final class VoiceNoteService
             'notebook_id' => $refined['notebook_id'],
             'notebook_name' => $refined['notebook_name'],
             'document' => $document,
+            'template_id' => (int) $template['id'],
         ];
     }
 
@@ -388,17 +405,28 @@ final class VoiceNoteService
      * Diktat in eine bestehende Notiz. Der Zielzustand wird geprüft, bevor
      * Audiodaten gespeichert oder an den Anbieter gesendet werden.
      *
+     * Hat die Notiz bereits eine Vorlage, gilt sie weiter - danach wird nicht
+     * erneut gefragt. Ihr bisheriger Inhalt geht als Vorlage der Fortsetzung
+     * mit ans Modell, damit die Ergänzung zur Notiz passt statt neben ihr zu
+     * stehen. Erst wenn die Notiz noch keine Vorlage kennt, muss der Aufrufer
+     * eine mitgeben; sie bleibt dann für weitere Diktate an der Notiz hängen.
+     *
      * @return array{
      *     transcript: string,
      *     markdown: string,
      *     title: string,
      *     notebook_id: ?int,
      *     notebook_name: ?string,
-     *     document: array<string, mixed>
+     *     document: array<string, mixed>,
+     *     template_id: int
      * }
      */
-    public function transcribeForPage(User $user, int $pageId, UploadedFileInterface $file, int $templateId): array
-    {
+    public function transcribeForPage(
+        User $user,
+        int $pageId,
+        UploadedFileInterface $file,
+        ?int $templateId = null,
+    ): array {
         $page = $this->pages->find($user, $pageId);
         if (($page['type'] ?? null) !== 'note') {
             throw new ValidationException('Das Diktatziel ist keine Notizseite.');
@@ -406,7 +434,50 @@ final class VoiceNoteService
         $this->pages->assertNotEncrypted($page);
         $this->pages->assertCanWrite($user, $pageId);
 
-        return $this->transcribe($user, $file, $templateId);
+        $stored = $page['voice_template_id'] ?? null;
+        $effectiveId = $stored !== null ? (int) $stored : $templateId;
+        if ($effectiveId === null) {
+            throw new ValidationException('Bitte eine Vorlage auswählen.');
+        }
+
+        $result = $this->transcribe($user, $file, $effectiveId, $this->existingMarkdown($user, $pageId));
+
+        if ($stored === null) {
+            $this->pageRepository->setVoiceTemplate($pageId, $result['template_id']);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Der bisherige Notizinhalt als Markdown - Vorlage für die Fortsetzung.
+     * Ist er nicht lesbar (etwa weil noch nichts gespeichert wurde), entsteht
+     * die Ergänzung eben ohne Vorbild; das ist kein Grund, das Diktat
+     * scheitern zu lassen.
+     */
+    private function existingMarkdown(User $user, int $pageId): ?string
+    {
+        try {
+            $content = $this->notes->get($user, $pageId);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $document = $content['content'] ?? null;
+        if (!is_array($document)) {
+            return null;
+        }
+
+        $markdown = trim($this->markdownRenderer->render($document));
+        if ($markdown === '') {
+            return null;
+        }
+
+        // Sehr lange Notizen würden die Anfrage sprengen; für die Form der
+        // Fortsetzung genügt der Anfang, der die Struktur trägt.
+        return mb_strlen($markdown) > self::MAX_CONTEXT_CHARS
+            ? mb_substr($markdown, 0, self::MAX_CONTEXT_CHARS)
+            : $markdown;
     }
 
     /**
@@ -468,6 +539,10 @@ final class VoiceNoteService
 
             throw $e;
         }
+
+        // Ein weiteres Diktat in diese Notiz greift die Vorlage wieder auf,
+        // statt erneut danach zu fragen.
+        $this->pageRepository->setVoiceTemplate($pageId, $result['template_id']);
 
         $this->auditLog->log($user->id, 'voice_note_created', 'page', $pageId, $ipHash, [
             'characters' => mb_strlen($result['transcript']),
@@ -684,6 +759,10 @@ final class VoiceNoteService
      * technischen System-Prompt (JSON-Vertrag, Markdown-Regeln), ersetzt ihn
      * aber nicht.
      *
+     * Mit $existingMarkdown wird daraus eine Fortsetzung: Das Modell sieht die
+     * bereits vorhandene Notiz und liefert nur den neuen Teil, der sich in
+     * deren Form einfügt.
+     *
      * @param array<string, mixed> $template
      * @return array{markdown: string, title: string, notebook_id: ?int, notebook_name: ?string}
      */
@@ -693,6 +772,7 @@ final class VoiceNoteService
         string $transcript,
         AiCallContext $context,
         array $template,
+        ?string $existingMarkdown = null,
     ): array {
         $fallback = [
             'markdown' => $transcript,
@@ -716,7 +796,20 @@ final class VoiceNoteService
             . ($vocabulary !== '' ? "Fachvokabular (korrekte Schreibweisen):\n{$vocabulary}\n\n" : '')
             . "Vorhandene Notizbücher:\n"
             . ($names === [] ? '(keine)' : '- ' . implode("\n- ", $names))
-            . "\n\nRoh-Transkript:\n" . $transcript;
+            . "\n\n";
+
+        if ($existingMarkdown !== null) {
+            $userPrompt .= "Bereits vorhandene Notiz:\n" . $existingMarkdown . "\n\n"
+                . "Roh-Transkript der neuen Aufnahme:\n" . $transcript . "\n\n"
+                . "Diese Aufnahme ergänzt die vorhandene Notiz. Führe sie in genau der Form fort,"
+                . " die die Vorlage vorgibt und die die vorhandene Notiz bereits zeigt:"
+                . " gleiche Gliederung, gleiche Spalten, gleiche Schreibweise."
+                . " Gib in \"text\" ausschließlich den neuen Teil zurück, der unten angefügt wird -"
+                . " wiederhole nichts, was schon dasteht, und gib die vorhandene Notiz nicht erneut aus."
+                . " Zähler, Positionsnummern und Summen führst du an der vorhandenen Notiz weiter.";
+        } else {
+            $userPrompt .= "Roh-Transkript:\n" . $transcript;
+        }
 
         // Die Aufnahme ist zu diesem Zeitpunkt bereits gelöscht: Liefert das
         // Modell nichts Verwertbares, ist der Rohtext allemal besser als ein
