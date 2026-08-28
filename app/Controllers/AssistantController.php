@@ -93,8 +93,21 @@ final class AssistantController
 
         try {
             $result = $this->assistant->transcribe($user, $file);
+        } catch (AssistantServiceException $e) {
+            // Ohne diesen Zweig verlässt die Ausnahme den Controller und wird
+            // zur HTML-Fehlerseite des Frameworks - für einen Client, der ein
+            // OpenAI-Fehlerobjekt erwartet, ein nicht deutbarer 500er.
+            $this->logger->error('Assistant-Transkription nicht erreichbar', ['message' => $e->getMessage()]);
+
+            return $this->openAiError($response, 502, $e->getMessage(), 'api_error');
         } catch (ValidationException $e) {
             return $this->openAiError($response, 400, $e->getMessage(), 'invalid_request_error');
+        } catch (\RuntimeException $e) {
+            // Etwa ein nicht beschreibbares Verzeichnis für die Aufnahme:
+            // ein Betriebsproblem, das der Client benennen können muss.
+            $this->logger->error('Assistant-Transkription fehlgeschlagen', ['message' => $e->getMessage()]);
+
+            return $this->openAiError($response, 500, $e->getMessage(), 'server_error');
         }
 
         $forward = (new SlimResponse())

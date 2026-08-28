@@ -201,6 +201,41 @@ final class AssistantServiceTest extends TestCase
         $this->service()->transcribe($this->user, $this->makeUpload(bytes: 2 * 1024 * 1024));
     }
 
+    /**
+     * Der echte Transport liest den Multipart-Körper aus und schließt dabei
+     * den Datei-Strom der Aufnahme. Der MockHandler tut das nicht - deshalb
+     * blieb hier lange verborgen, dass ein zweites fclose() jede
+     * Transkription mit einem TypeError beendete.
+     */
+    public function testTranscribeSurvivesAHandlerThatClosesTheUploadStream(): void
+    {
+        $this->settings->set('voice_transcribe_model', 'gpt-4o-mini-transcribe');
+
+        $closing = function (RequestInterface $request, array $options) {
+            $request->getBody()->getContents();
+            $request->getBody()->close();
+
+            return \GuzzleHttp\Promise\Create::promiseFor(new GuzzleResponse(200, [
+                'Content-Type' => 'application/json',
+            ], (string) json_encode(['text' => 'Guten Morgen'])));
+        };
+
+        $service = new AssistantService(
+            $this->settings,
+            new AiUsageRecorder($this->usage),
+            new Client(['handler' => HandlerStack::create($closing), 'http_errors' => false]),
+            'sk-test',
+            'https://api.openai.com/v1',
+            'gpt-4o-mini',
+            $this->tmpPath,
+        );
+
+        $result = $service->transcribe($this->user, $this->makeUpload());
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('Guten Morgen', json_decode($result['body'], true)['text']);
+    }
+
     public function testExtractStreamedUsagePicksTheFinalUsageChunk(): void
     {
         $tail = "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"

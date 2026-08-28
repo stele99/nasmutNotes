@@ -226,7 +226,13 @@ final class AssistantService
                 'http_errors' => false,
             ]);
         } finally {
-            fclose($handle);
+            // Guzzle liest den Datei-Strom für das Multipart-Feld selbst aus
+            // und schließt ihn dabei. Ein zweites fclose() wäre in PHP 8 ein
+            // TypeError - der bliebe ungefangen und beendete jede
+            // Transkription mit einer Fehlerseite statt einer Antwort.
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
             @unlink($upload['path']);
         }
 
