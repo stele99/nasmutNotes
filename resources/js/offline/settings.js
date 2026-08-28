@@ -96,10 +96,21 @@ export function offlineSettings() {
     deviceTokenError: '',
     deviceTokenLastCreated: null,
     deviceTokenCopyLabel: 'Kopieren',
-    speechAutomationOpen: true,
+    // Die iPhone-Einrichtung ist eine lange Anleitung, die man einmal liest -
+    // zugeklappt, damit der Bereich nicht wieder eine flache Bleiwüste wird.
+    speechAutomationOpen: false,
 
     // Diktier-Vorlagen (FR-VOICE): eigene und globale Anweisungen, aus denen
     // vor jeder Aufnahme für eine Notiz gewählt wird.
+    //
+    // Der Dialog steckt zweimal im Dokument (Leiste und Schublade), deshalb
+    // tragen die Feld-IDs die Instanznummer - sonst zeigten beide sr-only
+    // Beschriftungen auf das jeweils erste, unsichtbare Feld.
+    templateFieldIds: {
+      name: `voice-template-name-${settingsInstance}`,
+      instruction: `voice-template-instruction-${settingsInstance}`,
+      vocabulary: `voice-template-vocabulary-${settingsInstance}`,
+    },
     templatesOpen: true,
     voiceTemplates: [],
     globalVoiceTemplates: [],
@@ -433,12 +444,19 @@ export function offlineSettings() {
       this.voiceTemplateName = '';
       this.voiceTemplateInstruction = '';
       this.voiceTemplateVocabulary = '';
+      this.voiceTemplateError = '';
     },
 
     async deleteVoiceTemplate(template) {
+      // Derselbe Riegel wie beim Speichern: Ein zweiter Klick würde sonst ein
+      // zweites DELETE schicken und dessen 404 als Fehler anzeigen.
+      if (this.voiceTemplateSaving) {
+        return;
+      }
       if (!window.confirm(`Vorlage „${template.name}“ löschen?`)) {
         return;
       }
+      this.voiceTemplateSaving = true;
       this.voiceTemplateError = '';
       try {
         await apiFetch(`/api/profile/voice-templates/${template.id}`, { method: 'DELETE' });
@@ -448,6 +466,8 @@ export function offlineSettings() {
         await this.loadVoiceTemplates();
       } catch (error) {
         this.voiceTemplateError = error.message || 'Die Vorlage konnte nicht gelöscht werden.';
+      } finally {
+        this.voiceTemplateSaving = false;
       }
     },
 

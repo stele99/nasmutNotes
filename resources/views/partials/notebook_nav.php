@@ -206,7 +206,7 @@
 
                                     <div x-show="speechAutomationOpen" x-cloak class="mt-3 space-y-5">
                                         <div>
-                                            <h5 class="text-sm font-semibold">Automations-Token</h5>
+                                            <h4 class="text-sm font-semibold">Automations-Token</h4>
                                             <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Erlaubt einer iOS-Automation, in deinem Namen zu diktieren - sonst nichts. Die Liste aller Geräte steht im Bereich „Verbundene Clients".</p>
 
                                             <form @submit.prevent="createDeviceToken" class="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -226,7 +226,7 @@
                                         </div>
 
                                         <div class="border-t pt-5" style="border-color: var(--color-border);">
-                                            <h5 class="text-sm font-semibold">Einrichtung auf dem iPhone</h5>
+                                            <h4 class="text-sm font-semibold">Einrichtung auf dem iPhone</h4>
                                             <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
                                                 <li>Oben einen Token erzeugen und kopieren (Schritt bleibt geöffnet, bis du ihn kopiert hast).</li>
                                                 <li>App „Kurzbefehle" → neuer Kurzbefehl „NotesVoice" mit den Aktionen:
@@ -261,8 +261,8 @@
                                                     <div class="flex items-start justify-between gap-2">
                                                         <span class="text-sm font-medium" x-text="template.name"></span>
                                                         <span class="flex shrink-0 gap-2">
-                                                            <button type="button" @click="startEditVoiceTemplate(template)" class="text-xs font-medium" style="color: var(--color-text-muted);">Bearbeiten</button>
-                                                            <button type="button" @click="deleteVoiceTemplate(template)" class="text-xs font-medium" style="color: var(--color-danger);">Löschen</button>
+                                                            <button type="button" @click="startEditVoiceTemplate(template)" :disabled="voiceTemplateSaving" class="text-xs font-medium" style="color: var(--color-text-muted);">Bearbeiten</button>
+                                                            <button type="button" @click="deleteVoiceTemplate(template)" :disabled="voiceTemplateSaving" class="text-xs font-medium" style="color: var(--color-danger);">Löschen</button>
                                                         </span>
                                                     </div>
                                                     <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
@@ -274,16 +274,16 @@
                                         <form @submit.prevent="saveVoiceTemplate" class="space-y-2 rounded-lg border p-3" style="border-color: var(--color-border);">
                                             <p class="text-xs font-semibold" x-text="editingVoiceTemplateId ? 'Vorlage bearbeiten' : 'Neue Vorlage'"></p>
                                             <div>
-                                                <label class="sr-only" for="voice-template-name">Name der Vorlage</label>
-                                                <input id="voice-template-name" type="text" maxlength="80" x-model="voiceTemplateName" placeholder="z. B. Angebot mit Positionen" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                                <label class="sr-only" :for="templateFieldIds.name">Name der Vorlage</label>
+                                                <input :id="templateFieldIds.name" type="text" maxlength="80" x-model="voiceTemplateName" placeholder="z. B. Angebot mit Positionen" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
                                             </div>
                                             <div>
-                                                <label class="sr-only" for="voice-template-instruction">Anweisung</label>
-                                                <textarea id="voice-template-instruction" x-model="voiceTemplateInstruction" placeholder="Wie soll das Diktat aufbereitet werden?" rows="4" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                                                <label class="sr-only" :for="templateFieldIds.instruction">Anweisung</label>
+                                                <textarea :id="templateFieldIds.instruction" x-model="voiceTemplateInstruction" placeholder="Wie soll das Diktat aufbereitet werden?" rows="4" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
                                             </div>
                                             <div>
-                                                <label class="sr-only" for="voice-template-vocabulary">Vokabular (optional)</label>
-                                                <textarea id="voice-template-vocabulary" x-model="voiceTemplateVocabulary" placeholder="Fachbegriffe/Schreibweisen (optional)" rows="2" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                                                <label class="sr-only" :for="templateFieldIds.vocabulary">Vokabular (optional)</label>
+                                                <textarea :id="templateFieldIds.vocabulary" x-model="voiceTemplateVocabulary" placeholder="Fachbegriffe, max. 600 Zeichen (optional)" rows="2" :disabled="voiceTemplateSaving" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
                                             </div>
                                             <div class="flex justify-end gap-2">
                                                 <button x-show="editingVoiceTemplateId" x-cloak type="button" @click="cancelEditVoiceTemplate" class="btn btn-quiet" :disabled="voiceTemplateSaving">Abbrechen</button>
@@ -294,7 +294,7 @@
                                         <p x-show="voiceTemplateError" x-cloak x-text="voiceTemplateError" class="text-sm" style="color: var(--color-danger);" role="alert"></p>
 
                                         <div x-show="globalVoiceTemplates.length > 0" x-cloak class="border-t pt-4" style="border-color: var(--color-border);">
-                                            <h5 class="text-sm font-semibold">Globale Vorlagen</h5>
+                                            <h4 class="text-sm font-semibold">Globale Vorlagen</h4>
                                             <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Vom Administrator angelegt, für alle Nutzer wählbar.</p>
                                             <div class="mt-2 space-y-2">
                                                 <template x-for="template in globalVoiceTemplates" :key="template.id">

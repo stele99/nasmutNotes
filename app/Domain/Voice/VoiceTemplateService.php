@@ -20,7 +20,12 @@ final class VoiceTemplateService
 {
     private const MAX_NAME_LENGTH = 80;
     private const MAX_INSTRUCTION_LENGTH = 8000;
-    private const MAX_VOCABULARY_LENGTH = 2000;
+    /**
+     * Das Vokabular geht als "prompt" an die Transkription, die davon nur die
+     * letzten 224 Tokens berücksichtigt. Die Grenze bleibt bewusst darunter,
+     * damit nichts stillschweigend beim Anbieter verfällt.
+     */
+    private const MAX_VOCABULARY_LENGTH = 600;
 
     /** Genug für unterschiedliche Anwendungsfälle, ohne dass die Auswahl unübersichtlich wird. */
     private const MAX_TEMPLATES_PER_SCOPE = 20;
@@ -31,8 +36,11 @@ final class VoiceTemplateService
     ) {
     }
 
-    /** Für die Auswahl vor der Aufnahme: globale und eigene Vorlagen, global zuerst. */
-    /** @return array<int, array<string, mixed>> */
+    /**
+     * Für die Auswahl vor der Aufnahme: globale und eigene Vorlagen, global zuerst.
+     *
+     * @return array<int, array<string, mixed>>
+     */
     public function listAvailableTo(User $user): array
     {
         return array_map([$this, 'serialize'], $this->templates->allAvailableTo($user->id));
@@ -50,24 +58,35 @@ final class VoiceTemplateService
         return array_map([$this, 'serialize'], $this->templates->allGlobal());
     }
 
-    /** @return array<string, mixed> */
-    public function create(?User $user, string $name, string $instruction, string $vocabulary, string $ipHash): array
-    {
-        $userId = $user?->id;
+    /**
+     * $ownerId wählt den Bereich (null = globale Admin-Vorlage), $actor ist
+     * stets der handelnde Mensch - beides auseinanderzuhalten hält das
+     * Audit-Log aussagekräftig, auch wenn ein Admin global arbeitet.
+     *
+     * @return array<string, mixed>
+     */
+    public function create(
+        User $actor,
+        ?int $ownerId,
+        string $name,
+        string $instruction,
+        string $vocabulary,
+        string $ipHash,
+    ): array {
         [$name, $instruction, $vocabulary] = $this->validate($name, $instruction, $vocabulary);
 
-        if ($this->templates->countForScope($userId) >= self::MAX_TEMPLATES_PER_SCOPE) {
+        if ($this->templates->countForScope($ownerId) >= self::MAX_TEMPLATES_PER_SCOPE) {
             throw new ValidationException(
                 'Es sind bereits ' . self::MAX_TEMPLATES_PER_SCOPE . ' Vorlagen angelegt.'
                 . ' Bitte zuerst eine nicht mehr benötigte löschen.',
             );
         }
 
-        $id = $this->templates->create($userId, $name, $instruction, $vocabulary);
+        $id = $this->templates->create($ownerId, $name, $instruction, $vocabulary);
 
-        $this->auditLog->log($user?->id, 'voice_template_created', 'voice_template', $id, $ipHash, [
+        $this->auditLog->log($actor->id, 'voice_template_created', 'voice_template', $id, $ipHash, [
             'name' => $name,
-            'global' => $userId === null,
+            'global' => $ownerId === null,
         ]);
 
         return $this->serialize($this->mustFind($id));
@@ -75,59 +94,74 @@ final class VoiceTemplateService
 
     /** @return array<string, mixed> */
     public function update(
-        ?User $user,
+        User $actor,
+        ?int $ownerId,
         int $id,
         string $name,
         string $instruction,
         string $vocabulary,
         string $ipHash,
     ): array {
-        $existing = $this->findOwnedOrGlobal($user, $id);
+        $this->findInScope($ownerId, $id);
         [$name, $instruction, $vocabulary] = $this->validate($name, $instruction, $vocabulary);
 
         $this->templates->update($id, $name, $instruction, $vocabulary);
 
-        $this->auditLog->log($user?->id, 'voice_template_updated', 'voice_template', $id, $ipHash, [
+        $this->auditLog->log($actor->id, 'voice_template_updated', 'voice_template', $id, $ipHash, [
             'name' => $name,
         ]);
 
         return $this->serialize($this->mustFind($id));
     }
 
-    public function delete(?User $user, int $id, string $ipHash): void
+    public function delete(User $actor, ?int $ownerId, int $id, string $ipHash): void
     {
-        $this->findOwnedOrGlobal($user, $id);
+        $this->findInScope($ownerId, $id);
+
+        // Ohne wenigstens eine globale Vorlage könnte niemand mehr diktieren,
+        // der sich keine eigene angelegt hat - das Diktat wäre instanzweit tot.
+        if ($ownerId === null && $this->templates->countForScope(null) <= 1) {
+            throw new ValidationException(
+                'Die letzte globale Vorlage kann nicht gelöscht werden.'
+                . ' Ohne sie könnte niemand mehr eine Notiz diktieren.',
+            );
+        }
+
         $this->templates->delete($id);
 
-        $this->auditLog->log($user?->id, 'voice_template_deleted', 'voice_template', $id, $ipHash);
+        $this->auditLog->log($actor->id, 'voice_template_deleted', 'voice_template', $id, $ipHash);
     }
 
     /**
-     * Löst eine Vorlage auf, die für die Aufbereitung eines Diktats
-     * verwendet werden darf: entweder global oder dem Nutzer gehörend.
+     * Löst eine Vorlage auf, die für die Aufbereitung eines Diktats verwendet
+     * werden darf: entweder global oder dem Nutzer gehörend. Einziger Ort
+     * dieser Prüfung - der Diktatweg geht ebenfalls hierüber.
      *
      * @return array<string, mixed>
      */
     public function resolveAccessible(User $user, int $id): array
     {
         $row = $this->templates->findById($id);
-        $rowUserId = $row !== null && $row['user_id'] !== null ? (int) $row['user_id'] : null;
-        if ($row === null || !($rowUserId === null || $rowUserId === $user->id)) {
-            throw new ValidationException('Die gewählte Vorlage ist nicht verfügbar.');
+        $ownerId = $row !== null && $row['user_id'] !== null ? (int) $row['user_id'] : null;
+        if ($row === null || !($ownerId === null || $ownerId === $user->id)) {
+            throw new ValidationException('Bitte eine Vorlage auswählen.');
         }
 
         return $row;
     }
 
     /**
+     * Vorlage genau eines Bereichs: mit $ownerId ausschließlich die eigenen,
+     * ohne ihn ausschließlich die globalen. Bewusst exklusiv - wer eine fremde
+     * oder bereichsfremde Vorlage anfasst, bekommt "nicht gefunden".
+     *
      * @return array<string, mixed>
      */
-    private function findOwnedOrGlobal(?User $user, int $id): array
+    private function findInScope(?int $ownerId, int $id): array
     {
         $row = $this->templates->findById($id);
-        $expectedUserId = $user?->id;
-        $rowUserId = $row !== null && $row['user_id'] !== null ? (int) $row['user_id'] : null;
-        if ($row === null || $rowUserId !== $expectedUserId) {
+        $rowOwnerId = $row !== null && $row['user_id'] !== null ? (int) $row['user_id'] : null;
+        if ($row === null || $rowOwnerId !== $ownerId) {
             throw new NotFoundException('Vorlage nicht gefunden.');
         }
 

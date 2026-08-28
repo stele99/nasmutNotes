@@ -133,7 +133,9 @@ final class AdminDashboardController
     public function storeVoiceTemplate(Request $request, Response $response): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
+        // Bereich global (ownerId null), handelnd ist der angemeldete Admin.
         $template = $this->voiceTemplates->create(
+            CurrentUser::require($request),
             null,
             (string) ($body['name'] ?? ''),
             (string) ($body['instruction'] ?? ''),
@@ -149,6 +151,7 @@ final class AdminDashboardController
     {
         $body = (array) ($request->getParsedBody() ?? []);
         $template = $this->voiceTemplates->update(
+            CurrentUser::require($request),
             null,
             (int) ($args['id'] ?? 0),
             (string) ($body['name'] ?? ''),
@@ -163,7 +166,12 @@ final class AdminDashboardController
     /** @param array<string, string> $args */
     public function destroyVoiceTemplate(Request $request, Response $response, array $args): Response
     {
-        $this->voiceTemplates->delete(null, (int) ($args['id'] ?? 0), RequestIp::hash($request));
+        $this->voiceTemplates->delete(
+            CurrentUser::require($request),
+            null,
+            (int) ($args['id'] ?? 0),
+            RequestIp::hash($request),
+        );
 
         return $response->withStatus(204);
     }

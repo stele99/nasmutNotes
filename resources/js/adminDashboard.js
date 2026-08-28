@@ -335,6 +335,7 @@ export function adminDashboard() {
       const instruction = this.voiceTemplateInstruction.trim();
       if (!name || !instruction) {
         this.error = 'Bitte Name und Anweisung angeben.';
+        this.message = '';
         return;
       }
       await this.run(async () => {
@@ -358,6 +359,7 @@ export function adminDashboard() {
       this.voiceTemplateName = template.name;
       this.voiceTemplateInstruction = template.instruction;
       this.voiceTemplateVocabulary = template.vocabulary || '';
+      this.error = '';
     },
 
     cancelEditVoiceTemplate() {

@@ -294,26 +294,33 @@ export function formatRecordingTime(seconds) {
 /**
  * Vorlagenauswahl vor dem Diktat einer Notiz (neue Notiz per Diktat oder
  * Diktat in eine offene Notiz): Vor jeder Aufnahme muss der Nutzer eine
- * Vorlage wählen, die bestimmt, wie das Diktat aufbereitet wird. Wird in
- * pageList.js und notePage.js zusätzlich zu voiceRecorderMixin() gemischt -
- * beide implementieren weiterhin ihr eigenes handleVoiceRecording().
+ * Vorlage wählen, die bestimmt, wie das Diktat aufbereitet wird.
+ *
+ * Setzt voiceRecorderMixin() in derselben Komponente **zwingend** voraus -
+ * von dort kommen voiceStatus, voiceError, startVoice() und stopVoice().
+ * Wird in pageList.js und notePage.js dahinter gemischt; beide bringen
+ * weiterhin ihr eigenes handleVoiceRecording() mit, das die gewählte
+ * voiceTemplateId als `template_id` mitschickt.
  */
 export function voiceTemplateMixin() {
   return {
     voiceTemplates: [],
-    voiceTemplatesLoaded: false,
     voiceTemplateId: null,
     voiceTemplatePickerOpen: false,
 
+    /**
+     * Bewusst ohne Zwischenspeicher: Die Seitenleiste überlebt die gesamte
+     * Sitzung, eine einmal geladene Liste würde sonst nie mitbekommen, dass
+     * der Nutzer gerade in den Einstellungen seine erste Vorlage angelegt hat.
+     * Die Anfrage hängt an einem ausdrücklichen Klick und ist winzig.
+     */
     async loadVoiceTemplates() {
-      if (this.voiceTemplatesLoaded) {
-        return;
-      }
       const data = await apiFetch('/api/voice/templates');
       this.voiceTemplates = data.voice_templates || [];
-      this.voiceTemplatesLoaded = true;
-      if (this.voiceTemplateId === null && this.voiceTemplates.length > 0) {
-        this.voiceTemplateId = this.voiceTemplates[0].id;
+      // Zuletzt gewählte Vorlage vorauswählen, sofern es sie noch gibt.
+      const known = this.voiceTemplates.some((template) => template.id === this.voiceTemplateId);
+      if (!known) {
+        this.voiceTemplateId = this.voiceTemplates.length > 0 ? this.voiceTemplates[0].id : null;
       }
     },
 
@@ -328,21 +335,37 @@ export function voiceTemplateMixin() {
 
     async openVoiceTemplatePicker() {
       this.voiceError = '';
+      // Dieselbe Vorabprüfung wie in startVoice(): Die Vorlagen kommen vom
+      // Server, offline gäbe es sonst nur die rohe Fehlermeldung des Browsers.
+      if (!navigator.onLine) {
+        this.voiceError = 'Sprachnotizen brauchen eine Internetverbindung.';
+        return;
+      }
+
       try {
         await this.loadVoiceTemplates();
-      } catch (error) {
-        this.voiceError = error?.message || 'Die Vorlagen konnten nicht geladen werden.';
+      } catch {
+        this.voiceError = 'Die Vorlagen konnten nicht geladen werden.';
         return;
       }
       if (this.voiceTemplates.length === 0) {
         this.voiceError = 'Es ist noch keine Diktier-Vorlage angelegt. Unter Einstellungen › Speech2Text › Vorlagen anlegen.';
         return;
       }
+
       this.voiceTemplatePickerOpen = true;
+      this.$nextTick(() => this.$refs.voiceTemplateConfirm?.focus());
     },
 
-    confirmVoiceTemplate(templateId) {
+    selectVoiceTemplate(templateId) {
       this.voiceTemplateId = templateId;
+    },
+
+    /** Erst hier startet die Aufnahme - ein Klick auf eine Zeile wählt nur aus. */
+    confirmVoiceTemplate() {
+      if (this.voiceTemplateId === null) {
+        return;
+      }
       this.voiceTemplatePickerOpen = false;
       void this.startVoice();
     },

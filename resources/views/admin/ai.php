@@ -167,7 +167,7 @@
                     </div>
                 </template>
             </div>
-            <p x-show="voiceTemplates.length === 0" x-cloak class="mt-4 text-sm" style="color: var(--color-text-muted);">Noch keine globale Vorlage angelegt.</p>
+            <p x-show="voiceTemplates.length === 0 && !loading" x-cloak class="mt-4 text-sm" style="color: var(--color-text-muted);">Noch keine globale Vorlage angelegt.</p>
 
             <form @submit.prevent="saveVoiceTemplate" class="mt-5 space-y-3 rounded-lg border p-3" style="border-color: var(--color-border);">
                 <p class="text-xs font-semibold" x-text="editingVoiceTemplateId ? 'Vorlage bearbeiten' : 'Neue Vorlage'"></p>
@@ -182,6 +182,7 @@
                 <div>
                     <label for="voice-template-vocabulary" class="block text-sm font-medium">Vokabular (optional)</label>
                     <textarea id="voice-template-vocabulary" x-model="voiceTemplateVocabulary" placeholder="Fachbegriffe/Schreibweisen (optional)" rows="2" :disabled="busy" class="mt-2 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Geht als Ausspracheshilfe an die Transkription. Höchstens 600 Zeichen - mehr wertet der Anbieter ohnehin nicht aus.</p>
                 </div>
                 <div class="flex justify-end gap-2">
                     <button x-show="editingVoiceTemplateId" x-cloak type="button" @click="cancelEditVoiceTemplate" class="btn btn-quiet" :disabled="busy">Abbrechen</button>

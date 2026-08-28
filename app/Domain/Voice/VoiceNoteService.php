@@ -14,7 +14,6 @@ use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\SettingsRepository;
-use App\Repositories\VoiceTemplateRepository;
 use App\Support\ValidationException;
 use Psr\Http\Message\UploadedFileInterface;
 
@@ -149,7 +148,7 @@ final class VoiceNoteService
         private readonly NotebookService $notebooks,
         private readonly MarkdownConverter $markdown,
         private readonly AuditLogRepository $auditLog,
-        private readonly VoiceTemplateRepository $templates,
+        private readonly VoiceTemplateService $templates,
         private readonly string $tmpPath,
         private readonly string $apiKey = '',
         private readonly string $fallbackBaseUrl = self::DEFAULT_BASE_URL,
@@ -344,8 +343,8 @@ final class VoiceNoteService
      */
     public function transcribe(User $user, UploadedFileInterface $file, int $templateId): array
     {
-        $template = $this->resolveTemplate($user, $templateId);
         $settings = $this->requireUsableSettings();
+        $template = $this->templates->resolveAccessible($user, $templateId);
         $context = new AiCallContext(
             $user->id,
             'voice_note',
@@ -719,7 +718,14 @@ final class VoiceNoteService
             . ($names === [] ? '(keine)' : '- ' . implode("\n- ", $names))
             . "\n\nRoh-Transkript:\n" . $transcript;
 
-        $answer = $this->client->completeJson($settings, $settings->postprocessPrompt, $userPrompt, null, $context);
+        // Die Aufnahme ist zu diesem Zeitpunkt bereits gelöscht: Liefert das
+        // Modell nichts Verwertbares, ist der Rohtext allemal besser als ein
+        // Fehler, der das Diktat ersatzlos verlieren lässt.
+        try {
+            $answer = $this->client->completeJson($settings, $settings->postprocessPrompt, $userPrompt, null, $context);
+        } catch (VoiceServiceException) {
+            return $fallback;
+        }
 
         $text = trim((string) (is_scalar($answer['text'] ?? null) ? $answer['text'] : ''));
         $title = trim((string) (is_scalar($answer['title'] ?? null) ? $answer['title'] : ''));
@@ -852,24 +858,6 @@ final class VoiceNoteService
         }
 
         throw new ValidationException('Dieses Aufnahmeformat wird nicht unterstützt.');
-    }
-
-    /**
-     * Löst die vor der Aufnahme gewählte Vorlage auf - entweder eine globale
-     * (Admin) oder eine dem Nutzer gehörende. Alles andere lehnt sie ab, damit
-     * niemand mit der Vorlagen-ID eines fremden Nutzers diktieren kann.
-     *
-     * @return array<string, mixed>
-     */
-    private function resolveTemplate(User $user, int $templateId): array
-    {
-        $template = $this->templates->findById($templateId);
-        $ownerId = $template !== null && $template['user_id'] !== null ? (int) $template['user_id'] : null;
-        if ($template === null || !($ownerId === null || $ownerId === $user->id)) {
-            throw new ValidationException('Bitte eine Vorlage auswählen.');
-        }
-
-        return $template;
     }
 
     private function requireUsableSettings(): VoiceSettings

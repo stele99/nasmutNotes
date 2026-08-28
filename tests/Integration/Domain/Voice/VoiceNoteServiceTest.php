@@ -15,6 +15,7 @@ use App\Domain\User;
 use App\Domain\Voice\OpenAiClient;
 use App\Domain\Voice\VoiceNoteService;
 use App\Domain\Voice\VoiceServiceException;
+use App\Domain\Voice\VoiceTemplateService;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
@@ -343,6 +344,109 @@ final class VoiceNoteServiceTest extends TestCase
         $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
     }
 
+    /**
+     * Kernzusage der Vorlagen: Eine fremde persönliche Vorlage darf nicht
+     * verwendbar sein, auch wenn ihre ID bekannt ist.
+     */
+    public function testForeignPersonalTemplateCannotBeUsedForDictation(): void
+    {
+        $other = $this->makeUser(new WorkspaceRepository($this->pdo), 'b@example.com');
+        $foreignId = $this->templates()->create($other->id, 'Fremd', 'Fremde Anweisung', '');
+
+        try {
+            $this->service()->transcribe($this->user, $this->makeUpload(), $foreignId);
+            self::fail('Eine fremde Vorlage wurde für das Diktat akzeptiert.');
+        } catch (ValidationException $e) {
+            self::assertStringContainsString('Vorlage', $e->getMessage());
+        }
+
+        // Nichts wurde an den Anbieter geschickt - der Abbruch kommt davor.
+        self::assertSame('', $this->lastRequestBody);
+    }
+
+    public function testUnknownTemplateIsRefusedBeforeAnyProviderCall(): void
+    {
+        try {
+            $this->service()->transcribe($this->user, $this->makeUpload(), 999_999);
+            self::fail('Eine unbekannte Vorlage wurde akzeptiert.');
+        } catch (ValidationException $e) {
+            self::assertStringContainsString('Vorlage', $e->getMessage());
+        }
+
+        self::assertSame('', $this->lastRequestBody);
+    }
+
+    /** Die eigene Vorlage des Nutzers ist verwendbar und steuert die Aufbereitung. */
+    public function testOwnTemplateInstructionAndVocabularyReachTheModel(): void
+    {
+        $templateId = $this->templates()->create(
+            $this->user->id,
+            'Angebot',
+            'Formuliere als Angebot mit Position, Menge und Preis.',
+            'Rigips, Trockenbau',
+        );
+
+        $this->queueTranscription('Zehn Quadratmeter Trockenbauwand');
+        $this->queuePostprocessing([
+            'title' => 'Angebot Trockenbau',
+            'notebook' => '',
+            'text' => '| Position | Menge | Preis |',
+        ]);
+
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $templateId, 'iphash');
+
+        self::assertSame('Angebot Trockenbau', $result['page']['title']);
+        // Anweisung und Vokabular der Vorlage stehen in der Nutzernachricht.
+        $chatRequest = $this->lastChatRequest();
+        self::assertStringContainsString('Formuliere als Angebot', $chatRequest);
+        self::assertStringContainsString('Rigips, Trockenbau', $chatRequest);
+    }
+
+    /** Das Vokabular geht zusätzlich als "prompt" an die Transkription. */
+    public function testVocabularyIsSentAsTranscriptionPrompt(): void
+    {
+        $this->settings->set(VoiceNoteService::POSTPROCESS_ENABLED_KEY, '0');
+        $templateId = $this->templates()->create($this->user->id, 'Fach', 'Anweisung', 'Rigips, Estrich');
+        $this->queueTranscription('Text');
+
+        $this->service()->transcribe($this->user, $this->makeUpload(), $templateId);
+
+        // Ohne Nachbearbeitung ist die Transkription die einzige Anfrage.
+        self::assertStringContainsString('name="prompt"', $this->lastRequestBody);
+        self::assertStringContainsString('Rigips, Estrich', $this->lastRequestBody);
+    }
+
+    public function testEmptyVocabularyOmitsTheTranscriptionPrompt(): void
+    {
+        $this->settings->set(VoiceNoteService::POSTPROCESS_ENABLED_KEY, '0');
+        $this->queueTranscription('Text');
+
+        // Die Standard-Vorlage aus der Migration hat kein Vokabular.
+        $this->service()->transcribe($this->user, $this->makeUpload(), $this->templateId());
+
+        self::assertStringNotContainsString('name="prompt"', $this->lastRequestBody);
+    }
+
+    /**
+     * Die Aufnahme ist beim zweiten Modellaufruf schon gelöscht - eine
+     * unbrauchbare Antwort darf das Diktat deshalb nicht ersatzlos verlieren.
+     */
+    public function testUnusablePostprocessingFallsBackToTheRawTranscript(): void
+    {
+        $this->queueTranscription('Der rohe Text der Aufnahme');
+        // Kein JSON: die Nachbearbeitung wirft, der Rohtext muss überleben.
+        $this->httpMock->append(new GuzzleResponse(200, [
+            'Content-Type' => 'application/json',
+        ], (string) json_encode([
+            'choices' => [['message' => ['content' => 'Das ist kein JSON.']]],
+        ])));
+
+        $result = $this->service()->createNote($this->user, $this->makeUpload(), $this->templateId(), 'iphash');
+
+        self::assertSame('Der rohe Text der Aufnahme', $result['transcript']);
+        self::assertSame('Der rohe Text der Aufnahme', $result['page']['title']);
+    }
+
     public function testDisabledFeatureIsRefused(): void
     {
         $this->settings->set(VoiceNoteService::ENABLED_KEY, '0');
@@ -454,16 +558,27 @@ final class VoiceNoteServiceTest extends TestCase
             $this->notebooks,
             new MarkdownConverter(),
             new AuditLogRepository($this->pdo),
-            new VoiceTemplateRepository($this->pdo),
+            new VoiceTemplateService(
+                new VoiceTemplateRepository($this->pdo),
+                new AuditLogRepository($this->pdo),
+            ),
             $this->tmpPath,
             $apiKey,
         );
     }
 
+    private function templates(): VoiceTemplateRepository
+    {
+        return new VoiceTemplateRepository($this->pdo);
+    }
+
     /** Die per Migration angelegte globale Standard-Vorlage. */
     private function templateId(): int
     {
-        return (int) $this->pdo->query('SELECT id FROM voice_templates ORDER BY id LIMIT 1')->fetchColumn();
+        $stmt = $this->pdo->prepare('SELECT id FROM voice_templates ORDER BY id LIMIT 1');
+        $stmt->execute();
+
+        return (int) $stmt->fetchColumn();
     }
 
     private function queueTranscription(string $text): void

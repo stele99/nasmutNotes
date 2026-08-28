@@ -36,6 +36,7 @@ final class VoiceTemplateController
 
         $template = $this->templates->create(
             $user,
+            $user->id,
             (string) ($body['name'] ?? ''),
             (string) ($body['instruction'] ?? ''),
             (string) ($body['vocabulary'] ?? ''),
@@ -53,6 +54,7 @@ final class VoiceTemplateController
 
         $template = $this->templates->update(
             $user,
+            $user->id,
             (int) ($args['id'] ?? 0),
             (string) ($body['name'] ?? ''),
             (string) ($body['instruction'] ?? ''),
@@ -67,7 +69,7 @@ final class VoiceTemplateController
     public function destroy(Request $request, Response $response, array $args): Response
     {
         $user = CurrentUser::require($request);
-        $this->templates->delete($user, (int) ($args['id'] ?? 0), RequestIp::hash($request));
+        $this->templates->delete($user, $user->id, (int) ($args['id'] ?? 0), RequestIp::hash($request));
 
         return $response->withStatus(204);
     }

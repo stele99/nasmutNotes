@@ -496,7 +496,7 @@ return static function (string $rootPath): DI\Container {
             NotebookService $notebooks,
             MarkdownConverter $markdown,
             AuditLogRepository $auditLog,
-            VoiceTemplateRepository $templates,
+            VoiceTemplateService $templates,
         ): VoiceNoteService => new VoiceNoteService(
             $settings,
             $client,

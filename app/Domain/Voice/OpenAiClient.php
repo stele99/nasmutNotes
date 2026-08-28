@@ -31,8 +31,13 @@ final class OpenAiClient
     ) {
     }
 
-    /** Whisper beachtet nur die ersten paar hundert Zeichen des prompt-Feldes. */
-    private const MAX_VOCABULARY_HINT_LENGTH = 800;
+    /**
+     * Die Transkription berücksichtigt nur die *letzten* 224 Tokens des
+     * prompt-Feldes. Gekürzt wird deshalb von vorne - was übrig bleibt, ist
+     * das, was der Anbieter auch tatsächlich liest. Die Eingabegrenze der
+     * Vorlagen liegt darunter, sodass hier im Regelfall nichts wegfällt.
+     */
+    private const MAX_VOCABULARY_HINT_LENGTH = 600;
 
     /**
      * Wandelt eine Audiodatei in Text (POST /audio/transcriptions). Ist in den
@@ -61,8 +66,12 @@ final class OpenAiClient
         if ($settings->language !== '') {
             $parts[] = ['name' => 'language', 'contents' => $settings->language];
         }
-        if ($vocabularyHint !== null && trim($vocabularyHint) !== '') {
-            $parts[] = ['name' => 'prompt', 'contents' => mb_substr(trim($vocabularyHint), 0, self::MAX_VOCABULARY_HINT_LENGTH)];
+        $vocabulary = trim($vocabularyHint ?? '');
+        if ($vocabulary !== '') {
+            $parts[] = [
+                'name' => 'prompt',
+                'contents' => mb_substr($vocabulary, -self::MAX_VOCABULARY_HINT_LENGTH),
+            ];
         }
 
         $payload = $this->send($settings, 'audio/transcriptions', ['multipart' => $parts], $settings->transcribeModel, $context);

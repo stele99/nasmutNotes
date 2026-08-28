@@ -43,7 +43,10 @@ final class VoiceTemplateRepository
     /** @return array<int, array<string, mixed>> */
     public function allGlobal(): array
     {
-        $stmt = $this->pdo->query('SELECT * FROM voice_templates WHERE user_id IS NULL ORDER BY name COLLATE NOCASE');
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM voice_templates WHERE user_id IS NULL ORDER BY name COLLATE NOCASE'
+        );
+        $stmt->execute();
 
         return $stmt->fetchAll();
     }
@@ -98,7 +101,8 @@ final class VoiceTemplateRepository
     public function countForScope(?int $userId): int
     {
         if ($userId === null) {
-            $stmt = $this->pdo->query('SELECT COUNT(*) FROM voice_templates WHERE user_id IS NULL');
+            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM voice_templates WHERE user_id IS NULL');
+            $stmt->execute();
 
             return (int) $stmt->fetchColumn();
         }
