@@ -201,6 +201,60 @@ final class VoiceTemplateServiceTest extends TestCase
         self::assertSame($this->user->id, (int) $stmt->fetchColumn());
     }
 
+    /** Abgewählte globale Vorlagen verschwinden aus der Auswahl vor der Aufnahme. */
+    public function testDeactivatedGlobalTemplatesLeaveTheSelection(): void
+    {
+        $globalId = (int) $this->service->listGlobal()[0]['id'];
+        $this->service->create($this->user, $this->user->id, 'Meine', 'Anweisung', '', 'iphash');
+
+        $this->service->setGlobalActive($this->user, $globalId, false);
+
+        self::assertSame(['Meine'], array_column($this->service->listAvailableTo($this->user), 'name'));
+        // Der andere Nutzer ist davon unberührt - die Abwahl gilt je Nutzer.
+        self::assertSame(['Standard'], array_column($this->service->listAvailableTo($this->other), 'name'));
+
+        // In den Einstellungen bleibt sie sichtbar, damit sie wieder angehbar ist.
+        $globals = $this->service->listGlobalFor($this->user);
+        self::assertCount(1, $globals);
+        self::assertFalse($globals[0]['active']);
+        self::assertTrue($this->service->listGlobalFor($this->other)[0]['active']);
+    }
+
+    public function testReactivatingAGlobalTemplateBringsItBack(): void
+    {
+        $globalId = (int) $this->service->listGlobal()[0]['id'];
+
+        $this->service->setGlobalActive($this->user, $globalId, false);
+        $this->service->setGlobalActive($this->user, $globalId, true);
+        // Zweimal einschalten darf keinen Doppeleintrag erzeugen.
+        $this->service->setGlobalActive($this->user, $globalId, true);
+
+        self::assertCount(1, $this->service->listAvailableTo($this->user));
+        self::assertTrue($this->service->listGlobalFor($this->user)[0]['active']);
+    }
+
+    public function testOnlyGlobalTemplatesCanBeDeactivated(): void
+    {
+        $ownId = (int) $this->service->create($this->user, $this->user->id, 'Meine', 'Anweisung', '', 'iphash')['id'];
+
+        $this->expectException(NotFoundException::class);
+        $this->service->setGlobalActive($this->user, $ownId, false);
+    }
+
+    /** Löscht der Admin eine globale Vorlage, verschwindet auch die Abwahl. */
+    public function testDeletingAGlobalTemplateRemovesTheOptOut(): void
+    {
+        $globalId = (int) $this->service->listGlobal()[0]['id'];
+        $this->service->setGlobalActive($this->user, $globalId, false);
+        $this->service->create($this->user, null, 'Zweite', 'Anweisung', '', 'iphash');
+
+        $this->service->delete($this->user, null, $globalId, 'iphash');
+
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM voice_template_optouts WHERE template_id = :id');
+        $stmt->execute(['id' => $globalId]);
+        self::assertSame(0, (int) $stmt->fetchColumn());
+    }
+
     public function testResolveAccessibleAllowsGlobalAndOwnButNotForeign(): void
     {
         $globalId = (int) $this->service->listGlobal()[0]['id'];

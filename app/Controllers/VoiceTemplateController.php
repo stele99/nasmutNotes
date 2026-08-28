@@ -22,11 +22,39 @@ final class VoiceTemplateController
     {
     }
 
+    /**
+     * Ansicht für die Einstellungen: die eigenen Vorlagen und daneben alle
+     * globalen samt der Angabe, ob der Nutzer sie für sich aktiviert hat.
+     * Die Auswahl vor der Aufnahme nutzt dagegen GET /api/voice/templates,
+     * das abgewählte globale Vorlagen gar nicht erst mitschickt.
+     */
     public function index(Request $request, Response $response): Response
     {
         $user = CurrentUser::require($request);
 
-        return JsonResponse::json($response, ['voice_templates' => $this->templates->listOwn($user)]);
+        return JsonResponse::json($response, [
+            'voice_templates' => $this->templates->listOwn($user),
+            'global_templates' => $this->templates->listGlobalFor($user),
+        ]);
+    }
+
+    /**
+     * Globale Vorlage für diesen Nutzer ein- oder ausblenden.
+     *
+     * @param array<string, string> $args
+     */
+    public function setActive(Request $request, Response $response, array $args): Response
+    {
+        $user = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+
+        $this->templates->setGlobalActive(
+            $user,
+            (int) ($args['id'] ?? 0),
+            filter_var($body['active'] ?? false, FILTER_VALIDATE_BOOLEAN),
+        );
+
+        return JsonResponse::json($response, ['global_templates' => $this->templates->listGlobalFor($user)]);
     }
 
     public function store(Request $request, Response $response): Response

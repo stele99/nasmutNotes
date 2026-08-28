@@ -255,17 +255,26 @@
                                     <div x-show="templatesOpen" x-cloak class="mt-3 space-y-5">
                                         <p class="text-xs" style="color: var(--color-text-muted);">Vor jeder Diktat-Aufnahme für eine Notiz wählst du eine Vorlage: eine Anweisung, wie das Diktat aufbereitet werden soll (z. B. als Angebot mit Position, Menge und Preis), optional mit eigenem Vokabular für Fachbegriffe.</p>
 
-                                        <div x-show="voiceTemplates.length > 0" x-cloak class="space-y-2">
+                                        <div x-show="voiceTemplates.length > 0" x-cloak class="space-y-1">
                                             <template x-for="template in voiceTemplates" :key="template.id">
-                                                <div class="rounded-lg p-3" style="background: var(--color-bg-subtle);">
-                                                    <div class="flex items-start justify-between gap-2">
-                                                        <span class="text-sm font-medium" x-text="template.name"></span>
+                                                <div class="rounded-lg" style="background: var(--color-bg-subtle);">
+                                                    <?php /* Zusammengeklappt steht nur der Name da - die Liste soll
+                                                             im Dialog nicht seitenlang werden. */ ?>
+                                                    <div class="flex items-center gap-2 px-3 py-2">
+                                                        <button type="button" @click="toggleTemplateDetails(template)" :aria-expanded="isTemplateExpanded(template)" class="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+                                                            <span x-show="!isTemplateExpanded(template)" class="flex shrink-0" x-icon="chevron-right"></span>
+                                                            <span x-show="isTemplateExpanded(template)" x-cloak class="flex shrink-0" x-icon="chevron-down"></span>
+                                                            <span class="truncate text-sm font-medium" x-text="template.name"></span>
+                                                        </button>
                                                         <span class="flex shrink-0 gap-2">
                                                             <button type="button" @click="startEditVoiceTemplate(template)" :disabled="voiceTemplateSaving" class="text-xs font-medium" style="color: var(--color-text-muted);">Bearbeiten</button>
                                                             <button type="button" @click="deleteVoiceTemplate(template)" :disabled="voiceTemplateSaving" class="text-xs font-medium" style="color: var(--color-danger);">Löschen</button>
                                                         </span>
                                                     </div>
-                                                    <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                                                    <div x-show="isTemplateExpanded(template)" x-cloak class="px-3 pb-3">
+                                                        <p class="whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                                                        <p x-show="template.vocabulary" x-cloak class="mt-2 text-xs" style="color: var(--color-text-muted);"><span class="font-medium">Vokabular:</span> <span x-text="template.vocabulary"></span></p>
+                                                    </div>
                                                 </div>
                                             </template>
                                         </div>
@@ -295,12 +304,25 @@
 
                                         <div x-show="globalVoiceTemplates.length > 0" x-cloak class="border-t pt-4" style="border-color: var(--color-border);">
                                             <h4 class="text-sm font-semibold">Globale Vorlagen</h4>
-                                            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Vom Administrator angelegt, für alle Nutzer wählbar.</p>
-                                            <div class="mt-2 space-y-2">
+                                            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Vom Administrator angelegt. Schalte ab, was du nicht brauchst - abgeschaltete stehen nicht mehr in der Auswahl vor der Aufnahme.</p>
+                                            <div class="mt-2 space-y-1">
                                                 <template x-for="template in globalVoiceTemplates" :key="template.id">
-                                                    <div class="rounded-lg p-3" style="background: var(--color-bg-subtle);">
-                                                        <span class="text-sm font-medium" x-text="template.name"></span>
-                                                        <p class="mt-1 whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                                                    <div class="rounded-lg" style="background: var(--color-bg-subtle);">
+                                                        <div class="flex items-center gap-2 px-3 py-2">
+                                                            <button type="button" @click="toggleTemplateDetails(template)" :aria-expanded="isTemplateExpanded(template)" class="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+                                                                <span x-show="!isTemplateExpanded(template)" class="flex shrink-0" x-icon="chevron-right"></span>
+                                                                <span x-show="isTemplateExpanded(template)" x-cloak class="flex shrink-0" x-icon="chevron-down"></span>
+                                                                <span class="truncate text-sm font-medium" x-text="template.name"></span>
+                                                            </button>
+                                                            <label class="flex shrink-0 items-center gap-1.5 text-xs" style="color: var(--color-text-muted);">
+                                                                <input type="checkbox" :checked="template.active" :disabled="voiceTemplateSaving" @change="toggleGlobalTemplate(template)">
+                                                                <span x-text="template.active ? 'Aktiv' : 'Aus'"></span>
+                                                            </label>
+                                                        </div>
+                                                        <div x-show="isTemplateExpanded(template)" x-cloak class="px-3 pb-3">
+                                                            <p class="whitespace-pre-line text-xs" style="color: var(--color-text-muted);" x-text="template.instruction"></p>
+                                                            <p x-show="template.vocabulary" x-cloak class="mt-2 text-xs" style="color: var(--color-text-muted);"><span class="font-medium">Vokabular:</span> <span x-text="template.vocabulary"></span></p>
+                                                        </div>
                                                     </div>
                                                 </template>
                                             </div>

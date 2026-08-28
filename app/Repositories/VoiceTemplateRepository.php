@@ -62,18 +62,62 @@ final class VoiceTemplateRepository
         return $stmt->fetchAll();
     }
 
-    /** Globale Vorlagen zuerst, danach die eigenen - für die Auswahl vor der Aufnahme. */
-    /** @return array<int, array<string, mixed>> */
+    /**
+     * Für die Auswahl vor der Aufnahme: globale Vorlagen zuerst, danach die
+     * eigenen. Vom Nutzer abgewählte globale Vorlagen bleiben draußen.
+     *
+     * @return array<int, array<string, mixed>>
+     */
     public function allAvailableTo(int $userId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM voice_templates
-             WHERE user_id IS NULL OR user_id = :user_id
-             ORDER BY (user_id IS NULL) DESC, name COLLATE NOCASE'
+            'SELECT t.* FROM voice_templates t
+             LEFT JOIN voice_template_optouts o
+                    ON o.template_id = t.id AND o.user_id = :user_id
+             WHERE (t.user_id IS NULL AND o.template_id IS NULL) OR t.user_id = :user_id
+             ORDER BY (t.user_id IS NULL) DESC, t.name COLLATE NOCASE'
         );
         $stmt->execute(['user_id' => $userId]);
 
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Alle globalen Vorlagen samt der Frage, ob dieser Nutzer sie für sich
+     * aktiviert hat - für die Verwaltung in den Einstellungen.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function allGlobalWithStateFor(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT t.*, (o.template_id IS NULL) AS is_active
+               FROM voice_templates t
+               LEFT JOIN voice_template_optouts o
+                      ON o.template_id = t.id AND o.user_id = :user_id
+              WHERE t.user_id IS NULL
+              ORDER BY t.name COLLATE NOCASE'
+        );
+        $stmt->execute(['user_id' => $userId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /** Abwahl setzen oder aufheben; mehrfaches Aufrufen ändert nichts. */
+    public function setOptedOut(int $userId, int $templateId, bool $optedOut): void
+    {
+        if ($optedOut) {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO voice_template_optouts (user_id, template_id) VALUES (:user_id, :template_id)
+                 ON CONFLICT (user_id, template_id) DO NOTHING'
+            );
+        } else {
+            $stmt = $this->pdo->prepare(
+                'DELETE FROM voice_template_optouts WHERE user_id = :user_id AND template_id = :template_id'
+            );
+        }
+
+        $stmt->execute(['user_id' => $userId, 'template_id' => $templateId]);
     }
 
     public function update(int $id, string $name, string $instruction, string $vocabulary): void

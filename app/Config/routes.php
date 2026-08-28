@@ -129,6 +129,8 @@ return static function (App $app, ContainerInterface $container): void {
     $app->group('/api/profile/voice-templates', function ($group): void {
         $group->get('', [VoiceTemplateController::class, 'index']);
         $group->post('', [VoiceTemplateController::class, 'store']);
+        // Vor /{id} registriert, damit die Teilstrecke nicht als ID gelesen wird.
+        $group->patch('/{id}/active', [VoiceTemplateController::class, 'setActive']);
         $group->patch('/{id}', [VoiceTemplateController::class, 'update']);
         $group->delete('/{id}', [VoiceTemplateController::class, 'destroy']);
     })->add(new RequireAuthMiddleware(true));

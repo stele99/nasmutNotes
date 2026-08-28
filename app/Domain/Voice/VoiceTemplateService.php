@@ -59,6 +59,31 @@ final class VoiceTemplateService
     }
 
     /**
+     * Globale Vorlagen für die Einstellungen des Nutzers: alle, jeweils mit
+     * der Angabe, ob er sie für sich aktiviert hat.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listGlobalFor(User $user): array
+    {
+        return array_map([$this, 'serialize'], $this->templates->allGlobalWithStateFor($user->id));
+    }
+
+    /**
+     * Blendet eine globale Vorlage für diesen Nutzer ein oder aus, damit die
+     * Auswahl vor der Aufnahme kurz bleibt. Eigene Vorlagen kennen das nicht -
+     * wer seine nicht mehr braucht, löscht sie.
+     */
+    public function setGlobalActive(User $user, int $templateId, bool $active): void
+    {
+        // Nur globale Vorlagen sind abwählbar; alles andere gibt es für
+        // diesen Nutzer schlicht nicht.
+        $this->findInScope(null, $templateId);
+
+        $this->templates->setOptedOut($user->id, $templateId, !$active);
+    }
+
+    /**
      * $ownerId wählt den Bereich (null = globale Admin-Vorlage), $actor ist
      * stets der handelnde Mensch - beides auseinanderzuhalten hält das
      * Audit-Log aussagekräftig, auch wenn ein Admin global arbeitet.
@@ -221,6 +246,9 @@ final class VoiceTemplateService
             'instruction' => (string) $row['instruction'],
             'vocabulary' => (string) $row['vocabulary'],
             'scope' => $row['user_id'] === null ? 'global' : 'own',
+            // Nur die nutzerbezogene Abfrage liefert is_active mit; überall
+            // sonst ist eine sichtbare Vorlage per Definition aktiv.
+            'active' => !array_key_exists('is_active', $row) || (bool) $row['is_active'],
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ];

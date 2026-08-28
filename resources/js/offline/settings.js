@@ -121,6 +121,7 @@ export function offlineSettings() {
     voiceTemplateVocabulary: '',
     voiceTemplateSaving: false,
     editingVoiceTemplateId: null,
+    expandedTemplateId: null,
 
     // Verbundene Clients: manuelle Code-Bestätigung und KI-Verbrauch.
     pairCodeInput: '',
@@ -382,19 +383,51 @@ export function offlineSettings() {
       return `${Number(bucket.cost).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
     },
 
-    /** Eigene und globale Vorlagen in einer Antwort - global zuerst. */
+    /**
+     * Eigene Vorlagen und alle globalen samt Aktiv-Zustand. Bewusst nicht
+     * /api/voice/templates: Das liefert die Auswahlliste und lässt abgewählte
+     * globale Vorlagen weg - hier sollen sie wieder einschaltbar sein.
+     */
     async loadVoiceTemplates() {
       this.voiceTemplatesLoading = true;
       this.voiceTemplateError = '';
       try {
-        const data = await apiFetch('/api/voice/templates');
-        const templates = data.voice_templates || [];
-        this.voiceTemplates = templates.filter((t) => t.scope === 'own');
-        this.globalVoiceTemplates = templates.filter((t) => t.scope === 'global');
+        const data = await apiFetch('/api/profile/voice-templates');
+        this.voiceTemplates = data.voice_templates || [];
+        this.globalVoiceTemplates = data.global_templates || [];
       } catch (error) {
         this.voiceTemplateError = error.message || 'Vorlagen konnten nicht geladen werden.';
       } finally {
         this.voiceTemplatesLoading = false;
+      }
+    },
+
+    /** Eine Zeile zeigt nur Name und Zustand; Details klappen auf Klick auf. */
+    toggleTemplateDetails(template) {
+      this.expandedTemplateId = this.expandedTemplateId === template.id ? null : template.id;
+    },
+
+    isTemplateExpanded(template) {
+      return this.expandedTemplateId === template.id;
+    },
+
+    /** Globale Vorlage für sich ein- oder ausblenden, damit die Auswahl kurz bleibt. */
+    async toggleGlobalTemplate(template) {
+      if (this.voiceTemplateSaving) {
+        return;
+      }
+      this.voiceTemplateSaving = true;
+      this.voiceTemplateError = '';
+      try {
+        const data = await apiFetch(`/api/profile/voice-templates/${template.id}/active`, {
+          method: 'PATCH',
+          body: JSON.stringify({ active: !template.active }),
+        });
+        this.globalVoiceTemplates = data.global_templates || [];
+      } catch (error) {
+        this.voiceTemplateError = error.message || 'Die Vorlage konnte nicht umgeschaltet werden.';
+      } finally {
+        this.voiceTemplateSaving = false;
       }
     },
 

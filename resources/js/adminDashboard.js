@@ -74,6 +74,7 @@ export function adminDashboard() {
     voiceTemplateInstruction: '',
     voiceTemplateVocabulary: '',
     editingVoiceTemplateId: null,
+    expandedTemplateId: null,
 
     async init() {
       await this.refresh();
@@ -352,6 +353,15 @@ export function adminDashboard() {
         this.cancelEditVoiceTemplate();
         this.message = `Vorlage „${name}“ gespeichert.`;
       });
+    },
+
+    /** Eine Zeile zeigt nur den Namen; die Anweisung klappt auf Klick auf. */
+    toggleTemplateDetails(template) {
+      this.expandedTemplateId = this.expandedTemplateId === template.id ? null : template.id;
+    },
+
+    isTemplateExpanded(template) {
+      return this.expandedTemplateId === template.id;
     },
 
     startEditVoiceTemplate(template) {
