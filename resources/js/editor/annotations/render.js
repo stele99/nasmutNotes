@@ -99,6 +99,59 @@ function lineMarkup(item) {
   return markup;
 }
 
+/**
+ * Maßband (FR-ANNO-13): Maßlinie mit Endstrichen quer zur Linie und der vom
+ * Nutzer eingetragenen Länge darüber. Die Beschriftung liegt in einer eigenen
+ * Gruppe, die um die Mitte gedreht wird - so wandert sie mit, wenn ein
+ * Endpunkt gezogen wird, ohne dass Koordinaten nachgeführt werden müssen.
+ *
+ * Der Drehwinkel wird auf ±90° zurückgeklappt, damit die Zahl nie auf dem
+ * Kopf steht. Genau diese Rechnung steht wortgleich in
+ * ImageAnnotationSvgRenderer::dim().
+ */
+export function dimLabelAngle(item) {
+  const degrees = (Math.atan2(item.y2 - item.y1, item.x2 - item.x1) * 180) / Math.PI;
+  if (degrees > 90) {
+    return degrees - 180;
+  }
+
+  return degrees < -90 ? degrees + 180 : degrees;
+}
+
+function dimMarkup(item) {
+  const angle = Math.atan2(item.y2 - item.y1, item.x2 - item.x1);
+  const tick = Math.max(item.w * 3, 10);
+  const tx = (-Math.sin(angle) * tick) / 2;
+  const ty = (Math.cos(angle) * tick) / 2;
+
+  let markup = `<path d="M ${num(item.x1)} ${num(item.y1)} L ${num(item.x2)} ${num(item.y2)}"`
+    + `${stroke(item)}${common(item)}/>`;
+  for (const [x, y] of [[item.x1, item.y1], [item.x2, item.y2]]) {
+    markup += `<path d="M ${num(x - tx)} ${num(y - ty)} L ${num(x + tx)} ${num(y + ty)}"`
+      + `${stroke(item)}${common(item)}/>`;
+  }
+
+  if (typeof item.text !== 'string' || item.text === '') {
+    return markup;
+  }
+
+  const padding = item.s * 0.25;
+  const gap = item.w / 2 + item.s * 0.3;
+  const top = -gap - item.bh;
+  let label = '';
+  if (item.f !== null && Number.isFinite(item.bw) && Number.isFinite(item.bh)) {
+    label += `<rect x="${num(-item.bw / 2 - padding)}" y="${num(top - padding)}"`
+      + ` width="${num(item.bw + padding * 2)}" height="${num(item.bh + padding * 2)}"`
+      + ` rx="${num(padding)}" fill="${escapeXml(item.f)}"${common(item)}/>`;
+  }
+  label += `<text x="0" y="${num(top + item.s)}" fill="${escapeXml(item.c)}"`
+    + ` font-family="${escapeXml(FONT_STACK)}" font-size="${num(item.s)}"`
+    + ` text-anchor="middle"${common(item)}>${escapeXml(item.text)}</text>`;
+
+  return markup + `<g transform="translate(${num((item.x1 + item.x2) / 2)} `
+    + `${num((item.y1 + item.y2) / 2)}) rotate(${num(dimLabelAngle(item))})">${label}</g>`;
+}
+
 function rectMarkup(item) {
   const fill = item.f === null ? 'none' : escapeXml(item.f);
 
@@ -182,6 +235,7 @@ function itemMarkup(item) {
     case 'rules': return rulesMarkup(item);
     case 'marker': return markerMarkup(item);
     case 'mask': return maskMarkup(item);
+    case 'dim': return dimMarkup(item);
     default: return '';
   }
 }

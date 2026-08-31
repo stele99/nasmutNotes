@@ -110,6 +110,82 @@ final class ImageAnnotationSvgRendererTest extends TestCase
         self::assertSame(3, substr_count($svg, '<path'));
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
+    private function dim(array $overrides = []): array
+    {
+        return array_merge([
+            'id' => 'dim00001',
+            't' => 'dim',
+            'c' => '#e11d48',
+            'w' => 6,
+            'x1' => 100,
+            'y1' => 400,
+            'x2' => 700,
+            'y2' => 400,
+            's' => 40,
+            'bw' => 120,
+            'bh' => 50,
+            'f' => '#ffffff',
+            'text' => '3,20 m',
+        ], $overrides);
+    }
+
+    public function testMeasuringTapeDrawsLineTicksAndRotatedLabel(): void
+    {
+        $svg = $this->renderer->render($this->document([$this->dim()]));
+
+        self::assertSame(3, substr_count($svg, '<path'));
+        self::assertStringContainsString('<g transform="translate(400 400) rotate(0)">', $svg);
+        self::assertStringContainsString('>3,20 m</text>', $svg);
+        self::assertStringContainsString('text-anchor="middle"', $svg);
+    }
+
+    public function testMeasuringTapeWithoutLengthDrawsOnlyTheLine(): void
+    {
+        $item = $this->dim();
+        unset($item['text']);
+        $svg = $this->renderer->render($this->document([$item]));
+
+        self::assertSame(3, substr_count($svg, '<path'));
+        self::assertStringNotContainsString('<g transform', $svg);
+        self::assertStringNotContainsString('<text', $svg);
+    }
+
+    /**
+     * Die Länge steht nie auf dem Kopf: Der Drehwinkel wird auf ±90°
+     * zurückgeklappt - dieselbe Rechnung wie dimLabelAngle() in render.js.
+     */
+    public function testMeasuringTapeLabelNeverReadsUpsideDown(): void
+    {
+        $svg = $this->renderer->render($this->document([
+            $this->dim(['x1' => 700, 'y1' => 400, 'x2' => 100, 'y2' => 400]),
+        ]));
+        self::assertStringContainsString('rotate(0)', $svg);
+
+        $svg = $this->renderer->render($this->document([
+            $this->dim(['x1' => 100, 'y1' => 0, 'x2' => 0, 'y2' => 100]),
+        ]));
+        self::assertStringContainsString('rotate(-45)', $svg);
+    }
+
+    /**
+     * Math.round() in render.js rundet halbe Werte nach oben, auch negative -
+     * die gedrehte Beschriftung rechnet laufend in negativen Koordinaten.
+     */
+    public function testRoundsHalvesUpwardsLikeTheJavaScriptTwin(): void
+    {
+        $svg = $this->renderer->render($this->document([
+            $this->dim(['bw' => 120.5, 's' => 40]),
+        ]));
+
+        self::assertStringContainsString('x="-70.2"', $svg);
+        self::assertStringNotContainsString('x="-70.3"', $svg);
+    }
+
     public function testViewBoxMatchesSpace(): void
     {
         $svg = $this->renderer->render($this->document([

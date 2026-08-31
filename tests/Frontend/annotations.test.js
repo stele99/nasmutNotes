@@ -3,7 +3,8 @@ import test from 'node:test';
 
 const { normalizeAnnotations, serializeAnnotations, annotationTexts, simplifyPath, MAX_ITEMS }
   = await import('../../resources/js/editor/annotations/schema.js');
-const { buildOverlayMarkup } = await import('../../resources/js/editor/annotations/render.js');
+const { buildOverlayMarkup, dimLabelAngle }
+  = await import('../../resources/js/editor/annotations/render.js');
 const { imageAnnotatorMixin, readStoredWidths, storedToolWidth, storeToolWidth }
   = await import('../../resources/js/editor/annotations/annotator.js');
 
@@ -42,6 +43,12 @@ const line = {
   x1: 10, y1: 20, x2: 30, y2: 40, head: 'end',
 };
 
+const dim = {
+  id: 'dim00001', t: 'dim', c: '#e11d48', w: 6,
+  x1: 100, y1: 400, x2: 700, y2: 400,
+  s: 40, bw: 120, bh: 50, f: '#ffffff', text: '3,20 m',
+};
+
 test('verwirft Elemente mit unerlaubter Farbe, Typ oder Zahl', () => {
   assert.equal(normalizeAnnotations(annotations([{ ...line, c: 'red' }])), null);
   assert.equal(normalizeAnnotations(annotations([{ ...line, c: 'url(#x)' }])), null);
@@ -75,12 +82,52 @@ test('Douglas-Peucker behält Anfang und Ende und dünnt die Mitte aus', () => {
   assert.ok(simplified.length < 10);
 });
 
+test('das Maßband behält seine Länge, verträgt aber auch keine', () => {
+  const withLabel = normalizeAnnotations(annotations([dim]));
+  assert.equal(withLabel.items[0].text, '3,20 m');
+
+  // Zwischen Ziehen und Eintragen steht das Band ohne Beschriftung da; das
+  // Feld fällt weg, statt das ganze Element zu verwerfen.
+  const bare = normalizeAnnotations(annotations([{ ...dim, text: '' }]));
+  assert.equal(bare.items.length, 1);
+  assert.equal('text' in bare.items[0], false);
+
+  // Mehrzeiliges und überlanges wird auf eine kurze Zeile gebracht.
+  const messy = normalizeAnnotations(annotations([{ ...dim, text: ' 3,20\n\tm  ' }]));
+  assert.equal(messy.items[0].text, '3,20 m');
+  const long = normalizeAnnotations(annotations([{ ...dim, text: 'x'.repeat(200) }]));
+  assert.equal(long.items[0].text.length, 40);
+
+  // Pflichtzahlen gelten wie bei jedem anderen Typ.
+  assert.equal(normalizeAnnotations(annotations([{ ...dim, s: 0 }])), null);
+  assert.equal(normalizeAnnotations(annotations([{ ...dim, x2: Number.NaN }])), null);
+});
+
+test('das Maßband zeichnet Maßlinie, Endstriche und die gedrehte Länge', () => {
+  const markup = buildOverlayMarkup(annotations([dim]));
+  assert.equal((markup.match(/<path /g) ?? []).length, 3);
+  assert.match(markup, /<g transform="translate\(400 400\) rotate\(0\)">/);
+  assert.match(markup, /text-anchor="middle"[^>]*>3,20 m<\/text>/);
+
+  // Ohne Beschriftung bleiben nur die drei Striche.
+  const bare = buildOverlayMarkup(annotations([{ ...dim, text: '' }]));
+  assert.equal((bare.match(/<path /g) ?? []).length, 3);
+  assert.equal(bare.includes('<g transform'), false);
+
+  // Die Länge steht nie auf dem Kopf: Der Winkel bleibt zwischen -90 und 90.
+  assert.equal(dimLabelAngle({ x1: 700, y1: 400, x2: 100, y2: 400 }), 0);
+  assert.equal(dimLabelAngle({ x1: 0, y1: 100, x2: 100, y2: 0 }), -45);
+  assert.equal(dimLabelAngle({ x1: 100, y1: 0, x2: 0, y2: 100 }), -45);
+});
+
 test('liefert Texte in Lesereihenfolge', () => {
   const text = {
     id: 'text0001', t: 'text', c: '#111827', x: 1, y: 2, s: 20,
     f: null, bw: 100, bh: 20, text: 'Zuerst',
   };
   assert.deepEqual(annotationTexts(annotations([text, line])), ['Zuerst']);
+  // Die Länge am Maßband ist Text auf dem Bild und damit auffindbar.
+  assert.deepEqual(annotationTexts(annotations([text, dim])), ['Zuerst', '3,20 m']);
 });
 
 test('erzeugt für jeden Typ Markup und für unbekannte Typen keines', () => {
@@ -465,6 +512,85 @@ test('der Hover-Rahmen zeigt im Auswählen-Werkzeug das Element unter dem Zeiger
     mixin.annoTool = 'pen';
     mixin.annoPointerMove.call(mixin, { pointerId: 1, pointerType: 'mouse', clientX: 150, clientY: 225 });
     assert.equal(mixin.annoHoverStyle, '');
+  });
+});
+
+test('das Maßband entsteht erst mit der eingetragenen Länge', () => {
+  withFakeStorage(() => {
+    withFakeCanvas(({ host }) => {
+      const mixin = imageAnnotatorMixin();
+      mixin.$nextTick = (run) => run();
+      mixin.$refs = {
+        annoLayer: host,
+        annoPreview: host,
+        annoStage: {
+          setPointerCapture() {},
+          releasePointerCapture() {},
+          getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 800 }),
+        },
+      };
+      mixin.annoSpace = { w: 1000, h: 800 };
+      mixin.annoOpen = true;
+      mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'measure' } } });
+
+      const draw = () => {
+        mixin.annoPointerDown.call(mixin, {
+          pointerId: 1, pointerType: 'mouse', button: 0,
+          clientX: 100, clientY: 400, target: {}, preventDefault() {},
+        });
+        mixin.annoPointerMove.call(mixin, {
+          pointerId: 1, pointerType: 'mouse', clientX: 700, clientY: 400, preventDefault() {},
+        });
+        mixin.annoPointerUp.call(mixin, { pointerId: 1 });
+      };
+
+      // Nach dem Zug steht das Band noch außerhalb des Dokuments: kein
+      // Element, kein Undo-Schritt, nur die Frage nach der Länge.
+      draw();
+      assert.equal(mixin.annoLengthOpen, true);
+      assert.equal(mixin.annoItems.length, 0);
+      assert.equal(mixin.annoHistory.length, 0);
+
+      mixin.annoLengthDraft = ' 3,20  m ';
+      mixin.annoConfirmLength();
+      assert.equal(mixin.annoLengthOpen, false);
+      assert.deepEqual(
+        [mixin.annoItems.length, mixin.annoItems[0].t, mixin.annoItems[0].text],
+        [1, 'dim', '3,20 m'],
+      );
+      assert.deepEqual(
+        [mixin.annoItems[0].x1, mixin.annoItems[0].x2, mixin.annoItems[0].bw, mixin.annoItems[0].bh],
+        [100, 700, 120, 50],
+      );
+      assert.equal(mixin.annoHistory.length, 1);
+
+      // Abbrechen verwirft das frisch gezogene Band ganz.
+      draw();
+      mixin.annoCancelLength();
+      assert.equal(mixin.annoItems.length, 1);
+
+      // Doppelklick auf ein vorhandenes Band öffnet die Länge zum Ändern;
+      // eine geleerte Länge nimmt nur die Beschriftung weg.
+      mixin.annoSelectedId = mixin.annoItems[0].id;
+      mixin.annoEditSelectedText();
+      assert.equal(mixin.annoLengthDraft, '3,20 m');
+      mixin.annoLengthDraft = '';
+      mixin.annoConfirmLength();
+      assert.equal(mixin.annoItems.length, 1);
+      assert.deepEqual(
+        [mixin.annoItems[0].text, mixin.annoItems[0].bw, mixin.annoItems[0].bh],
+        ['', 0, 0],
+      );
+
+      // Endpunkt-Griffe wie bei der Linie, kein Rahmengriff.
+      assert.equal(mixin.annoHasHandle('p1'), true);
+      assert.equal(mixin.annoHasHandle('p2'), true);
+      assert.equal(mixin.annoHasHandle('se'), false);
+      mixin.annoResizeHandle(mixin.annoItems[0], 'p2', { x: 500, y: 300 });
+      assert.deepEqual([mixin.annoItems[0].x2, mixin.annoItems[0].y2], [500, 300]);
+      mixin.annoTranslate(mixin.annoItems[0], 10, -5);
+      assert.deepEqual([mixin.annoItems[0].x1, mixin.annoItems[0].y1], [110, 395]);
+    });
   });
 });
 

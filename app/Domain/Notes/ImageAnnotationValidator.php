@@ -19,6 +19,7 @@ final class ImageAnnotationValidator
     public const MAX_POINTS = 400;
     public const MAX_TEXT_LENGTH = 500;
     public const MAX_TEXT_LINES = 12;
+    public const MAX_LABEL_LENGTH = 40;
     public const MAX_BYTES_PER_IMAGE = 40_000;
     public const MAX_BYTES_PER_DOCUMENT = 300_000;
     public const MAX_SPACE = 20_000;
@@ -29,7 +30,7 @@ final class ImageAnnotationValidator
 
     /**
      * @var array<string, array{num: string[], pos: string[], points?: bool,
-     *     head?: bool, dash?: bool, fill?: bool, text?: bool}>
+     *     head?: bool, dash?: bool, fill?: bool, text?: bool, label?: bool}>
      */
     private const TYPES = [
         'pen' => ['num' => ['w'], 'pos' => ['w'], 'points' => true],
@@ -48,6 +49,12 @@ final class ImageAnnotationValidator
         ],
         'marker' => ['num' => ['x', 'y', 'r', 'n'], 'pos' => ['r', 'n']],
         'mask' => ['num' => ['x', 'y', 'rw', 'rh'], 'pos' => ['rw', 'rh']],
+        'dim' => [
+            'num' => ['w', 'x1', 'y1', 'x2', 'y2', 's', 'bw', 'bh'],
+            'pos' => ['w', 's'],
+            'fill' => true,
+            'label' => true,
+        ],
     ];
 
     /**
@@ -145,7 +152,7 @@ final class ImageAnnotationValidator
         if ($spec['dash'] ?? false) {
             $allowed[] = 'd';
         }
-        if ($spec['text'] ?? false) {
+        if (($spec['text'] ?? false) || ($spec['label'] ?? false)) {
             $allowed[] = 'text';
         }
         if ($spec['points'] ?? false) {
@@ -204,6 +211,12 @@ final class ImageAnnotationValidator
             $this->validateText($item['text'] ?? null);
         }
 
+        // Die Beschriftung eines Maßbands ist freiwillig: Die Maßlinie steht
+        // auch ohne sie. Ist sie da, muss sie einzeilig und kurz sein.
+        if (($spec['label'] ?? false) && array_key_exists('text', $item)) {
+            $this->validateLabel($item['text']);
+        }
+
         if ($spec['points'] ?? false) {
             $this->validatePoints($item['p'] ?? null);
         }
@@ -230,6 +243,19 @@ final class ImageAnnotationValidator
         }
         if (str_contains($value, "\r") || substr_count($value, "\n") >= self::MAX_TEXT_LINES) {
             throw new NoteContentException('Text in den Bildnotizen hat zu viele Zeilen.');
+        }
+    }
+
+    private function validateLabel(mixed $value): void
+    {
+        if (!is_string($value) || trim($value) === '') {
+            throw new NoteContentException('Maßband ohne Länge in den Bildnotizen.');
+        }
+        if (mb_strlen($value) > self::MAX_LABEL_LENGTH) {
+            throw new NoteContentException('Die Länge am Maßband ist zu lang.');
+        }
+        if (preg_match('/[\r\n]/', $value) === 1) {
+            throw new NoteContentException('Die Länge am Maßband ist einzeilig.');
         }
     }
 
@@ -269,7 +295,10 @@ final class ImageAnnotationValidator
 
         $texts = [];
         foreach ($value['items'] as $item) {
-            if (is_array($item) && ($item['t'] ?? null) === 'text' && is_string($item['text'] ?? null)) {
+            if (!is_array($item) || !is_string($item['text'] ?? null)) {
+                continue;
+            }
+            if (in_array($item['t'] ?? null, ['text', 'dim'], true)) {
                 $texts[] = $item['text'];
             }
         }

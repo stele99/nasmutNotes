@@ -249,7 +249,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 |---|---|---|
 | FR-ANNO-01 | Bilder in Notizen können mit Annotationen versehen werden. Die Bilddatei wird dabei nicht verändert; die Annotationen liegen als Overlay über dem Bild. | M |
 | FR-ANNO-02 | Annotationen sind jederzeit erneut bearbeitbar: verschieben, skalieren, Eigenschaften ändern, löschen. | M |
-| FR-ANNO-03 | Werkzeuge mindestens: Freihand, Marker, Linie, Pfeil, Rechteck, Ellipse, Textkasten, Zeilenlinien, nummerierter Marker, Abdeckung. | M |
+| FR-ANNO-03 | Werkzeuge mindestens: Freihand, Marker, Linie, Pfeil, Maßband, Rechteck, Ellipse, Textkasten, Zeilenlinien, nummerierter Marker, Abdeckung. | M |
 | FR-ANNO-04 | Annotationen werden als Attribut des Bildknotens im ProseMirror-JSON gespeichert; keine eigene Tabelle, keine eigene Datei. | M |
 | FR-ANNO-05 | Serverseitige Allowlist-Validierung mit Grenzen für Elementzahl, Punktzahl, Textlänge und JSON-Größe je Bild und je Dokument. | M |
 | FR-ANNO-06 | Annotationen skalieren verlustfrei mit der Anzeigegröße und bleiben nach serverseitiger Bildkompression positionsgenau. | M |
@@ -259,6 +259,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-ANNO-10 | Texte aus Annotationen sind über die Volltextsuche auffindbar. | S |
 | FR-ANNO-11 | Beim Export enthält das Archiv das unveränderte Bild, die Annotationstexte im Markdown und das Overlay als SVG-Sidecar. | S |
 | FR-ANNO-12 | Das Werkzeug „Abdecken" weist darauf hin, dass es Bildinhalte nicht dauerhaft entfernt. | M |
+| FR-ANNO-13 | Das Werkzeug „Maßband" zeichnet eine Maßlinie zwischen zwei Punkten; die Länge wird frei eingetragen und mit der Linie zusammen dargestellt. Es wird nichts umgerechnet. | S |
 
 ### 5.5 Task-Seiten
 

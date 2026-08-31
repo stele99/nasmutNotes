@@ -67,7 +67,62 @@ final class ImageAnnotationValidatorTest extends TestCase
             ['id' => 'rule0001', 't' => 'rules', 'c' => '#eab308', 'w' => 3, 'x' => 0, 'y' => 0, 'rw' => 400, 'rh' => 200, 'gap' => 32],
             ['id' => 'mark0001', 't' => 'marker', 'c' => '#2563eb', 'x' => 500, 'y' => 400, 'r' => 46, 'n' => 1],
             ['id' => 'mask0001', 't' => 'mask', 'c' => '#111827', 'x' => 10, 'y' => 10, 'rw' => 80, 'rh' => 20],
+            $this->dim(),
         ]));
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
+    private function dim(array $overrides = []): array
+    {
+        return array_merge([
+            'id' => 'dim00001',
+            't' => 'dim',
+            'c' => '#e11d48',
+            'w' => 6,
+            'x1' => 100,
+            'y1' => 400,
+            'x2' => 700,
+            'y2' => 400,
+            's' => 40,
+            'bw' => 120,
+            'bh' => 50,
+            'f' => '#ffffff',
+            'text' => '3,20 m',
+        ], $overrides);
+    }
+
+    public function testAcceptsMeasuringTapeWithoutLength(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $item = $this->dim();
+        unset($item['text']);
+        $this->validator->validate($this->document([$item]));
+    }
+
+    public function testRejectsEmptyMultilineOrOverlongLength(): void
+    {
+        foreach (['', '   ', "3,20\nm", str_repeat('x', 41)] as $label) {
+            try {
+                $this->validator->validate($this->document([$this->dim(['text' => $label])]));
+                self::fail('Länge ' . json_encode($label) . ' wurde akzeptiert.');
+            } catch (NoteContentException) {
+                continue;
+            }
+        }
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testRejectsMeasuringTapeWithoutLabelSize(): void
+    {
+        $this->expectException(NoteContentException::class);
+
+        $this->validator->validate($this->document([$this->dim(['s' => 0])]));
     }
 
     public function testRejectsUnknownVersion(): void
@@ -225,6 +280,7 @@ final class ImageAnnotationValidatorTest extends TestCase
 
         self::assertSame(['Erster', 'Zweiter'], $texts);
         self::assertSame([], ImageAnnotationValidator::texts(null));
+        self::assertSame(['3,20 m'], ImageAnnotationValidator::texts($this->document([$this->dim()])));
     }
 
     /**

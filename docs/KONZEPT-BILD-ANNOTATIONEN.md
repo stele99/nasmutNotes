@@ -148,6 +148,7 @@ Gemeinsame Felder jedes Elements: `id` (8 Zeichen `[a-z0-9]`), `t` (Typ),
 | `rules` | Zeilenlinien | `w`, `x`,`y`,`rw`,`rh`, `gap` Zeilenabstand |
 | `marker` | nummerierter Kreis | `x`,`y` Mittelpunkt, `r` Radius, `n` Nummer 1–99 |
 | `mask` | deckende Abdeckung | `x`,`y`,`rw`,`rh` |
+| `dim` | Maßband (Abschnitt 14) | `w`, `x1`,`y1`,`x2`,`y2`, `s` Schriftgröße der Länge, `f` Hintergrundfarbe oder `null`, `bw`,`bh` gemessene Textmaße, `text` Länge (freiwillig, einzeilig, höchstens 40 Zeichen) |
 
 Der Werkzeugkasten bildet mehr Werkzeuge ab, als es Typen gibt: „Marker" ist
 ein `pen` mit dicker Strichstärke und `o: 0.4`, „Hervorheben" ein `rect` mit
@@ -199,6 +200,7 @@ Acht feste Werte plus freier Farbwähler; validiert wird ausschließlich gegen
 | Punkte je Freihandpfad | 400 | beide |
 | Textlänge je `text` | 500 Zeichen | beide |
 | Textzeilen je `text` | 12 | beide |
+| Länge je `dim` | 40 Zeichen, eine Zeile | beide |
 | Zeilen je `rules` | 200 (Renderergrenze) | `render.js`, `ImageAnnotationSvgRenderer` |
 | JSON je Bild | 40 000 Byte | beide |
 | JSON aller Annotationen je Dokument | 300 000 Byte | `ImageAnnotationValidator` |
@@ -3273,6 +3275,7 @@ bevor die aufwendige Bedienoberfläche entsteht.
 | FR-ANNO-10 | Texte aus Annotationen sind über die Volltextsuche auffindbar. | S |
 | FR-ANNO-11 | Beim Export enthält das Archiv das unveränderte Bild, die Annotationstexte im Markdown und das Overlay als SVG-Sidecar. | S |
 | FR-ANNO-12 | Das Werkzeug „Abdecken" weist darauf hin, dass es Bildinhalte nicht dauerhaft entfernt. | M |
+| FR-ANNO-13 | Das Werkzeug „Maßband" zeichnet eine Maßlinie zwischen zwei Punkten; die Länge wird frei eingetragen und mit der Linie zusammen dargestellt. | S |
 
 ## 12. Offene Fragen
 
@@ -3424,3 +3427,137 @@ Manuelle Prüfmatrix:
 | 5 | Freihandstrich am SE-Griff ziehen | Strich behält seine Form im neuen Kasten |
 | 6 | Textkasten vergrößern | Schrift wächst mit, Hintergrundkasten umschließt weiterhin den Text |
 | 7 | Nummerierten Marker skalieren | Kreis wächst gleichmäßig um den Mittelpunkt |
+
+---
+
+## 14. Ausbaustufe 3: Maßband
+
+| Feld | Wert |
+|---|---|
+| Planungsstand | umgesetzt |
+| Datum | 2026-08-31 |
+| Bezug | neu: FR-ANNO-13 |
+| Neue Abhängigkeiten | keine |
+| Neue Migration | keine |
+| Neue Endpunkte | keine |
+| Vertragsänderungen | keine |
+
+### 14.1 Was das Werkzeug tut
+
+Ein Maßband wird wie eine Linie gezogen: Zeiger nieder am Anfang, Zeiger hoch
+am Ende. Danach fragt ein kleiner Dialog nach der **Länge**. Der Eintrag ist
+freier Text — „3,20 m", „45 cm", „ca. 2 Ziegel" — und wird über der Maßlinie
+angezeigt.
+
+**Es wird nichts gerechnet.** Das Werkzeug kennt keinen Maßstab und rechnet
+keine Bildpunkte in Meter um. Ein Foto trägt die dafür nötige Information
+nicht: Ohne Brennweite, Aufnahmeabstand und Lage der Ebene wäre jede
+umgerechnete Zahl geraten, und eine geratene Zahl in Metern ist schlimmer als
+gar keine. Der Nutzer weiß, was er gemessen hat, und trägt es ein.
+
+### 14.2 Darstellung
+
+Gezeichnet werden drei Striche und eine Beschriftung:
+
+1. die Maßlinie von `(x1,y1)` nach `(x2,y2)`,
+2. je ein Endstrich quer dazu, `max(w × 3, 10)` lang, mittig auf dem Endpunkt,
+3. die Länge über der Mitte der Linie, in einer eigenen `<g>`-Gruppe, die um
+   die Linienmitte gedreht wird.
+
+Die Gruppe ist der Grund, warum die Beschriftung keine eigenen Koordinaten
+braucht: Zieht der Nutzer einen Endpunkt, wandert und dreht sie von selbst
+mit; im Modell ändern sich nur `x2`/`y2`.
+
+Der Drehwinkel wird auf ±90° zurückgeklappt (`dimLabelAngle()` in `render.js`,
+`ImageAnnotationSvgRenderer::labelAngle()`), damit die Zahl nie auf dem Kopf
+steht. Ob das Band von links nach rechts oder von rechts nach links gezogen
+wurde, ist damit unerheblich.
+
+Die Textmaße `bw`/`bh` stammen wie beim Textkasten aus der Messung beim
+Eintragen (`measureTextBox`); der Server kennt weiterhin keine Schriftmetrik.
+
+**Rundung.** Die gedrehte Beschriftung rechnet laufend in negativen
+Koordinaten, und dort liefen die beiden Renderer auseinander:
+`Math.round(-70.25 × 10)` ergibt in JavaScript `-702` (halbe Werte nach oben),
+`round(-70.25, 1)` in PHP `-70.3` (halbe Werte von der Null weg).
+`ImageAnnotationSvgRenderer::num()` rundet deshalb mit
+`floor($wert × 10 + 0.5) / 10` und macht aus `-0.0` eine `0.0`. Damit stimmen
+die Zwillinge auch für negative Zahlen überein.
+
+### 14.3 Die Länge ist freiwillig
+
+`text` darf am `dim` fehlen. Das ist keine Nachlässigkeit, sondern der
+Bedienablauf: Zwischen „Linie gezogen" und „Länge eingetragen" liegt ein
+Dialog, und in dieser Zeit wird das Band bereits gezeichnet. Ohne die
+Freiwilligkeit müsste die Vorschau mit einem Platzhaltertext arbeiten, den
+niemand sehen will.
+
+Daraus folgen zwei Regeln:
+
+- **Neu gezogen, Dialog abgebrochen** → das Band wird verworfen. Ein Zug ohne
+  Länge war fast immer ein Verrutscher.
+- **Vorhandenes Band, Länge geleert** → nur die Beschriftung fällt weg, die
+  Maßlinie bleibt stehen. Das ist die einzige Möglichkeit, eine Länge wieder
+  loszuwerden, ohne das Band neu zu ziehen.
+
+Bis zur Bestätigung liegt das frisch gezogene Band in der Closure-Variablen
+`pendingMeasure`, nicht in `annoItems`: So entsteht kein Undo-Schritt für
+etwas, das der Nutzer noch abbrechen kann, und `annoDirty` bleibt sauber.
+
+### 14.4 Auswahl, Verschieben, Griffe
+
+Das Maßband verhält sich wie die Linie: zwei Endpunkt-Griffe `p1`/`p2`, kein
+Rahmengriff. In `annotator.js` steht dafür jetzt `ENDPOINT_TYPES`
+(`line`, `dim`) und `BOX_TYPES` (`rect`, `ellipse`, `mask`, `rules`) statt der
+zuvor an fünf Stellen ausgeschriebenen Typlisten.
+
+Der Auswahlrahmen umfasst zusätzlich die Beschriftung: `annoBounds()` polstert
+das Band um `w + s × 1.6` — knapp mehr als Zeilenhöhe plus Abstand. Ohne diese
+Polsterung ließe sich ein Band, dessen Länge weit über der Linie steht, nur an
+der Linie selbst greifen.
+
+Der Strichstärke-Regler wirkt auf `w`, also auf Linie und Endstriche. Die
+Schriftgröße der Länge steht fest bei `MEASURE_LABEL_SIZE = 40` — dieselbe
+Festlegung wie beim Marker-Radius und beim Zeilenabstand, die ebenfalls
+unabhängig vom Regler sind.
+
+### 14.5 Suche und Export
+
+`annotationTexts()` und `ImageAnnotationValidator::texts()` liefern die Länge
+mit aus. Eine Notiz mit einem Maßband „3,20 m" ist damit über die
+Volltextsuche auffindbar (FR-ANNO-10), und der Markdown-Export listet die
+Länge unter dem Bild (FR-ANNO-11) — beides ohne weitere Änderung an den
+aufrufenden Stellen.
+
+### 14.6 Dateiübersicht
+
+| Datei | Änderung |
+|---|---|
+| `resources/js/editor/annotations/schema.js` | Typ `dim`, `MAX_LABEL_LENGTH`, `normalizeLabel()`, `spec.label`, `annotationTexts()` nimmt `dim` mit |
+| `resources/js/editor/annotations/render.js` | `dimMarkup()`, `dimLabelAngle()` |
+| `resources/js/editor/annotations/annotator.js` | Werkzeug `measure`, `pendingMeasure`, Längen-Dialog (`annoOpenLengthDialog`/`annoConfirmLength`/`annoCancelLength`), `ENDPOINT_TYPES`/`BOX_TYPES`, `annoBounds`/`annoIsMeaningful`/`annoExtendItem` um `dim` erweitert |
+| `resources/js/icons.js` | Symbol `ruler` |
+| `resources/views/partials/image_annotation_dialog.php` | Knopf „Maßband", Dialog „Länge des Maßbands" |
+| `app/Domain/Notes/ImageAnnotationValidator.php` | Typ `dim`, `MAX_LABEL_LENGTH`, `validateLabel()`, `texts()` nimmt `dim` mit |
+| `app/Domain/Notes/ImageAnnotationSvgRenderer.php` | `dim()`, `labelAngle()`, `num()` rundet wie JavaScript |
+| `tests/Frontend/annotations.test.js` | drei neue Tests: Modell und Beschriftung, Markup und Drehwinkel, Bedienablauf vom Zug bis zur Länge |
+| `tests/Unit/Domain/Notes/ImageAnnotationValidatorTest.php` | Band ohne Länge, leere/mehrzeilige/zu lange Länge, fehlende Schriftgröße, `texts()` |
+| `tests/Unit/Domain/Notes/ImageAnnotationSvgRendererTest.php` | Markup mit und ohne Länge, Drehwinkel, Rundung negativer Halbwerte |
+
+Keine Migration, kein Endpunkt, keine CSS-Änderung — der Längen-Dialog benutzt
+dieselben Klassen wie der Text-Dialog.
+
+### 14.7 Manuelle Prüfmatrix
+
+| # | Fall | Erwartung |
+|---|---|---|
+| 1 | Band von links nach rechts ziehen, „3,20 m" eintragen | Maßlinie mit zwei Endstrichen, Länge waagerecht darüber |
+| 2 | Band von rechts nach links ziehen | Länge steht aufrecht, nicht auf dem Kopf |
+| 3 | Band senkrecht ziehen | Länge steht mit der Linie gedreht, lesbar von unten nach oben |
+| 4 | Dialog mit „Abbrechen" schließen | kein Band im Bild, keine Rückfrage beim Schließen des Editors |
+| 5 | Endpunkt eines fertigen Bands ziehen | Länge wandert und dreht sich mit |
+| 6 | Band doppelt antippen, Länge ändern | neue Länge, Hintergrundkasten passt sich an, ein Undo-Schritt |
+| 7 | Band doppelt antippen, Länge leeren | Maßlinie bleibt, Beschriftung weg |
+| 8 | Notiz speichern, neu laden, öffentlich freigeben | Overlay im Editor, im Lesemodus und in der Freigabe identisch |
+| 9 | Notiz mit Maßband exportieren | Länge steht unter dem Bild im Markdown |
+| 10 | Volltextsuche nach „3,20" | Notiz wird gefunden |

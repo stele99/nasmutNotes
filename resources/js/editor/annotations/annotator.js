@@ -1,6 +1,7 @@
 import {
   MAX_ITEMS,
   MAX_JSON_BYTES,
+  MAX_LABEL_LENGTH,
   PALETTE,
   SIMPLIFY_RATIO,
   annotationBytes,
@@ -28,11 +29,19 @@ const TOOL_DEFAULTS = {
   rules: { width: 3, opacity: 1 },
   marker: { width: 6, opacity: 1 },
   mask: { width: 6, opacity: 1 },
+  measure: { width: 6, opacity: 1 },
 };
 
 /** Feste Größen für Werkzeuge ohne Strichstärke - unabhängig vom Textregler. */
 const MARKER_RADIUS = 40;
 const RULES_LINE_GAP = 70;
+/** Schriftgröße der Maßband-Beschriftung; der Regler trägt dort die Strichstärke. */
+const MEASURE_LABEL_SIZE = 40;
+
+/** Typen mit zwei Endpunkten statt einem Rahmen - sie tragen p1/p2-Griffe. */
+const ENDPOINT_TYPES = ['line', 'dim'];
+/** Typen, die als Rahmen aufgezogen werden und einen nw-Griff tragen. */
+const BOX_TYPES = ['rect', 'ellipse', 'mask', 'rules'];
 
 /** Verschiebung je Pfeiltaste in Einheiten des Annotationsraums. */
 const ARROW_NUDGES = {
@@ -102,6 +111,9 @@ export function imageAnnotatorMixin() {
   let getEditor = () => null;
   let drag = null;
   let stageResizeHandler = null;
+  // Das frisch gezogene Maßband wartet hier, bis der Nutzer die Länge
+  // eingetragen hat; erst dann wandert es in annoItems.
+  let pendingMeasure = null;
 
   return {
     annoOpen: false,
@@ -126,6 +138,9 @@ export function imageAnnotatorMixin() {
     annoTextDraft: '',
     annoTextEditId: '',
     annoTextAnchor: null,
+    annoLengthOpen: false,
+    annoLengthDraft: '',
+    annoLengthEditId: '',
     annoHistory: [],
     annoFuture: [],
     annoDirty: false,
@@ -234,6 +249,7 @@ export function imageAnnotatorMixin() {
       this.annoHistory = [];
       this.annoFuture = [];
       this.annoDirty = false;
+      this.annoCancelLength();
       this.annoError = '';
       this.annoNotice = '';
       this.annoOpen = true;
@@ -257,6 +273,7 @@ export function imageAnnotatorMixin() {
       this.annoPos = null;
       this.annoUnwatchStageSize();
       drag = null;
+      this.annoCancelLength();
     },
 
     /**
@@ -295,6 +312,7 @@ export function imageAnnotatorMixin() {
       this.annoPos = null;
       this.annoUnwatchStageSize();
       drag = null;
+      this.annoCancelLength();
     },
 
     // --- Werkzeuge und Eigenschaften -----------------------------------
@@ -558,6 +576,13 @@ export function imageAnnotatorMixin() {
         if (!this.annoIsMeaningful(item)) {
           return;
         }
+        // Das Maßband ist erst mit der eingetragenen Länge fertig; bis dahin
+        // liegt es außerhalb von annoItems und erzeugt keinen Undo-Schritt.
+        if (item.t === 'dim') {
+          this.annoOpenLengthDialog(item, true);
+
+          return;
+        }
         this.annoPushHistory();
         this.annoItems.push(item);
         this.annoRenderAll();
@@ -583,6 +608,7 @@ export function imageAnnotatorMixin() {
         case 'pen':
           return item.p.length > 1 || item.w > 0;
         case 'line':
+        case 'dim':
           return Math.hypot(item.x2 - item.x1, item.y2 - item.y1) > item.w;
         case 'rect':
         case 'ellipse':
@@ -620,6 +646,20 @@ export function imageAnnotatorMixin() {
           return { ...base, t: 'rules', w: width, x: point.x, y: point.y, rw: 1, rh: 1, gap: RULES_LINE_GAP };
         case 'mask':
           return { ...base, t: 'mask', o: 1, x: point.x, y: point.y, rw: 1, rh: 1 };
+        case 'measure':
+          return {
+            ...base,
+            t: 'dim',
+            w: width,
+            x1: point.x,
+            y1: point.y,
+            x2: point.x,
+            y2: point.y,
+            s: MEASURE_LABEL_SIZE,
+            bw: 0,
+            bh: 0,
+            f: '#ffffff',
+          };
         case 'marker':
           return {
             ...base,
@@ -640,7 +680,7 @@ export function imageAnnotatorMixin() {
 
         return;
       }
-      if (item.t === 'line') {
+      if (ENDPOINT_TYPES.includes(item.t)) {
         item.x2 = point.x;
         item.y2 = point.y;
 
@@ -675,12 +715,19 @@ export function imageAnnotatorMixin() {
           };
         }
         case 'line':
+        case 'dim': {
+          // Beim Maßband steht die Beschriftung über der Mitte der Linie; der
+          // Rahmen bezieht sie großzügig mit ein, damit sie sich mit anwählen
+          // und mit verschieben lässt.
+          const pad = item.t === 'dim' ? item.w + item.s * 1.6 : item.w;
+
           return {
-            x: Math.min(item.x1, item.x2) - item.w,
-            y: Math.min(item.y1, item.y2) - item.w,
-            rw: Math.abs(item.x2 - item.x1) + item.w * 2,
-            rh: Math.abs(item.y2 - item.y1) + item.w * 2,
+            x: Math.min(item.x1, item.x2) - pad,
+            y: Math.min(item.y1, item.y2) - pad,
+            rw: Math.abs(item.x2 - item.x1) + pad * 2,
+            rh: Math.abs(item.y2 - item.y1) + pad * 2,
           };
+        }
         case 'marker':
           return { x: item.x - item.r, y: item.y - item.r, rw: item.r * 2, rh: item.r * 2 };
         case 'text':
@@ -747,7 +794,7 @@ export function imageAnnotatorMixin() {
 
         return;
       }
-      if (item.t === 'line') {
+      if (ENDPOINT_TYPES.includes(item.t)) {
         item.x1 = round1(item.x1 + dx);
         item.y1 = round1(item.y1 + dy);
         item.x2 = round1(item.x2 + dx);
@@ -766,7 +813,7 @@ export function imageAnnotatorMixin() {
      */
     annoResizeHandle(item, handle, point) {
       if (handle === 'p1' || handle === 'p2') {
-        if (item.t !== 'line') {
+        if (!ENDPOINT_TYPES.includes(item.t)) {
           return;
         }
         const keyX = handle === 'p1' ? 'x1' : 'x2';
@@ -778,7 +825,7 @@ export function imageAnnotatorMixin() {
       }
 
       if (handle === 'nw') {
-        if (!['rect', 'ellipse', 'mask', 'rules'].includes(item.t)) {
+        if (!BOX_TYPES.includes(item.t)) {
           return;
         }
         const right = item.x + item.rw;
@@ -791,7 +838,7 @@ export function imageAnnotatorMixin() {
         return;
       }
 
-      if (['rect', 'ellipse', 'mask', 'rules'].includes(item.t)) {
+      if (BOX_TYPES.includes(item.t)) {
         item.rw = Math.max(2, round1(point.x - item.x));
         item.rh = Math.max(2, round1(point.y - item.y));
 
@@ -871,19 +918,19 @@ export function imageAnnotatorMixin() {
         return false;
       }
       if (handle === 'p1' || handle === 'p2') {
-        return item.t === 'line';
+        return ENDPOINT_TYPES.includes(item.t);
       }
       if (handle === 'nw') {
-        return ['rect', 'ellipse', 'mask', 'rules'].includes(item.t);
+        return BOX_TYPES.includes(item.t);
       }
 
-      return item.t !== 'line';
+      return !ENDPOINT_TYPES.includes(item.t);
     },
 
     /** Linien-Endpunkte liegen nicht an den Rahmenecken und bekommen eigene Positionen. */
     annoHandleStyle(handle) {
       const item = this.annoSelectedItem();
-      if (item === null || item.t !== 'line') {
+      if (item === null || !ENDPOINT_TYPES.includes(item.t)) {
         return '';
       }
       const x = handle === 'p1' ? item.x1 : item.x2;
@@ -906,7 +953,15 @@ export function imageAnnotatorMixin() {
 
     annoEditSelectedText() {
       const item = this.annoSelectedItem();
-      if (item === null || item.t !== 'text') {
+      if (item === null) {
+        return;
+      }
+      if (item.t === 'dim') {
+        this.annoOpenLengthDialog(item, false);
+
+        return;
+      }
+      if (item.t !== 'text') {
         return;
       }
       this.annoTextEditId = item.id;
@@ -986,6 +1041,69 @@ export function imageAnnotatorMixin() {
       return svg;
     },
 
+    // --- Maßband --------------------------------------------------------
+
+    /**
+     * Fragt die Länge zu einem Maßband ab (FR-ANNO-13). Ein frisch gezogenes
+     * Band liegt bis zur Bestätigung in `pendingMeasure` und damit außerhalb
+     * des Dokuments; ein vorhandenes wird über seine Kennung wiedergefunden.
+     */
+    annoOpenLengthDialog(item, isNew) {
+      pendingMeasure = isNew ? item : null;
+      this.annoLengthEditId = isNew ? '' : item.id;
+      this.annoLengthDraft = isNew ? '' : (item.text ?? '');
+      this.annoLengthOpen = true;
+      this.$nextTick(() => this.$refs.annoLengthInput?.select());
+    },
+
+    /**
+     * Die Beschriftung ist frei eingetippt ("3,20 m", "45 cm") - es wird
+     * nichts gerechnet und nichts umgerechnet. Dieselbe Bereinigung steht in
+     * normalizeLabel() in schema.js.
+     */
+    annoConfirmLength() {
+      const label = this.annoLengthDraft
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, MAX_LABEL_LENGTH);
+      const target = pendingMeasure
+        ?? this.annoItems.find((item) => item.id === this.annoLengthEditId)
+        ?? null;
+      if (target === null) {
+        this.annoCancelLength();
+
+        return;
+      }
+
+      // Ohne Länge wird ein neues Band verworfen; bei einem vorhandenen fällt
+      // nur die Beschriftung weg, die Maßlinie bleibt stehen.
+      if (label === '' && pendingMeasure !== null) {
+        this.annoCancelLength();
+
+        return;
+      }
+
+      const svg = this.$refs.annoLayer?.querySelector('svg') ?? this.annoEnsureLayerSvg();
+      const box = label === '' ? { bw: 0, bh: 0 } : measureTextBox(svg, label, target.s);
+      this.annoPushHistory();
+      target.text = label;
+      target.bw = box.bw;
+      target.bh = box.bh;
+      if (pendingMeasure !== null) {
+        this.annoItems.push(pendingMeasure);
+      }
+      this.annoCancelLength();
+      this.annoRenderAll();
+    },
+
+    annoCancelLength() {
+      pendingMeasure = null;
+      this.annoLengthOpen = false;
+      this.annoLengthDraft = '';
+      this.annoLengthEditId = '';
+    },
+
     // --- Verlauf, Löschen, Tastatur --------------------------------------
 
     annoPushHistory() {
@@ -1049,7 +1167,7 @@ export function imageAnnotatorMixin() {
     },
 
     annoKeydown(event) {
-      if (!this.annoOpen || this.annoTextOpen) {
+      if (!this.annoOpen || this.annoTextOpen || this.annoLengthOpen) {
         return;
       }
       // Regler und Textfelder behalten ihre eigene Tastatur: Die Pfeiltasten

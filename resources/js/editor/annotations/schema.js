@@ -16,6 +16,7 @@ export const MAX_ITEMS = 200;
 export const MAX_POINTS = 400;
 export const MAX_TEXT_LENGTH = 500;
 export const MAX_TEXT_LINES = 12;
+export const MAX_LABEL_LENGTH = 40;
 export const MAX_JSON_BYTES = 40000;
 export const MAX_SPACE = 20000;
 export const COORD_LIMIT = 100000;
@@ -46,6 +47,12 @@ export const TYPES = {
   rules: { num: ['w', 'x', 'y', 'rw', 'rh', 'gap'], pos: ['w', 'rw', 'rh', 'gap'] },
   marker: { num: ['x', 'y', 'r', 'n'], pos: ['r', 'n'] },
   mask: { num: ['x', 'y', 'rw', 'rh'], pos: ['rw', 'rh'] },
+  dim: {
+    num: ['w', 'x1', 'y1', 'x2', 'y2', 's', 'bw', 'bh'],
+    pos: ['w', 's'],
+    fill: true,
+    label: true,
+  },
 };
 
 function isNumber(value) {
@@ -114,6 +121,22 @@ function normalizeText(value) {
   const text = lines.join('\n').slice(0, MAX_TEXT_LENGTH).trim();
 
   return text === '' ? null : text;
+}
+
+/**
+ * Die Beschriftung eines Maßbands ist einzeilig und kurz - sie trägt eine
+ * Länge wie "3,20 m", keinen Fließtext. Fehlt sie oder ist sie unbrauchbar,
+ * bleibt das Feld weg: Das Maßband wird dann ohne Beschriftung gezeichnet,
+ * statt ganz zu verschwinden (der Nutzer zieht die Linie zuerst und trägt die
+ * Länge danach ein).
+ */
+function normalizeLabel(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const label = value.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_LABEL_LENGTH);
+
+  return label === '' ? null : label;
 }
 
 /**
@@ -198,6 +221,12 @@ function normalizeItem(raw) {
     }
     item.text = text;
   }
+  if (spec.label) {
+    const label = normalizeLabel(raw.text);
+    if (label !== null) {
+      item.text = label;
+    }
+  }
   if (spec.points) {
     const points = normalizePoints(raw.p);
     if (points === null) {
@@ -280,7 +309,7 @@ export function annotationTexts(value) {
   }
 
   return normalized.items
-    .filter((item) => item.t === 'text')
+    .filter((item) => (item.t === 'text' || item.t === 'dim') && typeof item.text === 'string')
     .map((item) => item.text);
 }
 

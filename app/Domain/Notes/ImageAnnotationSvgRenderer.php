@@ -57,6 +57,7 @@ final class ImageAnnotationSvgRenderer
             'rules' => $this->rules($item),
             'marker' => $this->marker($item),
             'mask' => $this->mask($item),
+            'dim' => $this->dim($item),
             default => '',
         };
     }
@@ -68,7 +69,18 @@ final class ImageAnnotationSvgRenderer
             $number = 0.0;
         }
 
-        return rtrim(rtrim(number_format(round($number, 1), 1, '.', ''), '0'), '.') ?: '0';
+        // Gerundet wird wie Math.round() in render.js: halbe Werte gehen nach
+        // oben, auch bei negativen Zahlen. PHPs round() ginge dort von der Null
+        // weg und die Zwillinge lieferten für dasselbe Modell anderes Markup -
+        // sichtbar erst bei negativen Koordinaten, die es in der gedrehten
+        // Beschriftung des Maßbands laufend gibt. Auch -0.0 wird zu 0.0,
+        // weil JavaScript dafür "0" schreibt.
+        $rounded = floor($number * 10 + 0.5) / 10;
+        if ($rounded == 0.0) {
+            $rounded = 0.0;
+        }
+
+        return rtrim(rtrim(number_format($rounded, 1, '.', ''), '0'), '.') ?: '0';
     }
 
     private function color(mixed $value): string
@@ -176,6 +188,79 @@ final class ImageAnnotationSvgRenderer
         }
 
         return $markup;
+    }
+
+    /**
+     * Maßband (FR-ANNO-13): Maßlinie mit Endstrichen quer zur Linie und der
+     * eingetragenen Länge darüber. Zwilling von dimMarkup() in render.js -
+     * einschließlich des Zurückklappens des Drehwinkels auf ±90°, damit die
+     * Länge nie auf dem Kopf steht.
+     *
+     * @param array<string, mixed> $item
+     */
+    private function dim(array $item): string
+    {
+        $x1 = (float) ($item['x1'] ?? 0);
+        $y1 = (float) ($item['y1'] ?? 0);
+        $x2 = (float) ($item['x2'] ?? 0);
+        $y2 = (float) ($item['y2'] ?? 0);
+        $width = (float) ($item['w'] ?? 1);
+
+        $angle = atan2($y2 - $y1, $x2 - $x1);
+        $tick = max($width * 3, 10.0);
+        $tx = -sin($angle) * $tick / 2;
+        $ty = cos($angle) * $tick / 2;
+
+        $markup = '<path d="M ' . $this->num($x1) . ' ' . $this->num($y1)
+            . ' L ' . $this->num($x2) . ' ' . $this->num($y2) . '"'
+            . $this->stroke($item) . $this->opacity($item) . '/>';
+        foreach ([[$x1, $y1], [$x2, $y2]] as [$x, $y]) {
+            $markup .= '<path d="M ' . $this->num($x - $tx) . ' ' . $this->num($y - $ty)
+                . ' L ' . $this->num($x + $tx) . ' ' . $this->num($y + $ty) . '"'
+                . $this->stroke($item) . $this->opacity($item) . '/>';
+        }
+
+        $text = $item['text'] ?? null;
+        if (!is_string($text) || $text === '') {
+            return $markup;
+        }
+
+        $size = (float) ($item['s'] ?? 16);
+        $boxWidth = $item['bw'] ?? null;
+        $boxHeight = $item['bh'] ?? null;
+        $padding = $size * 0.25;
+        $top = -($width / 2 + $size * 0.3) - (float) ($boxHeight ?? 0);
+
+        $label = '';
+        $fill = $item['f'] ?? null;
+        if ($fill !== null && (is_int($boxWidth) || is_float($boxWidth))
+            && (is_int($boxHeight) || is_float($boxHeight))) {
+            $label .= '<rect x="' . $this->num(-((float) $boxWidth) / 2 - $padding) . '"'
+                . ' y="' . $this->num($top - $padding) . '"'
+                . ' width="' . $this->num((float) $boxWidth + $padding * 2) . '"'
+                . ' height="' . $this->num((float) $boxHeight + $padding * 2) . '"'
+                . ' rx="' . $this->num($padding) . '" fill="' . $this->color($fill) . '"'
+                . $this->opacity($item) . '/>';
+        }
+        $label .= '<text x="0" y="' . $this->num($top + $size) . '"'
+            . ' fill="' . $this->color($item['c'] ?? null) . '"'
+            . ' font-family="' . $this->escape(self::FONT_STACK) . '"'
+            . ' font-size="' . $this->num($size) . '" text-anchor="middle"'
+            . $this->opacity($item) . '>' . $this->escape($text) . '</text>';
+
+        return $markup . '<g transform="translate(' . $this->num(($x1 + $x2) / 2) . ' '
+            . $this->num(($y1 + $y2) / 2) . ') rotate(' . $this->num($this->labelAngle($angle)) . ')">'
+            . $label . '</g>';
+    }
+
+    private function labelAngle(float $angle): float
+    {
+        $degrees = $angle * 180 / M_PI;
+        if ($degrees > 90) {
+            return $degrees - 180;
+        }
+
+        return $degrees < -90 ? $degrees + 180 : $degrees;
     }
 
     /** @param array<string, mixed> $item */

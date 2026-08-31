@@ -26,6 +26,7 @@
         <button type="button" data-tool="highlighter" @click="annoSelectTool" class="toolbar-button" title="Marker" aria-label="Marker" x-icon="highlighter"></button>
         <button type="button" data-tool="arrow" @click="annoSelectTool" class="toolbar-button" title="Pfeil" aria-label="Pfeil" x-icon="chevron-right"></button>
         <button type="button" data-tool="line" @click="annoSelectTool" class="toolbar-button" title="Linie" aria-label="Linie" x-icon="minus"></button>
+        <button type="button" data-tool="measure" @click="annoSelectTool" class="toolbar-button" title="Maßband" aria-label="Maßband" x-icon="ruler"></button>
         <button type="button" data-tool="rect" @click="annoSelectTool" class="toolbar-button" title="Rechteck" aria-label="Rechteck" x-icon="square"></button>
         <button type="button" data-tool="ellipse" @click="annoSelectTool" class="toolbar-button" title="Ellipse" aria-label="Ellipse" x-icon="circle"></button>
         <button type="button" data-tool="text" @click="annoSelectTool" class="toolbar-button" title="Text" aria-label="Text" x-icon="type"></button>
@@ -90,6 +91,27 @@
             <div class="mt-4 flex justify-end gap-2">
                 <button type="button" @click="annoCancelText" class="btn btn-quiet">Abbrechen</button>
                 <button type="button" @click="annoConfirmText" class="btn btn-primary">Einfügen</button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="annoLengthOpen" x-cloak class="fixed inset-0 z-[140] flex items-center justify-center p-5"
+         style="background-color: rgb(0 0 0 / 0.45);" @click.self="annoCancelLength"
+         role="dialog" aria-modal="true" aria-labelledby="anno-length-title">
+        <div class="w-full max-w-sm rounded-xl border p-5"
+             style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+            <h3 id="anno-length-title" class="text-lg font-semibold">Länge des Maßbands</h3>
+            <input x-ref="annoLengthInput" x-model="annoLengthDraft" type="text" maxlength="40"
+                   @keydown.enter="annoConfirmLength" placeholder="z. B. 3,20 m"
+                   class="mt-3 w-full rounded-md border px-3 py-2"
+                   style="border-color: var(--color-border); background: var(--color-bg);">
+            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">
+                Die Länge wird so übernommen, wie sie hier steht - Einheit inbegriffen.
+                Es wird nichts gemessen und nichts umgerechnet.
+            </p>
+            <div class="mt-4 flex justify-end gap-2">
+                <button type="button" @click="annoCancelLength" class="btn btn-quiet">Abbrechen</button>
+                <button type="button" @click="annoConfirmLength" class="btn btn-primary">Übernehmen</button>
             </div>
         </div>
     </div>
