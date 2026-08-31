@@ -307,7 +307,7 @@ test('die Bühne misst sich unverzerrt in den Sichtbereich', () => {
       paddingBottom: '16px',
     });
     const mixin = imageAnnotatorMixin();
-    const stage = { style: {} };
+    const stage = { style: { setProperty() {} } };
     mixin.$refs = { annoViewport: { clientWidth: 1000, clientHeight: 600 }, annoStage: stage };
 
     // Querformat (1000:800): Die Höhe begrenzt (968/1.25 = 774.4 > 568),
@@ -328,6 +328,48 @@ test('die Bühne misst sich unverzerrt in den Sichtbereich', () => {
     mixin.annoFitStage();
     assert.equal(stage.style.width, '968px');
     assert.equal(stage.style.height, '242px');
+
+    delete globalThis.window.getComputedStyle;
+  });
+});
+
+/**
+ * Auf dem Handy bricht die Werkzeugleiste auf mehrere Zeilen um und drückt den
+ * Sichtbereich - ein flex-1-Element mit overflow-auto - im Grenzfall auf null.
+ * Ohne Untergrenze ergäbe die Rechnung eine Bühne von einem Pixel und das Bild
+ * wäre nicht mehr zu sehen.
+ */
+test('die Bühne fällt nie unter eine sichtbare Größe zusammen', () => {
+  withFakeStorage(() => {
+    globalThis.window.getComputedStyle = () => ({
+      paddingLeft: '16px',
+      paddingRight: '16px',
+      paddingTop: '16px',
+      paddingBottom: '16px',
+    });
+    const properties = {};
+    const mixin = imageAnnotatorMixin();
+    const stage = { style: { setProperty: (key, value) => { properties[key] = value; } } };
+    mixin.$refs = { annoViewport: { clientWidth: 360, clientHeight: 0 }, annoStage: stage };
+    mixin.annoSpace = { w: 3024, h: 4032 };
+
+    mixin.annoFitStage();
+    assert.equal(stage.style.width, '120px');
+    assert.equal(stage.style.height, '160px');
+
+    // Auch ein vollständig zusammengefallener Sichtbereich liefert eine Bühne,
+    // die man sieht - der Sichtbereich scrollt dann eben.
+    mixin.$refs.annoViewport = { clientWidth: 0, clientHeight: 0 };
+    mixin.annoFitStage();
+    assert.equal(stage.style.height, '160px');
+
+    // Ohne messbaren Sichtbereich bleibt die Größe der CSS-Notgröße
+    // überlassen; das Seitenverhältnis dafür steht am Element.
+    delete mixin.$refs.annoViewport;
+    mixin.annoFitStage();
+    assert.equal(stage.style.width, '');
+    assert.equal(stage.style.height, '');
+    assert.equal(properties['--anno-ratio'], '3024 / 4032');
 
     delete globalThis.window.getComputedStyle;
   });

@@ -38,6 +38,15 @@ const RULES_LINE_GAP = 70;
 /** Schriftgröße der Maßband-Beschriftung; der Regler trägt dort die Strichstärke. */
 const MEASURE_LABEL_SIZE = 40;
 
+/**
+ * Kleinste Kantenlänge der Bühne (FR-ANNO-09). Die Bühne bekommt ihre Maße
+ * ausschließlich aus annoFitStage(); bleibt vom Sichtbereich nichts übrig,
+ * ergäbe die Rechnung eine Bühne von einem Pixel und das Bild wäre auf dem
+ * Handy schlicht nicht mehr zu sehen. Der Sichtbereich scrollt (overflow-auto),
+ * also ist ein Überstand das kleinere Übel als ein unsichtbares Bild.
+ */
+const MIN_STAGE = 160;
+
 /** Typen mit zwei Endpunkten statt einem Rahmen - sie tragen p1/p2-Griffe. */
 const ENDPOINT_TYPES = ['line', 'dim'];
 /** Typen, die als Rahmen aufgezogen werden und einen nw-Griff tragen. */
@@ -111,6 +120,7 @@ export function imageAnnotatorMixin() {
   let getEditor = () => null;
   let drag = null;
   let stageResizeHandler = null;
+  let stageResizeObserver = null;
   // Das frisch gezogene Maßband wartet hier, bis der Nutzer die Länge
   // eingetragen hat; erst dann wandert es in annoItems.
   let pendingMeasure = null;
@@ -1236,18 +1246,35 @@ export function imageAnnotatorMixin() {
      * wird nicht nachverhandelt. Deshalb steht die Rechnung hier.
      */
     annoFitStage() {
-      const viewport = this.$refs.annoViewport;
       const stage = this.$refs.annoStage;
-      if (!viewport || !stage || this.annoSpace.w < 1 || this.annoSpace.h < 1) {
+      if (!stage || this.annoSpace.w < 1 || this.annoSpace.h < 1) {
+        return;
+      }
+
+      // Das Seitenverhältnis wandert an das Element, bevor gemessen wird: Auf
+      // diese Zahl fällt die Regel .anno-stage zurück, wenn unten nichts
+      // Brauchbares herauskommt. Ohne sie hätte die Bühne keine Größe - alle
+      // ihre Kinder sind absolut positioniert - und das Bild wäre weg.
+      stage.style.setProperty('--anno-ratio', `${this.annoSpace.w} / ${this.annoSpace.h}`);
+
+      const viewport = this.$refs.annoViewport;
+      if (!viewport) {
+        stage.style.width = '';
+        stage.style.height = '';
+
         return;
       }
       const styles = window.getComputedStyle(viewport);
-      const availableWidth = viewport.clientWidth
+      // Auf dem Handy bricht die Werkzeugleiste auf mehrere Zeilen um; der
+      // Sichtbereich ist ein flex-1-Element mit overflow-auto und kann dabei
+      // bis auf null zusammengedrückt werden. Ohne die Untergrenze käme aus
+      // der Rechnung dann eine Bühne von einem Pixel.
+      const availableWidth = Math.max(MIN_STAGE, viewport.clientWidth
         - Number.parseFloat(styles.paddingLeft || '0')
-        - Number.parseFloat(styles.paddingRight || '0');
-      const availableHeight = viewport.clientHeight
+        - Number.parseFloat(styles.paddingRight || '0'));
+      const availableHeight = Math.max(MIN_STAGE, viewport.clientHeight
         - Number.parseFloat(styles.paddingTop || '0')
-        - Number.parseFloat(styles.paddingBottom || '0');
+        - Number.parseFloat(styles.paddingBottom || '0'));
       const ratio = this.annoSpace.w / this.annoSpace.h;
       let width = availableWidth;
       let height = width / ratio;
@@ -1260,13 +1287,31 @@ export function imageAnnotatorMixin() {
       stage.style.height = `${Math.max(1, Math.floor(height))}px`;
     },
 
+    /**
+     * Der Sichtbereich ändert seine Höhe auch ohne Fenstergrößenänderung: Die
+     * Werkzeugleiste bricht je nach Breite unterschiedlich um, und die
+     * Hinweis- sowie die Fehlerzeile kommen und gehen. Deshalb hängt hier
+     * zusätzlich zum resize-Ereignis ein ResizeObserver am Sichtbereich.
+     * Eine Rückkopplung entsteht dabei nicht: annoFitStage() passt die Bühne
+     * in den Sichtbereich ein, statt ihn zu vergrößern.
+     */
     annoWatchStageSize() {
       this.annoUnwatchStageSize();
       stageResizeHandler = () => this.annoFitStage();
       window.addEventListener('resize', stageResizeHandler);
+
+      const viewport = this.$refs.annoViewport;
+      if (viewport && typeof ResizeObserver === 'function') {
+        stageResizeObserver = new ResizeObserver(stageResizeHandler);
+        stageResizeObserver.observe(viewport);
+      }
     },
 
     annoUnwatchStageSize() {
+      if (stageResizeObserver !== null) {
+        stageResizeObserver.disconnect();
+        stageResizeObserver = null;
+      }
       if (stageResizeHandler !== null) {
         window.removeEventListener('resize', stageResizeHandler);
         stageResizeHandler = null;

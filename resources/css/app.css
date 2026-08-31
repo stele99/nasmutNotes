@@ -1404,15 +1404,28 @@ button:disabled,
 
 .anno-viewport {
   touch-action: pan-x pan-y;
+  /* Zentriert, aber nicht auf Kosten der Erreichbarkeit: Ein Element, das
+     größer ist als sein zentrierender Flex-Container, ragt sonst oben und
+     links heraus, und dieser Überstand lässt sich nicht scrollen. Steht die
+     Bühne einmal auf ihrer Notgröße (siehe .anno-stage), wäre genau das der
+     Fall. Die Regel schlägt die Tailwind-Klassen items-center/justify-center,
+     weil unlayered CSS gegenüber @layer utilities gewinnt. */
+  align-items: safe center;
+  justify-content: safe center;
 }
 
 .anno-stage {
   position: relative;
   /* Ohne diese Angabe scrollt jeder Strich die Seite statt zu zeichnen. */
   touch-action: none;
-  /* Breite und Höhe setzt annoFitStage() im Mixin: aspect-ratio plus
-     max-height allein verzerren hochkantige Bilder, sobald max-height
-     greift - die Breite bleibt dabei definitiv. */
+  /* Breite und Höhe setzt annoFitStage() im Mixin - beides als Inline-Style,
+     der die folgenden zwei Zeilen schlägt. Sie sind die Notgröße für den Fall,
+     dass nicht gemessen werden kann: Ohne sie hätte die Bühne gar keine Größe,
+     denn ihre Kinder sind ausnahmslos absolut positioniert, und das Bild wäre
+     unsichtbar. aspect-ratio ohne max-height verzerrt nichts; ein zu hohes
+     Bild scrollt stattdessen im Sichtbereich. */
+  aspect-ratio: var(--anno-ratio, 3 / 2);
+  width: min(100%, 1400px);
 }
 
 .anno-image,
@@ -1896,6 +1909,16 @@ button:disabled,
   textarea,
   select {
     font-size: max(1rem, 1em);
+  }
+
+  /* Die Werkzeugleiste des Annotationseditors bricht auf Handybreite auf vier
+     bis fünf Zeilen um. Ohne Deckel nimmt sie dem Sichtbereich darunter - einem
+     flex-1-Element mit overflow-auto, das bis auf null schrumpfen darf - die
+     gesamte Höhe, und das Bild wäre nicht mehr zu sehen. Die überzähligen
+     Zeilen scrollen stattdessen innerhalb der Leiste. */
+  .anno-toolbar {
+    max-height: 40vh;
+    overflow-y: auto;
   }
 }
 

@@ -3561,3 +3561,95 @@ dieselben Klassen wie der Text-Dialog.
 | 8 | Notiz speichern, neu laden, öffentlich freigeben | Overlay im Editor, im Lesemodus und in der Freigabe identisch |
 | 9 | Notiz mit Maßband exportieren | Länge steht unter dem Bild im Markdown |
 | 10 | Volltextsuche nach „3,20" | Notiz wird gefunden |
+
+---
+
+## 15. Mobile Ansicht
+
+| Feld | Wert |
+|---|---|
+| Planungsstand | teils umgesetzt, teils offen |
+| Datum | 2026-08-31 |
+| Bezug | FR-ANNO-07/09 |
+
+### 15.1 Behoben: Die Bühne konnte auf dem Handy verschwinden
+
+Seit Abschnitt 13 bekommt `.anno-stage` ihre Maße ausschließlich aus
+`annoFitStage()`; die früheren CSS-Angaben (`width: min(100%, 1400px)`,
+`max-height: 100%`) sind entfallen, weil sie hochkantige Bilder verzerrt haben.
+Damit hängt aber alles an einer Rechnung, die einen Grenzfall hatte:
+
+```
+availableHeight = viewport.clientHeight - Innenabstand
+```
+
+`.anno-viewport` ist ein `flex-1`-Element mit `overflow-auto`. Beides zusammen
+heißt: `flex-basis: 0` und - weil die automatische Mindesthöhe für
+Scroll-Container zu `0` auflöst - es darf **bis auf null** zusammengedrückt
+werden. Auf Handybreite bricht die Werkzeugleiste (13 Werkzeuge, 8 Farbfelder,
+Farbwähler, zwei Regler, vier Aktionsknöpfe) auf vier bis fünf Zeilen um und
+nimmt zusammen mit der Kopfzeile im ungünstigen Fall die ganze Höhe.
+`availableHeight` wird dann negativ, `Math.max(1, …)` macht daraus **eine Bühne
+von 1 × 1 Pixel** - Werkzeugleiste sichtbar, Bild weg. Erholen konnte sich das
+nicht: Nachgemessen wurde nur beim `resize`-Ereignis des Fensters.
+
+Fünf Änderungen, die zusammen dafür sorgen, dass es keinen Weg mehr zu einer
+unsichtbaren Bühne gibt:
+
+1. **Untergrenze `MIN_STAGE = 160`** in `annoFitStage()` für beide verfügbaren
+   Maße. Der Sichtbereich scrollt ohnehin; ein Überstand ist das kleinere Übel
+   als ein unsichtbares Bild.
+2. **CSS-Notgröße an `.anno-stage`**: `aspect-ratio: var(--anno-ratio, 3 / 2)`
+   und `width: min(100%, 1400px)`. Die Inline-Maße aus `annoFitStage()`
+   schlagen beides, sobald gemessen werden konnte. Kann nicht gemessen werden,
+   hat die Bühne wenigstens eine Größe - ohne diese Regel hätte sie gar keine,
+   denn alle ihre Kinder sind absolut positioniert. `aspect-ratio` **ohne**
+   `max-height` verzerrt nichts (das war der Fehler der alten Regel); ein zu
+   hohes Bild scrollt stattdessen.
+3. **`annoFitStage()` ist jetzt total**: Es schreibt das Seitenverhältnis als
+   `--anno-ratio` an die Bühne, *bevor* es misst, und räumt bei fehlendem
+   Sichtbereich die Inline-Maße weg, statt wortlos auszusteigen und eine Bühne
+   ohne Größe zurückzulassen.
+4. **`ResizeObserver` auf dem Sichtbereich** zusätzlich zum `resize`-Ereignis.
+   Der Sichtbereich ändert seine Höhe auch ohne Fenstergrößenänderung: Die
+   Werkzeugleiste bricht je nach Breite anders um, und die Hinweiszeile
+   (Werkzeug „Abdecken") sowie die Fehlerzeile kommen und gehen. Eine
+   Rückkopplung entsteht nicht, weil `annoFitStage()` die Bühne in den
+   Sichtbereich einpasst, statt ihn zu vergrößern.
+5. **Deckel auf der Werkzeugleiste**: `.anno-toolbar { max-height: 40vh;
+   overflow-y: auto }` unter 768 px. Damit bleiben dem Bild immer rund 60 % der
+   Höhe, und die überzähligen Werkzeugzeilen scrollen innerhalb der Leiste.
+
+Dazu kommt `align-items: safe center` / `justify-content: safe center` am
+Sichtbereich: Ein Element, das größer ist als sein zentrierender
+Flex-Container, ragt sonst oben und links heraus, und dieser Überstand lässt
+sich nicht scrollen. Genau das wäre der Fall, sobald die Bühne auf ihrer
+Notgröße steht.
+
+Abgesichert durch den Test „die Bühne fällt nie unter eine sichtbare Größe
+zusammen" in `tests/Frontend/annotations.test.js`.
+
+### 15.2 Offen: Der Vollbild-Betrachter zeigt keine Annotationen
+
+Auf Handybreite öffnet jeder Tipp auf ein Bild den Vollbild-Betrachter
+(`imageAtEvent()` in `notePage.js`, Markup in `page_note.php`). Der zeigt
+ausschließlich das `<img>` - ohne Overlay. FR-ANNO-07 nennt den Bildbetrachter
+aber ausdrücklich, und auf dem Handy ist er die Hauptansicht für ein Bild.
+
+Der Weg dorthin ist kurz, aber nicht trivial: Das `<img>` im Betrachter trägt
+`object-contain` und eine Zoom-/Verschiebe-Transformation. Ein Overlay muss auf
+dem **gerenderten** Kasten des Bildes liegen, nicht auf dem Elementkasten, und
+dieselbe Transformation mitmachen. Dafür braucht der Betrachter eine
+schrumpfende Hülle (`inline-block`, `max-width`/`max-height: 100%`), die
+Transformation wandert von `<img>` auf die Hülle, und das Overlay wird als
+absolut positionierte Ebene daneben gehängt. Die Annotationen selbst stehen
+bereits am `<img>` in der Notiz (`data-annotations`) und lassen sich von dort
+lesen.
+
+### 15.3 Offen: Text und Länge lassen sich mit dem Finger nur über Doppeltipp ändern
+
+`annoEditSelectedText()` hängt an `@dblclick` der Bühne. Auf der Bühne ist
+`touch-action: none` gesetzt, ein Doppeltipp erzeugt dort also tatsächlich ein
+`dblclick` - verlässlich ist die Geste mit dem Finger trotzdem nicht. Ein
+sichtbarer Knopf „Bearbeiten" in der Werkzeugleiste, aktiv sobald ein Text oder
+ein Maßband ausgewählt ist, wäre die eindeutigere Bedienung.
