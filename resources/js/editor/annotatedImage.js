@@ -15,7 +15,24 @@ import { renderOverlay } from './annotations/render.js';
  *    ersetzen, wird sie umhüllt.
  */
 
-function attachLayer(dom) {
+/**
+ * Stift-Symbol des Bild-Knopfs - bewusst direkt eingebettet statt über
+ * icons.js: Der Editor-Bundle soll dafür nicht die komplette Icon-Tabelle
+ * mitziehen.
+ */
+const PENCIL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"'
+  + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+  + ' aria-hidden="true">'
+  + '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>'
+  + '<path d="m15 5 4 4"/></svg>';
+
+/**
+ * `onAnnotate` ist null, wenn der Editor nur lesend ist - dann entsteht kein
+ * Knopf. Der Knopf wird nicht per Alpine gebunden, sondern schickt ein
+ * aufsteigendes Ereignis mit der Knotenposition: Die NodeView kennt den
+ * Alpine-Zustand nicht (und umgekehrt).
+ */
+function attachLayer(dom, onAnnotate) {
   const image = dom instanceof HTMLImageElement ? dom : dom.querySelector('img');
   if (image === null) {
     return null;
@@ -28,14 +45,48 @@ function attachLayer(dom) {
   layer.setAttribute('aria-hidden', 'true');
   host.appendChild(layer);
 
-  // Das Overlay wird auf den Kasten des <img> gelegt, nicht auf den des
-  // Wirtsknotens: Der Wirt ist beim zentrierten Bild breiter als das Bild
-  // selbst, und das Overlay säße dann daneben.
+  let tools = null;
+  if (typeof onAnnotate === 'function') {
+    tools = document.createElement('span');
+    tools.className = 'note-image-tools';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'note-image-annotate';
+    button.title = 'Bild beschriften';
+    button.setAttribute('aria-label', 'Bild beschriften');
+    button.innerHTML = PENCIL_ICON;
+    // ProseMirror darf den Klick weder als Auswahl noch als Drag-Start
+    // werten; der Vollbild-Betrachter (Capture-Phase am Editor) greift am
+    // Knopf ohnehin nicht, weil er nur auf <img> reagiert.
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener('touchstart', (event) => {
+      event.stopPropagation();
+    });
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAnnotate();
+    });
+    tools.appendChild(button);
+    host.appendChild(tools);
+  }
+
+  // Overlay und Knopfkasten werden auf den Kasten des <img> gelegt, nicht auf
+  // den des Wirtsknotens: Der Wirt ist beim zentrierten Bild breiter als das
+  // Bild selbst, und beide säßen dann daneben.
   const place = () => {
-    layer.style.left = `${image.offsetLeft}px`;
-    layer.style.top = `${image.offsetTop}px`;
-    layer.style.width = `${image.offsetWidth}px`;
-    layer.style.height = `${image.offsetHeight}px`;
+    for (const target of [layer, tools]) {
+      if (target === null) {
+        continue;
+      }
+      target.style.left = `${image.offsetLeft}px`;
+      target.style.top = `${image.offsetTop}px`;
+      target.style.width = `${image.offsetWidth}px`;
+      target.style.height = `${image.offsetHeight}px`;
+    }
   };
 
   place();
@@ -49,6 +100,7 @@ function attachLayer(dom) {
       observer.disconnect();
       image.removeEventListener('load', place);
       layer.remove();
+      tools?.remove();
     },
   };
 }
@@ -91,7 +143,21 @@ export const AnnotatedImage = Image.extend({
 
     return (props) => {
       const view = parentFactory(props);
-      const attached = attachLayer(view.dom);
+      // Der Knopf entsteht nur im bearbeitbaren Editor: In nur lesenden
+      // Freigaben gibt es keinen Einstieg in den Annotationseditor.
+      const onAnnotate = props.editor.isEditable
+        ? () => {
+            const pos = props.getPos();
+            if (typeof pos !== 'number') {
+              return;
+            }
+            view.dom.dispatchEvent(new CustomEvent('open-image-annotator', {
+              bubbles: true,
+              detail: { pos },
+            }));
+          }
+        : null;
+      const attached = attachLayer(view.dom, onAnnotate);
       if (attached === null) {
         return view;
       }

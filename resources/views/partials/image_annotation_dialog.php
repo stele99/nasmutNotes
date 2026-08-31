@@ -55,8 +55,8 @@
     <p x-show="annoError" x-cloak x-text="annoError" class="px-4 py-2 text-xs"
        style="background: var(--color-bg); color: var(--color-danger);" role="alert"></p>
 
-    <div class="anno-viewport flex flex-1 items-center justify-center overflow-auto p-4">
-        <div x-ref="annoStage" class="anno-stage" :style="annoStageStyle()"
+    <div x-ref="annoViewport" class="anno-viewport flex flex-1 items-center justify-center overflow-auto p-4">
+        <div x-ref="annoStage" class="anno-stage"
              @pointerdown="annoPointerDown" @pointermove="annoPointerMove"
              @pointerup="annoPointerUp" @pointercancel="annoPointerCancel"
              @dblclick="annoEditSelectedText">

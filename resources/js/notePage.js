@@ -558,6 +558,7 @@ export function noteEditorPage() {
       // Das Mixin darf den Editor nicht selbst halten - er liegt bewusst
       // außerhalb der Alpine-Reaktivität.
       this.annoSetEditorAccessor(() => editor);
+      this.annoBindNodeViewEntry(editor);
       this.syncToolbar();
     },
 

@@ -1344,6 +1344,47 @@ button:disabled,
   width: 100%;
 }
 
+/* Stift-Knopf am ausgewählten Bild: Der Kasten liegt exakt auf dem <img>
+   (gleiche imperative Positionierung wie das Overlay). Sichtbar wird der
+   Knopf erst, wenn der Bildknoten ausgewählt ist - dieselbe Bedingung wie
+   bei den Skaliergriffen. */
+.note-image-tools {
+  display: block;
+  pointer-events: none;
+  position: absolute;
+}
+
+.note-image-annotate {
+  align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  height: 30px;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  transition: opacity 120ms ease;
+  width: 30px;
+  z-index: 3;
+}
+
+.note-image-annotate svg {
+  height: 14px;
+  width: 14px;
+}
+
+.prose-editor [data-resize-container].ProseMirror-selectednode .note-image-annotate {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Öffentliche Freigabe: dort kommt das Overlay serverseitig als <span
    class="note-image"> mit <img> und <svg> (ProseMirrorHtmlRenderer). */
 .public-note-content .note-image {
@@ -1366,12 +1407,12 @@ button:disabled,
 }
 
 .anno-stage {
-  max-height: 100%;
-  max-width: 100%;
   position: relative;
   /* Ohne diese Angabe scrollt jeder Strich die Seite statt zu zeichnen. */
   touch-action: none;
-  width: min(100%, 1400px);
+  /* Breite und Höhe setzt annoFitStage() im Mixin: aspect-ratio plus
+     max-height allein verzerren hochkantige Bilder, sobald max-height
+     greift - die Breite bleibt dabei definitiv. */
 }
 
 .anno-image,
@@ -1883,6 +1924,11 @@ button:disabled,
     display: none !important;
   }
 
+  /* Der Bearbeiten-Knopf am Bild ist reine Bildschirmbedienung. */
+  .note-image-tools {
+    display: none !important;
+  }
+
   /* Am Bildschirm kürzt der Titel mit Auslassungspunkten, weil er dort in eine
      Zeile muss - auf Papier gibt es dafür keinen Grund. */
   .note-page h1 {
@@ -1907,6 +1953,7 @@ button:disabled,
 
   .prose-editor img,
   .note-image-overlay,
+  .note-image-tools,
   .prose-editor li,
   .prose-editor tr {
     break-inside: avoid;

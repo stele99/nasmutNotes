@@ -19,6 +19,8 @@ function withFakeStorage(run) {
       getItem: (key) => (store.has(key) ? store.get(key) : null),
       setItem: (key, value) => store.set(key, String(value)),
     },
+    addEventListener() {},
+    removeEventListener() {},
   };
   try {
     return run();
@@ -246,5 +248,91 @@ test('Marker und Zeilenlinien bleiben unabhängig vom Textregler', () => {
     mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'rules' } } });
     const rules = mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
     assert.equal(rules.gap, 70);
+  });
+});
+
+test('die Bühne misst sich unverzerrt in den Sichtbereich', () => {
+  withFakeStorage(() => {
+    globalThis.window.getComputedStyle = () => ({
+      paddingLeft: '16px',
+      paddingRight: '16px',
+      paddingTop: '16px',
+      paddingBottom: '16px',
+    });
+    const mixin = imageAnnotatorMixin();
+    const stage = { style: {} };
+    mixin.$refs = { annoViewport: { clientWidth: 1000, clientHeight: 600 }, annoStage: stage };
+
+    // Querformat (1000:800): Die Höhe begrenzt (968/1.25 = 774.4 > 568),
+    // die Breite folgt dem Verhältnis: 568 × 1.25 = 710.
+    mixin.annoSpace = { w: 1000, h: 800 };
+    mixin.annoFitStage();
+    assert.equal(stage.style.width, '710px');
+    assert.equal(stage.style.height, '568px');
+
+    // Hochformat (800:1000): ebenfalls höhenbegrenzt, Breite 568 × 0.8.
+    mixin.annoSpace = { w: 800, h: 1000 };
+    mixin.annoFitStage();
+    assert.equal(stage.style.width, '454px');
+    assert.equal(stage.style.height, '568px');
+
+    // Sehr breites Bild (2000:500): Die Breite begrenzt, Höhe folgt.
+    mixin.annoSpace = { w: 2000, h: 500 };
+    mixin.annoFitStage();
+    assert.equal(stage.style.width, '968px');
+    assert.equal(stage.style.height, '242px');
+
+    delete globalThis.window.getComputedStyle;
+  });
+});
+
+test('der Stift-Knopf am Bild öffnet den Annotationseditor an der Knotenposition', () => {
+  withFakeStorage(() => {
+    globalThis.HTMLElement = class {};
+    const imageNode = {
+      type: { name: 'image' },
+      attrs: { src: '/api/attachments/' + 'a'.repeat(64), alt: 'Foto', width: 800, height: 600 },
+    };
+    let handler = null;
+    const editor = {
+      view: {
+        dom: {
+          addEventListener(name, listener) {
+            if (name === 'open-image-annotator') {
+              handler = listener;
+            }
+          },
+        },
+      },
+      state: {
+        doc: {
+          nodeAt: (pos) => (pos === 5 ? imageNode : null),
+        },
+      },
+    };
+
+    const mixin = imageAnnotatorMixin();
+    mixin.canEditPage = true;
+    mixin.isEncrypted = () => false;
+    mixin.$nextTick = () => {};
+    mixin.$refs = {};
+    mixin.annoBindNodeViewEntry(editor);
+    assert.ok(handler !== null);
+
+    handler({ detail: { pos: 5 } });
+    assert.equal(mixin.annoOpen, true);
+    assert.equal(mixin.annoPos, 5);
+    assert.equal(mixin.annoSpace.w, 800);
+
+    // Ohne Schreibrecht oder ohne Bildknoten bleibt alles zu.
+    mixin.closeImageAnnotator();
+    mixin.canEditPage = false;
+    handler({ detail: { pos: 5 } });
+    assert.equal(mixin.annoOpen, false);
+    mixin.canEditPage = true;
+    handler({ detail: { pos: 9 } });
+    assert.equal(mixin.annoOpen, false);
+
+    delete globalThis.HTMLElement;
   });
 });

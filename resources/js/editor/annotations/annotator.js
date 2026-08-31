@@ -93,6 +93,7 @@ export function imageAnnotatorMixin() {
   // den ProseMirror-Editor dürfen nicht reaktiv werden.
   let getEditor = () => null;
   let drag = null;
+  let stageResizeHandler = null;
 
   return {
     annoOpen: false,
@@ -125,6 +126,27 @@ export function imageAnnotatorMixin() {
 
     annoEditor() {
       return getEditor();
+    },
+
+    /**
+     * Einstieg über den Stift-Knopf am ausgewählten Bild (annotatedImage.js):
+     * Die NodeView kennt den Alpine-Zustand nicht und schickt deshalb die
+     * Knotenposition als aufsteigendes Ereignis. Der Knoten wird hier frisch
+     * aus dem Dokument geholt, nicht aus dem Ereignis - die NodeView kann
+     * älter sein als der letzte Update.
+     */
+    annoBindNodeViewEntry(editor) {
+      editor.view.dom.addEventListener('open-image-annotator', (event) => {
+        if (!this.canEditPage || this.isEncrypted()) {
+          return;
+        }
+        const pos = event.detail?.pos;
+        const node = typeof pos === 'number' ? editor.state.doc.nodeAt(pos) : null;
+        if (!node || node.type.name !== 'image') {
+          return;
+        }
+        this.annoBegin(pos, node);
+      });
     },
 
     /** Einstieg aus der Werkzeugleiste: Es muss ein Bildknoten ausgewählt sein. */
@@ -200,6 +222,8 @@ export function imageAnnotatorMixin() {
       this.annoNotice = '';
       this.annoOpen = true;
       this.$nextTick(() => {
+        this.annoFitStage();
+        this.annoWatchStageSize();
         this.annoRenderAll();
         this.annoSyncToolbar();
       });
@@ -215,6 +239,7 @@ export function imageAnnotatorMixin() {
       this.annoOpen = false;
       this.annoItems = [];
       this.annoPos = null;
+      this.annoUnwatchStageSize();
       drag = null;
     },
 
@@ -252,6 +277,7 @@ export function imageAnnotatorMixin() {
       this.annoOpen = false;
       this.annoItems = [];
       this.annoPos = null;
+      this.annoUnwatchStageSize();
       drag = null;
     },
 
@@ -894,8 +920,49 @@ export function imageAnnotatorMixin() {
         : { v: 1, space: this.annoSpace, items: [item] });
     },
 
-    annoStageStyle() {
-      return `aspect-ratio:${this.annoSpace.w} / ${this.annoSpace.h};`;
+    /**
+     * Misst die Bühne so, dass das Bild unverzerrt in den Sichtbereich
+     * passt - im Seitenverhältnis des Annotationsraums, wie das Bild auch in
+     * der Notiz liegt. Reines CSS (aspect-ratio plus max-height) bricht das
+     * Verhältnis, sobald max-height greift: Die Breite bleibt definitiv und
+     * wird nicht nachverhandelt. Deshalb steht die Rechnung hier.
+     */
+    annoFitStage() {
+      const viewport = this.$refs.annoViewport;
+      const stage = this.$refs.annoStage;
+      if (!viewport || !stage || this.annoSpace.w < 1 || this.annoSpace.h < 1) {
+        return;
+      }
+      const styles = window.getComputedStyle(viewport);
+      const availableWidth = viewport.clientWidth
+        - Number.parseFloat(styles.paddingLeft || '0')
+        - Number.parseFloat(styles.paddingRight || '0');
+      const availableHeight = viewport.clientHeight
+        - Number.parseFloat(styles.paddingTop || '0')
+        - Number.parseFloat(styles.paddingBottom || '0');
+      const ratio = this.annoSpace.w / this.annoSpace.h;
+      let width = availableWidth;
+      let height = width / ratio;
+      if (height > availableHeight) {
+        height = availableHeight;
+        width = height * ratio;
+      }
+
+      stage.style.width = `${Math.max(1, Math.floor(width))}px`;
+      stage.style.height = `${Math.max(1, Math.floor(height))}px`;
+    },
+
+    annoWatchStageSize() {
+      this.annoUnwatchStageSize();
+      stageResizeHandler = () => this.annoFitStage();
+      window.addEventListener('resize', stageResizeHandler);
+    },
+
+    annoUnwatchStageSize() {
+      if (stageResizeHandler !== null) {
+        window.removeEventListener('resize', stageResizeHandler);
+        stageResizeHandler = null;
+      }
     },
 
     annoCountLabel() {
