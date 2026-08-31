@@ -37,6 +37,27 @@ const MARKER_RADIUS = 40;
 const MEASURE_LABEL_SIZE = 40;
 
 /**
+ * Bezugsdiagonale der Reglerwerte (FR-ANNO-14).
+ *
+ * Strichstärken, Schriftgrößen und Marker-Radien liegen im Modell in
+ * Bildeinheiten - sie müssen es, weil das Overlay in genau diesen Einheiten
+ * gezeichnet wird. Ein Reglerwert unverändert als Bildeinheit zu übernehmen
+ * war aber falsch: Dieselbe 6 ist auf einem Handyfoto mit 4032 Punkten
+ * Kantenlänge ein Haarstrich und auf einem 800 Punkte breiten Screenshot ein
+ * dicker Balken.
+ *
+ * Der Regler bedeutet deshalb eine Größe *relativ zum Bild*. 2450 ist die
+ * Diagonale von 1960 × 1470 - der Vorgabe der serverseitigen
+ * Bildkomprimierung. Auf einem Bild dieser Größe bedeutet der Reglerwert genau
+ * so viele Bildpunkte wie bisher; auf jedem anderen wird er mitskaliert.
+ *
+ * Gemessen wird an der Diagonale und nicht an der Breite: Ein hochkantiges
+ * Bild wird auf dem Bildschirm von seiner Höhe begrenzt und erscheint dadurch
+ * schmaler, und die Diagonale gleicht genau das aus.
+ */
+const REFERENCE_DIAGONAL = 2450;
+
+/**
  * Kleinste Kantenlänge der Bühne (FR-ANNO-09). Die Bühne bekommt ihre Maße
  * ausschließlich aus annoFitStage(); bleibt vom Sichtbereich nichts übrig,
  * ergäbe die Rechnung eine Bühne von einem Pixel und das Bild wäre auf dem
@@ -139,6 +160,9 @@ export function imageAnnotatorMixin() {
     annoColor: PALETTE[0],
     annoWidth: storedToolWidth('pen', TOOL_DEFAULTS.pen.width),
     annoOpacity: 1,
+    // annoWidth ist ein Reglerwert (1-80), annoFontSize eine Bildeinheit:
+    // annoSelectTool() und annoWidthInput() rechnen um, annoConfirmText()
+    // schreibt sie unverändert nach item.s. Siehe REFERENCE_DIAGONAL.
     annoFontSize: 44,
     annoSelectedId: '',
     annoSelectionStyle: '',
@@ -344,7 +368,7 @@ export function imageAnnotatorMixin() {
         this.annoOpacity = defaults.opacity;
       }
       if (tool === 'text') {
-        this.annoFontSize = this.annoWidth;
+        this.annoFontSize = this.annoScaled(this.annoWidth);
       }
       if (tool === 'mask' && !this.annoMaskHintShown) {
         this.annoMaskHintShown = true;
@@ -393,12 +417,33 @@ export function imageAnnotatorMixin() {
       this.annoWidth = Number(event.target.value);
       storeToolWidth(this.annoTool, this.annoWidth);
       if (this.annoTool === 'text') {
-        this.annoFontSize = this.annoWidth;
+        this.annoFontSize = this.annoScaled(this.annoWidth);
         this.annoApplyFontSizeToSelection();
 
         return;
       }
-      this.annoApplyToSelection('w', this.annoWidth);
+      this.annoApplyToSelection('w', this.annoScaled(this.annoWidth));
+    },
+
+    /**
+     * Verhältnis dieses Bildes zur Bezugsgröße. Vor dem ersten `annoBegin()`
+     * ist der Raum noch leer - dann gilt 1, damit die Umrechnung auch dort
+     * eine Zahl liefert.
+     */
+    annoScale() {
+      const diagonal = Math.hypot(this.annoSpace.w, this.annoSpace.h);
+
+      return diagonal > 0 ? diagonal / REFERENCE_DIAGONAL : 1;
+    },
+
+    /** Reglerwert -> Bildeinheiten. Nie 0: `w` und `s` müssen größer als 0 sein. */
+    annoScaled(value) {
+      return Math.max(0.1, round1(value * this.annoScale()));
+    },
+
+    /** Bildeinheiten -> Reglerwert, für die Anzeige am ausgewählten Element. */
+    annoUnscaled(value) {
+      return Math.min(80, Math.max(1, Math.round(value / this.annoScale())));
     },
 
     /** Der Regler bedeutet je Werkzeug etwas anderes - für die Bildschirmleser. */
@@ -442,9 +487,9 @@ export function imageAnnotatorMixin() {
         return;
       }
       const svg = this.$refs.annoLayer?.querySelector('svg') ?? this.annoEnsureLayerSvg();
-      const box = measureTextBox(svg, item.text, this.annoWidth);
+      const box = measureTextBox(svg, item.text, this.annoFontSize);
       this.annoPushHistory();
-      item.s = this.annoWidth;
+      item.s = this.annoFontSize;
       item.bw = box.bw;
       item.bh = box.bh;
       this.annoRenderAll();
@@ -665,8 +710,11 @@ export function imageAnnotatorMixin() {
         o: this.annoOpacity,
       };
       // Ein Stift zeichnet feiner als ein Finger, solange der Nutzer die
-      // Strichstärke nicht selbst angefasst hat.
-      const width = event.pointerType === 'pen' ? Math.max(2, this.annoWidth / 2) : this.annoWidth;
+      // Strichstärke nicht selbst angefasst hat. Gerechnet wird in
+      // Reglerwerten, umgerechnet wird erst zum Schluss.
+      const width = this.annoScaled(
+        event.pointerType === 'pen' ? Math.max(2, this.annoWidth / 2) : this.annoWidth,
+      );
 
       switch (this.annoTool) {
         case 'pen':
@@ -691,7 +739,7 @@ export function imageAnnotatorMixin() {
             y1: point.y,
             x2: point.x,
             y2: point.y,
-            s: MEASURE_LABEL_SIZE,
+            s: this.annoScaled(MEASURE_LABEL_SIZE),
             bw: 0,
             bh: 0,
             f: '#ffffff',
@@ -702,7 +750,7 @@ export function imageAnnotatorMixin() {
             t: 'marker',
             x: point.x,
             y: point.y,
-            r: MARKER_RADIUS,
+            r: this.annoScaled(MARKER_RADIUS),
             n: Math.min(99, this.annoItems.filter((item) => item.t === 'marker').length + 1),
           };
         default:
@@ -911,8 +959,9 @@ export function imageAnnotatorMixin() {
 
     /** Text: Die Schriftgröße folgt der Breite, die Maße werden neu gemessen. */
     annoScaleText(item, point) {
+      const scale = this.annoScale();
       const factor = Math.max(point.x - item.x, 10) / Math.max(item.bw, 1);
-      const size = round1(Math.min(500, Math.max(6, item.s * factor)));
+      const size = round1(Math.min(500 * scale, Math.max(6 * scale, item.s * factor)));
       if (size === item.s) {
         return;
       }
@@ -925,7 +974,9 @@ export function imageAnnotatorMixin() {
 
     /** Marker: Der Radius ist der Abstand der Griffposition zum Mittelpunkt. */
     annoScaleMarker(item, point) {
-      item.r = round1(Math.min(2000, Math.max(4, Math.hypot(point.x - item.x, point.y - item.y))));
+      const scale = this.annoScale();
+      const radius = Math.hypot(point.x - item.x, point.y - item.y);
+      item.r = round1(Math.min(2000 * scale, Math.max(4 * scale, radius)));
     },
 
     annoBoxStyle(box) {
@@ -1004,9 +1055,13 @@ export function imageAnnotatorMixin() {
       // Größe des vorhandenen Kastens übernehmen, statt sie still zu
       // überschreiben - auch wenn der Doppelklick aus einem anderen Werkzeug
       // heraus geschah.
+      // annoFontSize führt Bildeinheiten wie item.s und wird deshalb
+      // unverändert übernommen: Ein von Hand am Griff skalierter Kasten soll
+      // beim Nachbearbeiten seines Textes nicht auf einen Rasterwert des
+      // Reglers zurückspringen. Nur der Regler selbst zeigt den Näherungswert.
       this.annoFontSize = item.s;
       if (this.annoTool === 'text') {
-        this.annoWidth = item.s;
+        this.annoWidth = this.annoUnscaled(item.s);
       }
       this.annoOpenTextDialog({ x: item.x, y: item.y }, item.text);
     },

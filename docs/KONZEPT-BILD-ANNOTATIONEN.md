@@ -138,6 +138,10 @@ Gemeinsame Felder jedes Elements: `id` (8 Zeichen `[a-z0-9]`), `t` (Typ),
 `c` (Strichfarbe `#rrggbb` oder `#rrggbbaa`), optional `o` (Deckkraft
 0,05–1; fehlt, wenn 1).
 
+Alle Längenangaben — Koordinaten wie auch `w`, `s`, `r`, `gap` — stehen in
+Bildeinheiten. Wie der Annotationseditor aus einem Reglerwert eine Bildeinheit
+macht, steht in Abschnitt 17.
+
 | `t` | Bedeutung | Weitere Felder |
 |---|---|---|
 | `pen` | Freihand und Marker | `w` Strichstärke, `p` Punktliste `[[x,y],…]` |
@@ -3739,3 +3743,107 @@ das Bild jetzt höchstens klein, nie unsichtbar werden.
 | `resources/js/icons.js` | Symbol `arrow-up-right` |
 | `resources/css/app.css` | `.anno-colors`, `.anno-swatch-current`, `.anno-color-pop`, `.anno-slider`, `.anno-slider-value`; Höhendeckel der Leiste entfernt |
 | `tests/Frontend/annotations.test.js` | Test auf Zeilenlinien umgestellt (Werkzeug weg, Typ bleibt), zwei neue Tests für Reglerbeschriftung und Palette |
+
+---
+
+## 17. Reglerwerte sind relativ zur Bildgröße
+
+| Feld | Wert |
+|---|---|
+| Planungsstand | umgesetzt |
+| Datum | 2026-08-31 |
+| Bezug | neu: FR-ANNO-14 |
+| Migration | keine — vorhandene Annotationen bleiben unverändert |
+
+### 17.1 Der Fehler
+
+`w`, `s` und `r` liegen im Modell in **Bildeinheiten** — sie müssen es, weil
+das Overlay in genau diesen Einheiten gezeichnet wird und mit dem Bild
+mitskaliert (FR-ANNO-06). Der Annotationseditor hat den Reglerwert aber
+unverändert als Bildeinheit übernommen:
+
+```js
+w: this.annoWidth   // 6 heißt 6 Bildpunkte - egal wie groß das Bild ist
+```
+
+Damit hing die Wirkung des Reglers an der Auflösung des Bildes. Ein Strich der
+Stärke 6 ist auf einem Handyfoto mit 3024 × 4032 ein Haarstrich und auf einem
+Screenshot mit 800 × 600 ein dicker Balken. Dasselbe galt für die Schriftgröße
+des Textkastens, die Größe des nummerierten Markers und die Beschriftung des
+Maßbands.
+
+### 17.2 Die Umrechnung
+
+Der Reglerwert bedeutet jetzt eine Größe **relativ zum Bild**. Umgerechnet
+wird an genau zwei Stellen im Mixin:
+
+```js
+const REFERENCE_DIAGONAL = 2450;
+
+annoScale()          // hypot(space.w, space.h) / REFERENCE_DIAGONAL
+annoScaled(value)    // Reglerwert  -> Bildeinheiten (nie 0)
+annoUnscaled(value)  // Bildeinheit -> Reglerwert (1…80)
+```
+
+**Warum 2450?** Das ist die Diagonale von 1960 × 1470 — der Vorgabe der
+serverseitigen Bildkomprimierung („Bildschirm · maximal 1960 px"). Auf einem
+Bild dieser Größe bedeutet der Regler genau so viele Bildpunkte wie bisher; die
+eingespielten Vorgabewerte (Stift 6, Text 44, Marker 40) behalten dort ihre
+gewohnte Wirkung.
+
+**Warum die Diagonale und nicht die Breite?** Ein hochkantiges Bild wird auf
+dem Bildschirm von seiner Höhe begrenzt und erscheint dadurch schmaler als ein
+querformatiges mit derselben Fläche. Die Breite als Bezug ließe Striche auf
+Hochformaten zu dünn wirken; die Diagonale gleicht das aus. Die
+Pfadvereinfachung (`SIMPLIFY_RATIO`) bleibt bewusst an der Breite — dort geht
+es um Punktdichte entlang eines Zuges, nicht um wahrgenommene Größe.
+
+### 17.3 Wo umgerechnet wird
+
+| Stelle | vorher | jetzt |
+|---|---|---|
+| `annoCreateItem()` | `w: width` | `w: annoScaled(width)` |
+| `annoCreateItem()`, Marker | `r: MARKER_RADIUS` | `r: annoScaled(MARKER_RADIUS)` |
+| `annoCreateItem()`, Maßband | `s: MEASURE_LABEL_SIZE` | `s: annoScaled(MEASURE_LABEL_SIZE)` |
+| `annoWidthInput()` | `annoApplyToSelection('w', annoWidth)` | `… annoScaled(annoWidth)` |
+| `annoSelectTool('text')` | `annoFontSize = annoWidth` | `annoFontSize = annoScaled(annoWidth)` |
+| `annoWidthInput()`, Text | `annoFontSize = annoWidth` | `annoFontSize = annoScaled(annoWidth)` |
+| `annoEditSelectedText()` | `annoWidth = item.s` | `annoWidth = annoUnscaled(item.s)` |
+| `annoScaleText()` / `annoScaleMarker()` | Grenzen 6…500 bzw. 4…2000 | dieselben Grenzen × `annoScale()` |
+
+**Die Einheiten sauber getrennt:** `annoWidth` ist der **Reglerwert** (1–80),
+`annoFontSize` dagegen eine **Bildeinheit** — sie wird beim Umschalten auf das
+Textwerkzeug und bei jeder Reglerbewegung einmal umgerechnet und danach
+unverändert nach `item.s` geschrieben. Genau deshalb behält ein am Griff frei
+skalierter Textkasten (`s = 63,4`) seine Größe, wenn man nur seinen Text
+ändert: Ginge `annoFontSize` über den Reglerwert, würde 63,4 auf den nächsten
+Rasterwert des Reglers gerundet und der Kasten spränge um. Der Regler selbst
+zeigt in diesem Fall den Näherungswert aus `annoUnscaled()`.
+
+`measureTextBox()` bekommt immer die Bildeinheit, weil `bw`/`bh` im selben Raum
+liegen müssen wie der Text.
+
+Zwei Nebenwirkungen, die so gewollt sind:
+
+- Die im Browser gemerkte Strichstärke je Werkzeug (`notes-anno-widths`,
+  Abschnitt zu FR-ANNO-09) bedeutet jetzt auf jedem Bild dasselbe. Vorher war
+  der gemerkte Wert nur für Bilder derselben Auflösung brauchbar.
+- `annoScaled()` gibt nie 0 zurück (`Math.max(0.1, …)`). Auf einem sehr kleinen
+  Bild ergäbe die Umrechnung sonst eine Stärke von 0, und der Server lehnt
+  `w <= 0` ab.
+
+### 17.4 Vorhandene Annotationen bleiben, wie sie sind
+
+Es wird nichts umgerechnet, was bereits gespeichert ist: `schema.js`, der
+`ImageAnnotationValidator` und beide Renderer sind unberührt, es gibt keine
+Migration und kein Versionsfeld mehr. Ein altes Bild sieht nach dieser Änderung
+exakt so aus wie vorher. Erst wer den Regler anfasst oder ein neues Element
+zeichnet, bekommt die bildbezogene Größe.
+
+### 17.5 Dateiübersicht
+
+| Datei | Änderung |
+|---|---|
+| `resources/js/editor/annotations/annotator.js` | `REFERENCE_DIAGONAL`, `annoScale()`, `annoScaled()`, `annoUnscaled()`; die Aufrufstellen aus der Tabelle in 17.3 |
+| `tests/Frontend/annotations.test.js` | zwei neue Tests: „Strichstärke, Schriftgröße und Marker skalieren mit der Bildgröße" und „ein von Hand skalierter Textkasten behält seine Größe beim Nachbearbeiten"; der Maßband-Test prüft die skalierten Werte mit |
+| `docs/URS.md` | FR-ANNO-14 |

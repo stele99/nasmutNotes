@@ -309,6 +309,77 @@ test('Marker und Maßband bleiben unabhängig vom Textregler', () => {
   });
 });
 
+/**
+ * Der Reglerwert ist eine Größe relativ zum Bild, keine Bildeinheit: Sonst
+ * wäre derselbe Strich auf einem Handyfoto ein Haarstrich und auf einem
+ * kleinen Screenshot ein Balken.
+ */
+test('Strichstärke, Schriftgröße und Marker skalieren mit der Bildgröße', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {};
+    const create = (tool, space) => {
+      mixin.annoSpace = space;
+      mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool } } });
+
+      return mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
+    };
+
+    // Bezugsgröße 1960 × 1470 (Diagonale 2450): Der Reglerwert gilt unverändert.
+    assert.equal(create('pen', { w: 1960, h: 1470 }).w, 6);
+    assert.equal(create('marker', { w: 1960, h: 1470 }).r, 40);
+
+    // Handyfoto 3024 × 4032 (Diagonale 5040): doppelt so grob.
+    assert.equal(create('pen', { w: 3024, h: 4032 }).w, 12.3);
+    assert.equal(create('marker', { w: 3024, h: 4032 }).r, 82.3);
+
+    // Kleiner Screenshot 800 × 600 (Diagonale 1000): entsprechend feiner.
+    assert.equal(create('pen', { w: 800, h: 600 }).w, 2.4);
+    assert.equal(create('measure', { w: 800, h: 600 }).s, 16.3);
+
+    // Sehr kleines Bild: Die Stärke bleibt größer als 0, sonst verwirft der
+    // Server das Element.
+    mixin.annoSpace = { w: 20, h: 15 };
+    mixin.annoWidth = 1;
+    assert.ok(mixin.annoScaled(mixin.annoWidth) > 0);
+
+    // Hin und zurück: Was am Element steht, findet als Reglerwert zurück.
+    mixin.annoSpace = { w: 3024, h: 4032 };
+    assert.equal(mixin.annoUnscaled(mixin.annoScaled(6)), 6);
+    assert.equal(mixin.annoUnscaled(mixin.annoScaled(44)), 44);
+  });
+});
+
+/**
+ * annoFontSize führt Bildeinheiten, nicht Reglerwerte: Ein am Griff frei
+ * skalierter Textkasten darf beim Nachbearbeiten seines Textes nicht auf einen
+ * Rasterwert des Reglers zurückspringen.
+ */
+test('ein von Hand skalierter Textkasten behält seine Größe beim Nachbearbeiten', () => {
+  withFakeStorage(() => {
+    withFakeCanvas(({ host }) => {
+      const mixin = imageAnnotatorMixin();
+      mixin.$nextTick = (run) => run();
+      mixin.$refs = { annoLayer: host, annoPreview: host };
+      mixin.annoSpace = { w: 3024, h: 4032 };
+      mixin.annoTool = 'select';
+      mixin.annoItems = [{
+        id: 'text0001', t: 'text', c: '#111827', x: 10, y: 20,
+        s: 63.4, bw: 200, bh: 80, f: '#ffffff', text: 'Hallo',
+      }];
+      mixin.annoSelectedId = 'text0001';
+
+      mixin.annoEditSelectedText();
+      assert.equal(mixin.annoFontSize, 63.4);
+
+      mixin.annoTextDraft = 'Hallo Welt';
+      mixin.annoConfirmText();
+      assert.equal(mixin.annoItems[0].s, 63.4);
+      assert.equal(mixin.annoItems[0].text, 'Hallo Welt');
+    });
+  });
+});
+
 test('die Regler sagen an, wofür sie da sind', () => {
   withFakeStorage(() => {
     const mixin = imageAnnotatorMixin();
@@ -646,10 +717,13 @@ test('das Maßband entsteht erst mit der eingetragenen Länge', () => {
         [mixin.annoItems.length, mixin.annoItems[0].t, mixin.annoItems[0].text],
         [1, 'dim', '3,20 m'],
       );
+      // bh folgt der Schriftgröße, und die ist auf diesem Raum (Diagonale
+      // 1280,6 von 2450) auf gut die Hälfte skaliert: 40 → 20,9.
       assert.deepEqual(
         [mixin.annoItems[0].x1, mixin.annoItems[0].x2, mixin.annoItems[0].bw, mixin.annoItems[0].bh],
-        [100, 700, 120, 50],
+        [100, 700, 120, 30],
       );
+      assert.deepEqual([mixin.annoItems[0].w, mixin.annoItems[0].s], [3.1, 20.9]);
       assert.equal(mixin.annoHistory.length, 1);
 
       // Abbrechen verwirft das frisch gezogene Band ganz.

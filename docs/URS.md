@@ -260,6 +260,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-ANNO-11 | Beim Export enthält das Archiv das unveränderte Bild, die Annotationstexte im Markdown und das Overlay als SVG-Sidecar. | S |
 | FR-ANNO-12 | Das Werkzeug „Abdecken" weist darauf hin, dass es Bildinhalte nicht dauerhaft entfernt. | M |
 | FR-ANNO-13 | Das Werkzeug „Maßband" zeichnet eine Maßlinie zwischen zwei Punkten; die Länge wird frei eingetragen und mit der Linie zusammen dargestellt. Es wird nichts umgerechnet. | S |
+| FR-ANNO-14 | Strichstärke, Schriftgröße und Markergröße sind relativ zur Bildgröße: Derselbe Reglerwert ergibt auf Bildern unterschiedlicher Auflösung dieselbe Wirkung. | M |
 
 ### 5.5 Task-Seiten
 
