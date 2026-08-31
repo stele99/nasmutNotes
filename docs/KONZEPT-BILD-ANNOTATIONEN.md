@@ -3292,6 +3292,135 @@ bevor die aufwendige Bedienoberfläche entsteht.
    kann das für feine Striche knapp werden. Die Umrechnung in
    `annoPoint()` läuft über `getBoundingClientRect()` und trägt einen späteren
    Zoom ohne Änderung mit.
-5. **Skalieren weiterer Typen.** Ausbaustufe 1 skaliert nur, was ein Rechteck
-   aufspannt (`rect`, `ellipse`, `mask`, `rules`). Freihand, Linien und
-   Textkästen lassen sich verschieben und löschen, aber nicht ziehen.
+5. **Skalieren weiterer Typen.** *Erledigt durch Abschnitt 13.* Ausbaustufe 1
+   skalierte nur, was ein Rechteck aufspannt (`rect`, `ellipse`, `mask`,
+   `rules`); Freihand, Linien und Textkästen ließen sich verschieben und
+   löschen, aber nicht ziehen. Ausbaustufe 2 (Abschnitt 13.5) ergänzt Griffe
+   für jeden Typ.
+
+## 13. Ausbaustufe 2: Auswahl und Verschieben
+
+| Feld | Wert |
+|---|---|
+| Planungsstand | ausformuliert und implementiert |
+| Datum | 2026-08-31 |
+| Bezug | FR-ANNO-02 („skalieren" jetzt vollständig), Abschnitt 12.5 |
+| Neue Abhängigkeiten | keine |
+| Neue Migration / Endpunkte | keine |
+| Vertragsänderungen | keine |
+
+Die Ausbaustufe 1 (Abschnitt 5.6) konnte bereits auswählen und verschieben -
+aber nur über das explizit zu wählende Werkzeug „Auswählen", mit History-Eintrag
+und Dirty-Flag schon beim bloßen Antippen, ohne Rückmeldung beim Überfahren
+und mit Ziehgriffen nur für die Rechteck-Typen. Dieser Abschnitt beseitigt die
+vier Schwächen; alles spielt sich in `annotator.js`, dem Dialog-Partial und
+`app.css` ab. Datenmodell (Abschnitt 3), serverseitige Validierung
+(`ImageAnnotationValidator`) und beide Renderer bleiben unberührt - es ändern
+sich nur Attributwerte im bereits erlaubten Rahmen.
+
+### 13.1 Standardwerkzeug „Auswählen"
+
+Beim Öffnen des Annotationseditors gilt:
+
+- Ein Bild **mit vorhandenen Elementen** startet im Werkzeug „Auswählen",
+- ein frisches Bild wie bisher im Werkzeug „Freihand".
+
+Begründung: Auf einem bereits beschrifteten Bild ist Verschieben der häufigste
+Folgeschritt, auf einem leeren Zeichnen. Umgesetzt in `annoBegin()` als
+einzeilige Zuweisung `this.annoTool = this.annoItems.length > 0 ? 'select' : 'pen'`.
+
+### 13.2 Antippen ist noch keine Änderung
+
+Vorher legte `annoBeginSelect()` schon beim Antippen einen History-Eintrag an
+und setzte `annoDirty` - ein bloßer Klick zum Betrachten löste beim Schließen
+die Rückfrage „Änderungen verwerfen?" aus.
+
+Jetzt trägt jeder Zug (Verschieben wie Skalieren) ein `moved`-Kennzeichen;
+erst der erste `pointermove` mit tatsächlicher Bewegung schreibt History und
+Dirty-Flag (`annoBeginDragHistory()`). Ein Griff, der nur angetippt und
+losgelassen wird, ist ebenso wenig eine Änderung wie ein Klick nebenbei.
+
+### 13.3 Hover-Rahmen
+
+Im Auswählen-Werkzeug zeigt ein dezenter gestrichelter Rahmen das Element
+unter dem Zeiger - das, was der nächste Klick wählen würde:
+
+- `annoUpdateHover()` läuft in `annoPointerMove()`, wenn gerade kein Zug
+  aktiv ist, und nutzt denselben Hit-Test wie die Auswahl (`annoHitTest`).
+- Der Rahmen ist rein visuell (`pointer-events: none`, Klasse `anno-hover`),
+  Zeichnen und Klicken laufen darüber hinweg.
+- Die Bühne bekommt bei aktivem Hover die Klasse `anno-stage-hover`
+  (`annoStageClass()`) mit dem `move`-Cursor.
+- Auf Touchgeräten ohne Zeigerfreiheit entsteht der Effekt von selbst nicht,
+  weil `pointermove` dort nur während einer Berührung feuert.
+
+### 13.4 Pfeiltasten
+
+Die Auswahl lässt sich mit den Pfeiltasten um **1 Einheit** des
+Annotationsraums verschieben, mit Shift um **10** (`ARROW_NUDGES` in
+`annoKeydown()`). Zwei Festlegungen:
+
+1. **Tastatur der Bedienelemente bleibt unangetastet.** Ist der Fokus auf
+   einem Regler oder Textfeld (`tagName` `INPUT`/`TEXTAREA`), fängt der
+   Annotationseditor die Taste nicht ab - sonst ließe sich der
+   Strichstärke-Regler nicht mehr mit der Tastatur bedienen.
+2. **Zusammenhängende Nudges bilden einen Undo-Schritt.** `annoPushHistory()`
+   schließt eine offene Nudge-Folge (`annoNudgeOpen = false`), der
+   Tastendruck öffnet sie nur, wenn keine offen ist. Zehnmal Pfeiltaste
+   bleibt so ein einzelner Undo-Schritt; jede andere Aktion (Zeichnen,
+   Löschen, Eigenschaftsänderung, nächster Zug) trennt die Folge.
+
+### 13.5 Ziehgriffe für jeden Typ
+
+| Typ | Griffe | Wirkung |
+|---|---|---|
+| `rect`, `ellipse`, `mask`, `rules` | NW + SE | SE ändert `rw`/`rh` (wie Ausbaustufe 1); NW zieht `x`/`y` mit, während die rechte untere Ecke stehen bleibt |
+| `line` | zwei Endpunkt-Griffe `p1`/`p2` | jeder Griff bewegt genau seinen Endpunkt; die Rahmenecken entfallen |
+| `pen` | SE | alle Punkte werden proportional in den neuen Kasten abgebildet (`annoScalePen`) |
+| `text` | SE | die Schriftgröße folgt der Breitenänderung (6–500), `bw`/`bh` werden mit `measureTextBox` neu gemessen (`annoScaleText`) |
+| `marker` | SE | der Radius ist der Abstand der Griffposition zum Mittelpunkt, 4–2000 (`annoScaleMarker`) |
+
+Umsetzung: `annoResizeHandle(item, handle, point)` ersetzt das alte
+`annoResize()`. Der Griff wird am Drag-Objekt mitgeführt (`drag.handle`), die
+Position der Linien-Endpunkte liefert `annoHandleStyle()` in Prozent der
+Bühne - sie liegen nicht an den Ecken des Auswahlrahmens. `annoHasHandle()`
+entscheidet je Typ, welche Griffe das Markup zeigt, und ersetzt das alte
+`annoCanResizeSelection()`.
+
+Grenzen (alle Werte bleiben auf eine Nachkommastelle gerundet): `rw`/`rh`
+mindestens 2 wie bisher, Schriftgröße 6–500, Radius 4–2000. Die Grenzen sind
+reine Bedienungsgrenzen; die Server-Validierung kennt sie nicht und braucht
+sie nicht zu kennen.
+
+### 13.6 Dateiübersicht
+
+| Datei | Änderung |
+|---|---|
+| `resources/js/editor/annotations/annotator.js` | Standardwerkzeug, `moved`-Kennzeichen, Hover, Pfeiltasten mit Nudge-History, `annoResizeHandle` + drei Typ-Skalierer, `annoHasHandle`/`annoHandleStyle`/`annoBoxStyle` |
+| `resources/views/partials/image_annotation_dialog.php` | Hover-Rahmen-Span, vier Griff-Spans, `:class="annoStageClass()"` an der Bühne |
+| `resources/css/app.css` | `.anno-hover`, `.anno-stage-hover`, Griff-Varianten `.anno-handle-se/-nw/-point` und `.anno-handles` |
+| `tests/Frontend/annotations.test.js` | fünf neue Tests: Standardwerkzeug, Antippen-ohne-Zug, Pfeiltasten samt Undo, Hover, Griffe je Typ |
+
+Keine PHP-Datei, keine Migration, kein Endpunkt, kein Renderer.
+
+### 13.7 Umsetzungsreihenfolge und Abnahme
+
+| # | Schritt | Abnahme |
+|---|---|---|
+| 1 | `moved`-Kennzeichen (13.2) | Klick auf ein Element, sofort loslassen, Dialog schließen: keine Rückfrage „verwerfen?", `npm test` grün |
+| 2 | Standardwerkzeug (13.1) | Bild mit Annotationen öffnen startet mit „Auswählen" aktiv |
+| 3 | Hover (13.3) | Im Auswählen-Werkzeug folgt der Rahmen dem Zeiger, Cursor wird `move`; in Zeichenwerkzeugen nicht |
+| 4 | Pfeiltasten (13.4) | Auswahl wandert, Shift ×10, zehn Tastendrücke = ein Undo-Schritt; Fokus auf dem Strichstärke-Regler bleibt bedienbar |
+| 5 | Griffe (13.5) | je Typ ein Griff ziehen und prüfen, dass nur die erwarteten Felder wandern; Text behält einen passenden Hintergrundkasten |
+
+Manuelle Prüfmatrix:
+
+| # | Fall | Erwartung |
+|---|---|---|
+| 1 | Bild mit zwei Pfeilen öffnen | Werkzeug „Auswählen" ist aktiv, Pfeil antippen wählt aus |
+| 2 | Auswahl mit Pfeiltasten verschieben | springt in Einheiten, Shift in Zehnern |
+| 3 | Auswahl ziehen statt klicken | genau ein Undo-Schritt, Undo stellt die alte Position her |
+| 4 | Linie an beiden Endpunkten ziehen | nur der jeweilige Endpunkt wandert |
+| 5 | Freihandstrich am SE-Griff ziehen | Strich behält seine Form im neuen Kasten |
+| 6 | Textkasten vergrößern | Schrift wächst mit, Hintergrundkasten umschließt weiterhin den Text |
+| 7 | Nummerierten Marker skalieren | Kreis wächst gleichmäßig um den Mittelpunkt |

@@ -1441,16 +1441,54 @@ button:disabled,
   position: absolute;
 }
 
+/* Rahmen-Vorschau im Auswählen-Werkzeug: rein visuell, kein Fangen von
+   Zeigerereignissen - Zeichnen und Klicken laufen darüber hinweg. */
+.anno-hover {
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 60%, transparent);
+  pointer-events: none;
+  position: absolute;
+}
+
+.anno-stage-hover {
+  cursor: move;
+}
+
+/* Ziehgriffe: SE/NW sitzen an den Ecken des Auswahlrahmens, die
+   Linien-Endpunkte als eigene Punkte über der Bühne (Position per :style). */
 .anno-handle {
   background: var(--color-bg);
   border: 2px solid var(--color-accent);
   border-radius: 50%;
-  bottom: -8px;
   height: 16px;
   pointer-events: auto;
   position: absolute;
-  right: -8px;
   width: 16px;
+}
+
+.anno-handle-se {
+  bottom: -8px;
+  cursor: nwse-resize;
+  right: -8px;
+}
+
+.anno-handle-nw {
+  cursor: nwse-resize;
+  left: -8px;
+  top: -8px;
+}
+
+.anno-handles {
+  height: 100%;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.anno-handle-point {
+  cursor: move;
+  transform: translate(-50%, -50%);
 }
 
 .anno-swatch {

@@ -336,3 +336,186 @@ test('der Stift-Knopf am Bild öffnet den Annotationseditor an der Knotenpositio
     delete globalThis.HTMLElement;
   });
 });
+
+test('vorhandene Annotationen starten im Auswählen-Werkzeug', () => {
+  withFakeStorage(() => {
+    globalThis.HTMLElement = class {};
+    const mixin = imageAnnotatorMixin();
+    mixin.canEditPage = true;
+    mixin.isEncrypted = () => false;
+    mixin.$nextTick = () => {};
+    mixin.$refs = {};
+    const attrs = { src: '/api/attachments/' + 'a'.repeat(64), alt: 'Foto', width: 800, height: 600 };
+
+    mixin.annoBegin(1, { type: { name: 'image' }, attrs: { ...attrs, annotations: null } });
+    assert.equal(mixin.annoTool, 'pen');
+
+    mixin.annoBegin(1, {
+      type: { name: 'image' },
+      attrs: {
+        ...attrs,
+        annotations: {
+          v: 1,
+          space: { w: 800, h: 600 },
+          items: [{ id: 'abcd1234', t: 'line', c: '#e11d48', w: 4, x1: 10, y1: 20, x2: 30, y2: 40, head: 'end' }],
+        },
+      },
+    });
+    assert.equal(mixin.annoTool, 'select');
+
+    delete globalThis.HTMLElement;
+  });
+});
+
+test('Antippen ohne Zug erzeugt keinen Undo-Schritt und kein Dirty-Flag', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {
+      annoStage: {
+        setPointerCapture() {},
+        releasePointerCapture() {},
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 800 }),
+      },
+    };
+    mixin.annoSpace = { w: 1000, h: 800 };
+    mixin.annoOpen = true;
+    mixin.annoTool = 'select';
+    mixin.annoItems = [{ id: 'rect0001', t: 'rect', c: '#2563eb', w: 4, x: 100, y: 100, rw: 200, rh: 100, f: null }];
+
+    const down = {
+      pointerId: 1, pointerType: 'mouse', button: 0, clientX: 150, clientY: 140,
+      target: {}, preventDefault() {},
+    };
+    mixin.annoPointerDown.call(mixin, down);
+    assert.equal(mixin.annoSelectedId, 'rect0001');
+
+    mixin.annoPointerUp.call(mixin, { pointerId: 1 });
+    assert.equal(mixin.annoHistory.length, 0);
+    assert.equal(mixin.annoDirty, false);
+
+    // Erst der Zug wird zur Änderung - mit genau einem Undo-Schritt.
+    mixin.annoPointerDown.call(mixin, down);
+    mixin.annoPointerMove.call(mixin, {
+      pointerId: 1, pointerType: 'mouse', clientX: 170, clientY: 140, preventDefault() {},
+    });
+    mixin.annoPointerUp.call(mixin, { pointerId: 1 });
+    assert.equal(mixin.annoHistory.length, 1);
+    assert.equal(mixin.annoItems[0].x, 120);
+    assert.equal(mixin.annoDirty, true);
+  });
+});
+
+test('Pfeiltasten verschieben die Auswahl als ein Undo-Schritt', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {};
+    mixin.annoSpace = { w: 1000, h: 800 };
+    mixin.annoOpen = true;
+    mixin.annoTool = 'select';
+    mixin.annoItems = [{ id: 'abcd1234', t: 'line', c: '#e11d48', w: 4, x1: 10, y1: 20, x2: 30, y2: 40, head: 'end' }];
+    mixin.annoSelectedId = 'abcd1234';
+
+    let prevented = 0;
+    const press = (key, shiftKey = false) => mixin.annoKeydown.call(mixin, {
+      key, shiftKey, preventDefault: () => { prevented += 1; },
+    });
+
+    press('ArrowLeft');
+    press('ArrowUp');
+    assert.deepEqual([mixin.annoItems[0].x1, mixin.annoItems[0].y1], [9, 19]);
+    assert.equal(mixin.annoHistory.length, 1);
+
+    press('ArrowRight', true);
+    assert.equal(mixin.annoItems[0].x1, 19);
+    assert.equal(mixin.annoHistory.length, 1);
+
+    // Ein Undo-Schritt stellt den Ausgangszustand der ganzen Folge wieder her.
+    mixin.annoUndoStep();
+    assert.deepEqual([mixin.annoItems[0].x1, mixin.annoItems[0].y1], [10, 20]);
+
+    // Ohne Auswahl bewegen die Pfeiltasten nichts und fangen nichts ab.
+    mixin.annoSelectedId = '';
+    const before = prevented;
+    press('ArrowLeft');
+    assert.equal(prevented, before);
+  });
+});
+
+test('der Hover-Rahmen zeigt im Auswählen-Werkzeug das Element unter dem Zeiger', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {
+      annoStage: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 800 }) },
+    };
+    mixin.annoSpace = { w: 1000, h: 800 };
+    mixin.annoOpen = true;
+    mixin.annoTool = 'select';
+    mixin.annoItems = [{ id: 'rect0001', t: 'rect', c: '#2563eb', w: 4, x: 100, y: 200, rw: 100, rh: 50, f: null }];
+
+    mixin.annoPointerMove.call(mixin, { pointerId: 1, pointerType: 'mouse', clientX: 150, clientY: 225 });
+    assert.match(mixin.annoHoverStyle, /left:10%;/);
+    assert.match(mixin.annoHoverStyle, /top:25%;/);
+    assert.equal(mixin.annoStageClass(), 'anno-stage-hover');
+
+    mixin.annoPointerMove.call(mixin, { pointerId: 1, pointerType: 'mouse', clientX: 5, clientY: 5 });
+    assert.equal(mixin.annoHoverStyle, '');
+    assert.equal(mixin.annoStageClass(), '');
+
+    // In Zeichenwerkzeugen gibt es keinen Hover-Rahmen.
+    mixin.annoTool = 'pen';
+    mixin.annoPointerMove.call(mixin, { pointerId: 1, pointerType: 'mouse', clientX: 150, clientY: 225 });
+    assert.equal(mixin.annoHoverStyle, '');
+  });
+});
+
+test('Ziehgriffe skalieren jeden Elementtyp', () => {
+  withFakeStorage(() => {
+    withFakeCanvas(({ host }) => {
+      const mixin = imageAnnotatorMixin();
+      mixin.$refs = { annoLayer: host, annoPreview: host };
+
+      const rect = { id: 'rect0001', t: 'rect', c: '#2563eb', w: 4, x: 10, y: 10, rw: 100, rh: 50, f: null };
+      mixin.annoResizeHandle(rect, 'se', { x: 210, y: 110 });
+      assert.deepEqual([rect.rw, rect.rh], [200, 100]);
+      mixin.annoResizeHandle(rect, 'nw', { x: 0, y: 0 });
+      assert.deepEqual([rect.x, rect.y, rect.rw, rect.rh], [0, 0, 210, 110]);
+
+      const lineItem = { id: 'abcd1234', t: 'line', c: '#e11d48', w: 4, x1: 10, y1: 20, x2: 30, y2: 40, head: 'end' };
+      mixin.annoResizeHandle(lineItem, 'p1', { x: 5, y: 8 });
+      assert.deepEqual([lineItem.x1, lineItem.y1], [5, 8]);
+      mixin.annoResizeHandle(lineItem, 'p2', { x: 100, y: 200 });
+      assert.deepEqual([lineItem.x2, lineItem.y2], [100, 200]);
+
+      const pen = { id: 'pen00001', t: 'pen', c: '#111827', w: 6, p: [[100, 100], [200, 100], [100, 200]] };
+      mixin.annoResizeHandle(pen, 'se', { x: 300, y: 300 });
+      assert.deepEqual(pen.p, [[100, 100], [300, 100], [100, 300]]);
+
+      const textItem = {
+        id: 'text0001', t: 'text', c: '#111827', x: 100, y: 100,
+        s: 40, bw: 200, bh: 50, f: null, text: 'Hallo',
+      };
+      mixin.annoResizeHandle(textItem, 'se', { x: 400, y: 200 });
+      assert.equal(textItem.s, 60);
+      assert.equal(textItem.bw, 120);
+      assert.equal(textItem.bh, 75);
+
+      const markerItem = { id: 'mark0001', t: 'marker', c: '#2563eb', x: 500, y: 400, r: 40, n: 1 };
+      mixin.annoResizeHandle(markerItem, 'se', { x: 540, y: 400 });
+      assert.equal(markerItem.r, 40);
+      mixin.annoResizeHandle(markerItem, 'se', { x: 580, y: 400 });
+      assert.equal(markerItem.r, 80);
+
+      // Welcher Typ bietet welche Griffe?
+      mixin.annoSpace = { w: 1000, h: 800 };
+      mixin.annoItems = [lineItem];
+      mixin.annoSelectedId = 'abcd1234';
+      assert.equal(mixin.annoHasHandle('p1'), true);
+      assert.equal(mixin.annoHasHandle('se'), false);
+      mixin.annoItems = [rect];
+      mixin.annoSelectedId = 'rect0001';
+      assert.equal(mixin.annoHasHandle('nw'), true);
+      assert.equal(mixin.annoHasHandle('p2'), false);
+      assert.equal(mixin.annoHasHandle('se'), true);
+    });
+  });
+});

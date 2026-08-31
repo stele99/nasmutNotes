@@ -56,15 +56,21 @@
        style="background: var(--color-bg); color: var(--color-danger);" role="alert"></p>
 
     <div x-ref="annoViewport" class="anno-viewport flex flex-1 items-center justify-center overflow-auto p-4">
-        <div x-ref="annoStage" class="anno-stage"
+        <div x-ref="annoStage" class="anno-stage" :class="annoStageClass()"
              @pointerdown="annoPointerDown" @pointermove="annoPointerMove"
              @pointerup="annoPointerUp" @pointercancel="annoPointerCancel"
              @dblclick="annoEditSelectedText">
             <img :src="annoSrc" :alt="annoAlt" class="anno-image" draggable="false">
             <span x-ref="annoLayer" class="anno-layer" aria-hidden="true"></span>
             <span x-ref="annoPreview" class="anno-layer" aria-hidden="true"></span>
+            <span x-show="annoHoverStyle" x-cloak class="anno-hover" :style="annoHoverStyle"></span>
             <span x-show="annoSelectionStyle" x-cloak class="anno-selection" :style="annoSelectionStyle">
-                <span x-show="annoCanResizeSelection()" data-anno-handle="se" class="anno-handle"></span>
+                <span x-show="annoHasHandle('se')" data-anno-handle="se" class="anno-handle anno-handle-se"></span>
+                <span x-show="annoHasHandle('nw')" data-anno-handle="nw" class="anno-handle anno-handle-nw"></span>
+            </span>
+            <span x-show="annoHasHandle('p1')" x-cloak class="anno-handles">
+                <span data-anno-handle="p1" class="anno-handle anno-handle-point" :style="annoHandleStyle('p1')"></span>
+                <span data-anno-handle="p2" class="anno-handle anno-handle-point" :style="annoHandleStyle('p2')"></span>
             </span>
         </div>
     </div>

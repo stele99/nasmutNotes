@@ -34,6 +34,14 @@ const TOOL_DEFAULTS = {
 const MARKER_RADIUS = 40;
 const RULES_LINE_GAP = 70;
 
+/** Verschiebung je Pfeiltaste in Einheiten des Annotationsraums. */
+const ARROW_NUDGES = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
 /**
  * Strichstärke je Werkzeug im Browser-Speicher (localStorage) merken
  * (FR-ANNO-09): Nutzer ziehen sie meist einmal je Werkzeug fest und
@@ -109,6 +117,8 @@ export function imageAnnotatorMixin() {
     annoFontSize: 44,
     annoSelectedId: '',
     annoSelectionStyle: '',
+    annoHoverStyle: '',
+    annoNudgeOpen: false,
     annoNotice: '',
     annoError: '',
     annoMaskHintShown: false,
@@ -213,8 +223,14 @@ export function imageAnnotatorMixin() {
       this.annoAlt = node.attrs.alt || '';
       this.annoSpace = stored?.space ?? emptyAnnotations(width, height).space;
       this.annoItems = stored ? JSON.parse(JSON.stringify(stored.items)) : [];
+      // Bereits beschriftete Bilder starten im Auswählen-Werkzeug: Das
+      // Verschieben vorhandener Elemente ist dort der häufigste Folgeschritt
+      // (Abschnitt 13.1); frische Bilder starten wie bisher im Freihand-Werkzeug.
+      this.annoTool = this.annoItems.length > 0 ? 'select' : 'pen';
       this.annoSelectedId = '';
       this.annoSelectionStyle = '';
+      this.annoHoverStyle = '';
+      this.annoNudgeOpen = false;
       this.annoHistory = [];
       this.annoFuture = [];
       this.annoDirty = false;
@@ -306,6 +322,7 @@ export function imageAnnotatorMixin() {
         this.annoSelectedId = '';
         this.annoSelectionStyle = '';
       }
+      this.annoHoverStyle = '';
       this.annoSyncToolbar();
     },
 
@@ -437,6 +454,7 @@ export function imageAnnotatorMixin() {
         return;
       }
       event.preventDefault();
+      this.annoHoverStyle = '';
       this.$refs.annoStage.setPointerCapture(event.pointerId);
       const point = this.annoPoint(event);
 
@@ -464,7 +482,12 @@ export function imageAnnotatorMixin() {
     },
 
     annoPointerMove(event) {
-      if (drag === null || event.pointerId !== drag.pointerId) {
+      if (drag === null) {
+        this.annoUpdateHover(event);
+
+        return;
+      }
+      if (event.pointerId !== drag.pointerId) {
         return;
       }
       event.preventDefault();
@@ -477,16 +500,46 @@ export function imageAnnotatorMixin() {
         return;
       }
       if (drag.kind === 'move') {
+        this.annoBeginDragHistory(drag);
         this.annoTranslate(drag.item, point.x - drag.last.x, point.y - drag.last.y);
         drag.last = point;
         this.annoRenderAll();
         this.annoUpdateSelectionFrame();
       }
       if (drag.kind === 'resize') {
-        this.annoResize(drag.item, point);
+        this.annoBeginDragHistory(drag);
+        this.annoResizeHandle(drag.item, drag.handle, point);
         this.annoRenderAll();
         this.annoUpdateSelectionFrame();
       }
+    },
+
+    /**
+     * Der erste Zug eines Verschiebens oder Skalierens ist der Moment, in dem
+     * aus einem Antippen eine Änderung wird (Abschnitt 13.2): genau jetzt
+     * entsteht der Undo-Schritt, nicht schon beim Zeiger-nieder.
+     */
+    annoBeginDragHistory(running) {
+      if (running.moved) {
+        return;
+      }
+      running.moved = true;
+      this.annoPushHistory();
+    },
+
+    /** Rahmen-Vorschau im Auswählen-Werkzeug: was der nächste Klick wählen würde. */
+    annoUpdateHover(event) {
+      if (this.annoTool !== 'select' || !this.annoOpen) {
+        this.annoHoverStyle = '';
+
+        return;
+      }
+      const item = this.annoHitTest(this.annoPoint(event));
+      this.annoHoverStyle = item === null ? '' : this.annoBoxStyle(this.annoBounds(item));
+    },
+
+    annoStageClass() {
+      return this.annoTool === 'select' && this.annoHoverStyle !== '' ? 'anno-stage-hover' : '';
     },
 
     annoPointerUp(event) {
@@ -656,8 +709,16 @@ export function imageAnnotatorMixin() {
       const handle = event.target?.dataset?.annoHandle;
       const selected = this.annoSelectedItem();
       if (handle && selected) {
-        this.annoPushHistory();
-        drag = { kind: 'resize', pointerId: event.pointerId, pointerType: event.pointerType, item: selected };
+        // Auch ein Griff ist beim Antippen noch keine Änderung: History erst
+        // beim ersten Zug (annoBeginDragHistory, Abschnitt 13.2).
+        drag = {
+          kind: 'resize',
+          handle,
+          pointerId: event.pointerId,
+          pointerType: event.pointerType,
+          item: selected,
+          moved: false,
+        };
 
         return;
       }
@@ -670,13 +731,13 @@ export function imageAnnotatorMixin() {
       }
       this.annoColor = item.c;
       this.annoSyncToolbar();
-      this.annoPushHistory();
       drag = {
         kind: 'move',
         pointerId: event.pointerId,
         pointerType: event.pointerType,
         item,
         last: point,
+        moved: false,
       };
     },
 
@@ -698,13 +759,99 @@ export function imageAnnotatorMixin() {
       item.y = round1(item.y + dy);
     },
 
-    /** Skaliert wird in Ausbaustufe 1 nur, was ein Rechteck aufspannt. */
-    annoResize(item, point) {
-      if (!['rect', 'ellipse', 'mask', 'rules'].includes(item.t)) {
+    /**
+     * Skalieren über die Ziehgriffe (Abschnitt 13.5): SE ändert die Größe,
+     * NW zieht bei Rahmen-Typen die linke obere Ecke mit, Linien haben
+     * Endpunkt-Griffe.
+     */
+    annoResizeHandle(item, handle, point) {
+      if (handle === 'p1' || handle === 'p2') {
+        if (item.t !== 'line') {
+          return;
+        }
+        const keyX = handle === 'p1' ? 'x1' : 'x2';
+        const keyY = handle === 'p1' ? 'y1' : 'y2';
+        item[keyX] = point.x;
+        item[keyY] = point.y;
+
         return;
       }
-      item.rw = Math.max(2, round1(point.x - item.x));
-      item.rh = Math.max(2, round1(point.y - item.y));
+
+      if (handle === 'nw') {
+        if (!['rect', 'ellipse', 'mask', 'rules'].includes(item.t)) {
+          return;
+        }
+        const right = item.x + item.rw;
+        const bottom = item.y + item.rh;
+        item.x = round1(Math.min(point.x, right - 2));
+        item.y = round1(Math.min(point.y, bottom - 2));
+        item.rw = round1(Math.max(2, right - item.x));
+        item.rh = round1(Math.max(2, bottom - item.y));
+
+        return;
+      }
+
+      if (['rect', 'ellipse', 'mask', 'rules'].includes(item.t)) {
+        item.rw = Math.max(2, round1(point.x - item.x));
+        item.rh = Math.max(2, round1(point.y - item.y));
+
+        return;
+      }
+      if (item.t === 'pen') {
+        this.annoScalePen(item, point);
+
+        return;
+      }
+      if (item.t === 'text') {
+        this.annoScaleText(item, point);
+
+        return;
+      }
+      if (item.t === 'marker') {
+        this.annoScaleMarker(item, point);
+      }
+    },
+
+    /** Freihand: alle Punkte proportional in den neuen Kasten abbilden. */
+    annoScalePen(item, point) {
+      const xs = item.p.map((entry) => entry[0]);
+      const ys = item.p.map((entry) => entry[1]);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const factorX = Math.max(point.x - minX, 8) / Math.max(Math.max(...xs) - minX, 1);
+      const factorY = Math.max(point.y - minY, 8) / Math.max(Math.max(...ys) - minY, 1);
+      item.p = item.p.map((entry) => [
+        round1(minX + (entry[0] - minX) * factorX),
+        round1(minY + (entry[1] - minY) * factorY),
+      ]);
+    },
+
+    /** Text: Die Schriftgröße folgt der Breite, die Maße werden neu gemessen. */
+    annoScaleText(item, point) {
+      const factor = Math.max(point.x - item.x, 10) / Math.max(item.bw, 1);
+      const size = round1(Math.min(500, Math.max(6, item.s * factor)));
+      if (size === item.s) {
+        return;
+      }
+      const svg = this.$refs.annoLayer?.querySelector('svg') ?? this.annoEnsureLayerSvg();
+      const box = measureTextBox(svg, item.text, size);
+      item.s = size;
+      item.bw = box.bw;
+      item.bh = box.bh;
+    },
+
+    /** Marker: Der Radius ist der Abstand der Griffposition zum Mittelpunkt. */
+    annoScaleMarker(item, point) {
+      item.r = round1(Math.min(2000, Math.max(4, Math.hypot(point.x - item.x, point.y - item.y))));
+    },
+
+    annoBoxStyle(box) {
+      const left = (box.x / this.annoSpace.w) * 100;
+      const top = (box.y / this.annoSpace.h) * 100;
+      const width = (box.rw / this.annoSpace.w) * 100;
+      const height = (box.rh / this.annoSpace.h) * 100;
+
+      return `left:${left}%;top:${top}%;width:${width}%;height:${height}%;`;
     },
 
     annoUpdateSelectionFrame() {
@@ -714,18 +861,35 @@ export function imageAnnotatorMixin() {
 
         return;
       }
-      const box = this.annoBounds(item);
-      const left = (box.x / this.annoSpace.w) * 100;
-      const top = (box.y / this.annoSpace.h) * 100;
-      const width = (box.rw / this.annoSpace.w) * 100;
-      const height = (box.rh / this.annoSpace.h) * 100;
-      this.annoSelectionStyle = `left:${left}%;top:${top}%;width:${width}%;height:${height}%;`;
+      this.annoSelectionStyle = this.annoBoxStyle(this.annoBounds(item));
     },
 
-    annoCanResizeSelection() {
+    /** Welche Griffe der ausgewählte Typ bietet (Abschnitt 13.5). */
+    annoHasHandle(handle) {
       const item = this.annoSelectedItem();
+      if (item === null) {
+        return false;
+      }
+      if (handle === 'p1' || handle === 'p2') {
+        return item.t === 'line';
+      }
+      if (handle === 'nw') {
+        return ['rect', 'ellipse', 'mask', 'rules'].includes(item.t);
+      }
 
-      return item !== null && ['rect', 'ellipse', 'mask', 'rules'].includes(item.t);
+      return item.t !== 'line';
+    },
+
+    /** Linien-Endpunkte liegen nicht an den Rahmenecken und bekommen eigene Positionen. */
+    annoHandleStyle(handle) {
+      const item = this.annoSelectedItem();
+      if (item === null || item.t !== 'line') {
+        return '';
+      }
+      const x = handle === 'p1' ? item.x1 : item.x2;
+      const y = handle === 'p1' ? item.y1 : item.y2;
+
+      return `left:${(x / this.annoSpace.w) * 100}%;top:${(y / this.annoSpace.h) * 100}%;`;
     },
 
     // --- Text -----------------------------------------------------------
@@ -831,6 +995,9 @@ export function imageAnnotatorMixin() {
       }
       this.annoFuture = [];
       this.annoDirty = true;
+      // Eine laufende Nudge-Folge (Pfeiltasten) endet hier; die nächste
+      // Taste öffnet einen neuen Undo-Schritt.
+      this.annoNudgeOpen = false;
     },
 
     annoUndoStep() {
@@ -864,7 +1031,8 @@ export function imageAnnotatorMixin() {
       this.annoPushHistory();
       this.annoItems = this.annoItems.filter((item) => item.id !== this.annoSelectedId);
       this.annoSelectedId = '';
-      this.annoUpdateSelectionFrame();
+      this.annoSelectionStyle = '';
+      this.annoHoverStyle = '';
       this.annoRenderAll();
     },
 
@@ -875,7 +1043,8 @@ export function imageAnnotatorMixin() {
       this.annoPushHistory();
       this.annoItems = [];
       this.annoSelectedId = '';
-      this.annoUpdateSelectionFrame();
+      this.annoSelectionStyle = '';
+      this.annoHoverStyle = '';
       this.annoRenderAll();
     },
 
@@ -883,9 +1052,30 @@ export function imageAnnotatorMixin() {
       if (!this.annoOpen || this.annoTextOpen) {
         return;
       }
+      // Regler und Textfelder behalten ihre eigene Tastatur: Die Pfeiltasten
+      // dürfen nicht gleichzeitig die Auswahl verschieben.
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        return;
+      }
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
         this.annoDeleteSelected();
+
+        return;
+      }
+      if (ARROW_NUDGES[event.key] && this.annoSelectedId !== '') {
+        event.preventDefault();
+        const [dx, dy] = ARROW_NUDGES[event.key];
+        // Zusammenhängende Nudges bilden einen Undo-Schritt: Die Flagge wird
+        // durch jede andere Aktion in annoPushHistory() geschlossen.
+        if (!this.annoNudgeOpen) {
+          this.annoPushHistory();
+          this.annoNudgeOpen = true;
+        }
+        const factor = event.shiftKey ? 10 : 1;
+        this.annoTranslate(this.annoSelectedItem(), dx * factor, dy * factor);
+        this.annoRenderAll();
 
         return;
       }
