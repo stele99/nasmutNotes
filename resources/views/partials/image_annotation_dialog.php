@@ -21,7 +21,7 @@
 
     <div x-ref="annoToolbar" class="editor-toolbar flex flex-wrap items-center gap-1 border-b px-4 py-2"
          style="border-color: var(--color-border); background: var(--color-bg);">
-        <button type="button" data-tool="select" @click="annoSelectTool" class="toolbar-button" title="Auswählen" aria-label="Auswählen" x-icon="square"></button>
+        <button type="button" data-tool="select" @click="annoSelectTool" class="toolbar-button" title="Auswählen" aria-label="Auswählen" x-icon="mouse-pointer-2"></button>
         <button type="button" data-tool="pen" @click="annoSelectTool" class="toolbar-button" title="Freihand" aria-label="Freihand" x-icon="pencil"></button>
         <button type="button" data-tool="highlighter" @click="annoSelectTool" class="toolbar-button" title="Marker" aria-label="Marker" x-icon="highlighter"></button>
         <button type="button" data-tool="arrow" @click="annoSelectTool" class="toolbar-button" title="Pfeil" aria-label="Pfeil" x-icon="chevron-right"></button>
