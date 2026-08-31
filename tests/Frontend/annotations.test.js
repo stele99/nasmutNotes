@@ -280,7 +280,7 @@ test('der Schieberegler legt beim Textwerkzeug die Schriftgröße fest', () => {
   });
 });
 
-test('Marker und Zeilenlinien bleiben unabhängig vom Textregler', () => {
+test('Marker und Maßband bleiben unabhängig vom Textregler', () => {
   withFakeStorage(() => {
     const mixin = imageAnnotatorMixin();
     mixin.$refs = {};
@@ -292,9 +292,55 @@ test('Marker und Zeilenlinien bleiben unabhängig vom Textregler', () => {
     const marker = mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
     assert.equal(marker.r, 40);
 
+    mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'measure' } } });
+    const measure = mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
+    assert.equal(measure.s, 40);
+
+    // Das Werkzeug „Zeilenlinien" gibt es nicht mehr; der Typ bleibt aber
+    // gültig, damit vorhandene Notizen nichts verlieren.
     mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'rules' } } });
-    const rules = mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' });
-    assert.equal(rules.gap, 70);
+    assert.equal(mixin.annoCreateItem.call(mixin, { x: 5, y: 5 }, { pointerType: 'mouse' }).t, 'pen');
+    assert.equal(
+      normalizeAnnotations(annotations([{
+        id: 'rule0001', t: 'rules', c: '#eab308', w: 3, x: 0, y: 0, rw: 400, rh: 200, gap: 32,
+      }])).items[0].t,
+      'rules',
+    );
+  });
+});
+
+test('die Regler sagen an, wofür sie da sind', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {};
+
+    assert.deepEqual([mixin.annoWidthLabel(), mixin.annoWidthShort()], ['Strichstärke', 'Stärke']);
+    mixin.annoSelectTool.call(mixin, { currentTarget: { dataset: { tool: 'text' } } });
+    assert.deepEqual([mixin.annoWidthLabel(), mixin.annoWidthShort()], ['Schriftgröße', 'Größe']);
+
+    assert.equal(mixin.annoOpacityLabel(), '100 %');
+    mixin.annoOpacityInput.call(mixin, { target: { value: '0.35' } });
+    assert.equal(mixin.annoOpacityLabel(), '35 %');
+  });
+});
+
+test('die Palette klappt auf und schließt sich mit der Farbwahl', () => {
+  withFakeStorage(() => {
+    const mixin = imageAnnotatorMixin();
+    mixin.$refs = {};
+
+    assert.equal(mixin.annoColorsOpen, false);
+    mixin.annoToggleColors();
+    assert.equal(mixin.annoColorsOpen, true);
+
+    mixin.annoPickColor.call(mixin, { currentTarget: { dataset: { color: '#16a34a' } } });
+    assert.equal(mixin.annoColor, '#16a34a');
+    assert.equal(mixin.annoColorsOpen, false);
+    assert.equal(mixin.annoColorStyle(), 'background: #16a34a;');
+
+    mixin.annoToggleColors();
+    mixin.annoCloseColors();
+    assert.equal(mixin.annoColorsOpen, false);
   });
 });
 

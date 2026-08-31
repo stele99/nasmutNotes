@@ -26,7 +26,6 @@ const TOOL_DEFAULTS = {
   rect: { width: 6, opacity: 1 },
   ellipse: { width: 6, opacity: 1 },
   text: { width: 44, opacity: 1 },
-  rules: { width: 3, opacity: 1 },
   marker: { width: 6, opacity: 1 },
   mask: { width: 6, opacity: 1 },
   measure: { width: 6, opacity: 1 },
@@ -34,7 +33,6 @@ const TOOL_DEFAULTS = {
 
 /** Feste Größen für Werkzeuge ohne Strichstärke - unabhängig vom Textregler. */
 const MARKER_RADIUS = 40;
-const RULES_LINE_GAP = 70;
 /** Schriftgröße der Maßband-Beschriftung; der Regler trägt dort die Strichstärke. */
 const MEASURE_LABEL_SIZE = 40;
 
@@ -49,7 +47,12 @@ const MIN_STAGE = 160;
 
 /** Typen mit zwei Endpunkten statt einem Rahmen - sie tragen p1/p2-Griffe. */
 const ENDPOINT_TYPES = ['line', 'dim'];
-/** Typen, die als Rahmen aufgezogen werden und einen nw-Griff tragen. */
+/**
+ * Typen, die als Rahmen aufgezogen werden und einen nw-Griff tragen. `rules`
+ * steht hier weiter, obwohl es das Werkzeug „Zeilenlinien" nicht mehr gibt:
+ * In vorhandenen Notizen liegen solche Elemente, und die sollen sich
+ * unverändert auswählen, verschieben und skalieren lassen.
+ */
 const BOX_TYPES = ['rect', 'ellipse', 'mask', 'rules'];
 
 /** Verschiebung je Pfeiltaste in Einheiten des Annotationsraums. */
@@ -151,6 +154,7 @@ export function imageAnnotatorMixin() {
     annoLengthOpen: false,
     annoLengthDraft: '',
     annoLengthEditId: '',
+    annoColorsOpen: false,
     annoHistory: [],
     annoFuture: [],
     annoDirty: false,
@@ -260,6 +264,7 @@ export function imageAnnotatorMixin() {
       this.annoFuture = [];
       this.annoDirty = false;
       this.annoCancelLength();
+      this.annoColorsOpen = false;
       this.annoError = '';
       this.annoNotice = '';
       this.annoOpen = true;
@@ -360,8 +365,22 @@ export function imageAnnotatorMixin() {
         return;
       }
       this.annoColor = color;
+      this.annoColorsOpen = false;
       this.annoApplyToSelection('c', color);
       this.annoSyncToolbar();
+    },
+
+    annoToggleColors() {
+      this.annoColorsOpen = !this.annoColorsOpen;
+    },
+
+    annoCloseColors() {
+      this.annoColorsOpen = false;
+    },
+
+    /** Der Knopf in der Leiste trägt die aktuelle Farbe als Füllung. */
+    annoColorStyle() {
+      return `background: ${this.annoColor};`;
     },
 
     annoColorInput(event) {
@@ -385,6 +404,15 @@ export function imageAnnotatorMixin() {
     /** Der Regler bedeutet je Werkzeug etwas anderes - für die Bildschirmleser. */
     annoWidthLabel() {
       return this.annoTool === 'text' ? 'Schriftgröße' : 'Strichstärke';
+    },
+
+    /** Dasselbe kurz genug, um in der Leiste neben dem Regler zu stehen. */
+    annoWidthShort() {
+      return this.annoTool === 'text' ? 'Größe' : 'Stärke';
+    },
+
+    annoOpacityLabel() {
+      return `${Math.round(this.annoOpacity * 100)} %`;
     },
 
     annoOpacityInput(event) {
@@ -652,8 +680,6 @@ export function imageAnnotatorMixin() {
           return { ...base, t: 'rect', w: width, x: point.x, y: point.y, rw: 1, rh: 1, f: null };
         case 'ellipse':
           return { ...base, t: 'ellipse', w: width, x: point.x, y: point.y, rw: 1, rh: 1, f: null };
-        case 'rules':
-          return { ...base, t: 'rules', w: width, x: point.x, y: point.y, rw: 1, rh: 1, gap: RULES_LINE_GAP };
         case 'mask':
           return { ...base, t: 'mask', o: 1, x: point.x, y: point.y, rw: 1, rh: 1 };
         case 'measure':

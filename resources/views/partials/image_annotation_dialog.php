@@ -19,31 +19,52 @@
         </div>
     </div>
 
-    <div x-ref="annoToolbar" class="editor-toolbar anno-toolbar flex flex-wrap items-center gap-1 border-b px-4 py-2"
+    <div x-ref="annoToolbar" class="editor-toolbar flex flex-wrap items-center gap-1 border-b px-4 py-2"
          style="border-color: var(--color-border); background: var(--color-bg);">
         <button type="button" data-tool="select" @click="annoSelectTool" class="toolbar-button" title="Auswählen" aria-label="Auswählen" x-icon="mouse-pointer-2"></button>
         <button type="button" data-tool="pen" @click="annoSelectTool" class="toolbar-button" title="Freihand" aria-label="Freihand" x-icon="pencil"></button>
         <button type="button" data-tool="highlighter" @click="annoSelectTool" class="toolbar-button" title="Marker" aria-label="Marker" x-icon="highlighter"></button>
-        <button type="button" data-tool="arrow" @click="annoSelectTool" class="toolbar-button" title="Pfeil" aria-label="Pfeil" x-icon="chevron-right"></button>
+        <button type="button" data-tool="arrow" @click="annoSelectTool" class="toolbar-button" title="Pfeil" aria-label="Pfeil" x-icon="arrow-up-right"></button>
         <button type="button" data-tool="line" @click="annoSelectTool" class="toolbar-button" title="Linie" aria-label="Linie" x-icon="minus"></button>
         <button type="button" data-tool="measure" @click="annoSelectTool" class="toolbar-button" title="Maßband" aria-label="Maßband" x-icon="ruler"></button>
         <button type="button" data-tool="rect" @click="annoSelectTool" class="toolbar-button" title="Rechteck" aria-label="Rechteck" x-icon="square"></button>
         <button type="button" data-tool="ellipse" @click="annoSelectTool" class="toolbar-button" title="Ellipse" aria-label="Ellipse" x-icon="circle"></button>
         <button type="button" data-tool="text" @click="annoSelectTool" class="toolbar-button" title="Text" aria-label="Text" x-icon="type"></button>
-        <button type="button" data-tool="rules" @click="annoSelectTool" class="toolbar-button" title="Zeilenlinien" aria-label="Zeilenlinien" x-icon="list"></button>
         <button type="button" data-tool="marker" @click="annoSelectTool" class="toolbar-button" title="Nummer" aria-label="Nummer" x-icon="circle-dot"></button>
         <button type="button" data-tool="mask" @click="annoSelectTool" class="toolbar-button" title="Abdecken" aria-label="Abdecken" x-icon="eye-off"></button>
         <span class="toolbar-divider"></span>
-        <?php foreach (['#e11d48', '#f97316', '#eab308', '#16a34a', '#2563eb', '#7c3aed', '#111827', '#ffffff'] as $color): ?>
-            <button type="button" data-color="<?= $color ?>" @click="annoPickColor" class="anno-swatch"
-                    style="background: <?= $color ?>;" title="Farbe <?= $color ?>" aria-label="Farbe <?= $color ?>"></button>
-        <?php endforeach; ?>
-        <input type="color" :value="annoColor" @input="annoColorInput" class="anno-swatch anno-swatch-picker" aria-label="Eigene Farbe">
+        <?php /* Die Palette kostet ausgeklappt neun Plätze in einer Leiste, die auf dem
+                 Handy ohnehin umbricht. Sichtbar bleibt deshalb nur die aktuelle Farbe;
+                 sie öffnet die Palette als Überlagerung, die nichts umbricht. */ ?>
+        <div class="anno-colors" @click.outside="annoCloseColors">
+            <button type="button" @click="annoToggleColors" class="anno-swatch anno-swatch-current"
+                    :style="annoColorStyle()" :aria-expanded="annoColorsOpen"
+                    title="Farbe wählen" aria-label="Farbe wählen"></button>
+            <div x-show="annoColorsOpen" x-cloak class="anno-color-pop">
+                <?php foreach (['#e11d48', '#f97316', '#eab308', '#16a34a', '#2563eb', '#7c3aed', '#111827', '#ffffff'] as $color): ?>
+                    <button type="button" data-color="<?= $color ?>" @click="annoPickColor" class="anno-swatch"
+                            style="background: <?= $color ?>;" title="Farbe <?= $color ?>" aria-label="Farbe <?= $color ?>"></button>
+                <?php endforeach; ?>
+                <input type="color" :value="annoColor" @input="annoColorInput" class="anno-swatch anno-swatch-picker" aria-label="Eigene Farbe">
+            </div>
+        </div>
         <span class="toolbar-divider"></span>
-        <label class="sr-only" for="anno-width" x-text="annoWidthLabel()">Strichstärke</label>
-        <input id="anno-width" type="range" min="1" max="80" step="1" :value="annoWidth" @input="annoWidthInput" class="w-24">
-        <label class="sr-only" for="anno-opacity">Deckkraft</label>
-        <input id="anno-opacity" type="range" min="0.1" max="1" step="0.05" :value="annoOpacity" @input="annoOpacityInput" class="w-20">
+        <?php /* Beide Regler sagen an, wofür sie da sind, und zeigen ihren Wert: Ohne
+                 Beschriftung ist zwei nebeneinanderliegenden Reglern nicht anzusehen,
+                 welcher die Stärke und welcher die Deckkraft stellt. Der Kurztext steht
+                 sichtbar daneben, der ausgeschriebene Name im aria-label und im Tooltip. */ ?>
+        <span class="anno-slider" :title="annoWidthLabel()">
+            <label for="anno-width" x-text="annoWidthShort()">Stärke</label>
+            <input id="anno-width" type="range" min="1" max="80" step="1" :value="annoWidth"
+                   @input="annoWidthInput" :aria-label="annoWidthLabel()" class="w-16">
+            <span class="anno-slider-value" x-text="annoWidth">6</span>
+        </span>
+        <span class="anno-slider" title="Deckkraft">
+            <label for="anno-opacity">Deckkraft</label>
+            <input id="anno-opacity" type="range" min="0.1" max="1" step="0.05" :value="annoOpacity"
+                   @input="annoOpacityInput" aria-label="Deckkraft" class="w-16">
+            <span class="anno-slider-value" x-text="annoOpacityLabel()">100 %</span>
+        </span>
         <span class="toolbar-divider"></span>
         <button type="button" @click="annoUndoStep" class="toolbar-button" title="Rückgängig" aria-label="Rückgängig" x-icon="undo"></button>
         <button type="button" @click="annoRedoStep" class="toolbar-button" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>

@@ -249,7 +249,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 |---|---|---|
 | FR-ANNO-01 | Bilder in Notizen können mit Annotationen versehen werden. Die Bilddatei wird dabei nicht verändert; die Annotationen liegen als Overlay über dem Bild. | M |
 | FR-ANNO-02 | Annotationen sind jederzeit erneut bearbeitbar: verschieben, skalieren, Eigenschaften ändern, löschen. | M |
-| FR-ANNO-03 | Werkzeuge mindestens: Freihand, Marker, Linie, Pfeil, Maßband, Rechteck, Ellipse, Textkasten, Zeilenlinien, nummerierter Marker, Abdeckung. | M |
+| FR-ANNO-03 | Werkzeuge mindestens: Freihand, Marker, Linie, Pfeil, Maßband, Rechteck, Ellipse, Textkasten, nummerierter Marker, Abdeckung. | M |
 | FR-ANNO-04 | Annotationen werden als Attribut des Bildknotens im ProseMirror-JSON gespeichert; keine eigene Tabelle, keine eigene Datei. | M |
 | FR-ANNO-05 | Serverseitige Allowlist-Validierung mit Grenzen für Elementzahl, Punktzahl, Textlänge und JSON-Größe je Bild und je Dokument. | M |
 | FR-ANNO-06 | Annotationen skalieren verlustfrei mit der Anzeigegröße und bleiben nach serverseitiger Bildkompression positionsgenau. | M |

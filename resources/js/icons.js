@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   BetweenHorizontalStart,
   BetweenVerticalStart,
   BookOpen,
@@ -91,6 +92,7 @@ import {
 } from 'lucide';
 
 const icons = {
+  'arrow-up-right': ArrowUpRight,
   bold: Bold,
   'book-open': BookOpen,
   briefcase: BriefcaseBusiness,

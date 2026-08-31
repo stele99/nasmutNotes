@@ -1521,6 +1521,52 @@ button:disabled,
   padding: 0;
 }
 
+/* Aufklappbare Palette: In der Leiste steht nur die aktuelle Farbe, die acht
+   Vorgaben und der freie Wähler liegen darüber. Die Überlagerung ist absolut
+   positioniert, damit das Aufklappen die umbrechende Leiste nicht umbaut, und
+   dreispaltig, damit sie auch am rechten Rand eines Handys noch hineinpasst. */
+.anno-colors {
+  display: inline-flex;
+  position: relative;
+}
+
+.anno-swatch-current {
+  border-color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.anno-color-pop {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, 22px);
+  left: 0;
+  padding: 8px;
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 5;
+}
+
+/* Beide Regler tragen ihren Kurznamen und ihren Wert - nebeneinander sieht man
+   ihnen sonst nicht an, welcher wofür ist. */
+.anno-slider {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: 0.6875rem;
+  gap: 0.25rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.anno-slider-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5em;
+}
+
 .image-upload-placeholder {
   align-items: center;
   background: var(--color-bg-subtle);
@@ -1911,15 +1957,6 @@ button:disabled,
     font-size: max(1rem, 1em);
   }
 
-  /* Die Werkzeugleiste des Annotationseditors bricht auf Handybreite auf vier
-     bis fünf Zeilen um. Ohne Deckel nimmt sie dem Sichtbereich darunter - einem
-     flex-1-Element mit overflow-auto, das bis auf null schrumpfen darf - die
-     gesamte Höhe, und das Bild wäre nicht mehr zu sehen. Die überzähligen
-     Zeilen scrollen stattdessen innerhalb der Leiste. */
-  .anno-toolbar {
-    max-height: 40vh;
-    overflow-y: auto;
-  }
 }
 
 /* Ab hier wächst der Öffnet-Notizbücher-Schalter auf der Workspace-Startseite

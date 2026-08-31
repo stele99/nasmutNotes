@@ -145,7 +145,7 @@ Gemeinsame Felder jedes Elements: `id` (8 Zeichen `[a-z0-9]`), `t` (Typ),
 | `rect` | Rechteck | `w`, `x`,`y`,`rw`,`rh`, `f` Füllfarbe oder `null` |
 | `ellipse` | Ellipse | `w`, `x`,`y`,`rw`,`rh`, `f` |
 | `text` | Textkasten | `x`,`y` (linke obere Ecke), `s` Schriftgröße, `f` Hintergrundfarbe oder `null`, `bw`,`bh` gemessene Textmaße, `text` |
-| `rules` | Zeilenlinien | `w`, `x`,`y`,`rw`,`rh`, `gap` Zeilenabstand |
+| `rules` | Zeilenlinien (nur noch Bestand, siehe Abschnitt 16.1) | `w`, `x`,`y`,`rw`,`rh`, `gap` Zeilenabstand |
 | `marker` | nummerierter Kreis | `x`,`y` Mittelpunkt, `r` Radius, `n` Nummer 1–99 |
 | `mask` | deckende Abdeckung | `x`,`y`,`rw`,`rh` |
 | `dim` | Maßband (Abschnitt 14) | `w`, `x1`,`y1`,`x2`,`y2`, `s` Schriftgröße der Länge, `f` Hintergrundfarbe oder `null`, `bw`,`bh` gemessene Textmaße, `text` Länge (freiwillig, einzeilig, höchstens 40 Zeichen) |
@@ -3653,3 +3653,89 @@ lesen.
 `dblclick` - verlässlich ist die Geste mit dem Finger trotzdem nicht. Ein
 sichtbarer Knopf „Bearbeiten" in der Werkzeugleiste, aktiv sobald ein Text oder
 ein Maßband ausgewählt ist, wäre die eindeutigere Bedienung.
+
+---
+
+## 16. Aufräumen der Werkzeugleiste
+
+| Feld | Wert |
+|---|---|
+| Planungsstand | umgesetzt |
+| Datum | 2026-08-31 |
+| Bezug | FR-ANNO-03/09 |
+
+### 16.1 Werkzeug „Zeilenlinien" entfernt — Typ `rules` bleibt
+
+Der Knopf ist aus der Leiste verschwunden, ebenso `TOOL_DEFAULTS.rules`,
+`RULES_LINE_GAP` und der Zweig in `annoCreateItem()`. Neue Zeilenlinien lassen
+sich also nicht mehr anlegen.
+
+**Der Typ `rules` bleibt überall sonst unangetastet** — in `schema.js`, im
+`ImageAnnotationValidator`, in beiden Renderern und in `BOX_TYPES`. Der Grund
+ist nicht Bequemlichkeit, sondern Datenverlust: In vorhandenen Notizen liegen
+solche Elemente. Nähme `normalizeAnnotations()` sie nicht mehr an, verschwänden
+sie beim nächsten Öffnen wortlos aus dem Dokument; lehnte der Validator sie ab,
+ließe sich die Notiz überhaupt nicht mehr speichern. Vorhandene Zeilenlinien
+werden weiterhin gezeichnet und lassen sich auswählen, verschieben, skalieren
+und löschen — nur eben nicht mehr neu erzeugen.
+
+### 16.2 Pfeil bekommt ein Pfeilsymbol
+
+Der Knopf trug `chevron-right`, also das Zeichen, das sonst „weiter" oder
+„aufklappen" bedeutet. Jetzt trägt er `arrow-up-right` — ein diagonaler Pfeil
+mit Spitze, der aussieht wie das, was das Werkzeug zeichnet. `chevron-right`
+bleibt in `icons.js`, es wird an anderen Stellen der Anwendung benutzt.
+
+### 16.3 Die Regler sagen an, wofür sie da sind
+
+Zwei nackte Schieberegler nebeneinander verraten nicht, welcher die Stärke und
+welcher die Deckkraft stellt; die Beschriftung lag bisher ausschließlich in
+einem `sr-only`-Label. Jeder Regler steht jetzt in einem `<span class="anno-slider">`
+mit Kurztext davor und Wert dahinter:
+
+| | sichtbar | `aria-label` und Tooltip |
+|---|---|---|
+| Stärke/Größe | „Stärke" bzw. „Größe" + Zahl | `annoWidthLabel()`: „Strichstärke" bzw. „Schriftgröße" |
+| Deckkraft | „Deckkraft" + Prozent | „Deckkraft" |
+
+Der Kurztext kommt aus `annoWidthShort()`, der Prozentwert aus
+`annoOpacityLabel()`. Die Hülle ist bewusst ein `<span>` und nur der Kurztext
+ein `<label for>`: Ein umschließendes `<label>` leitet jeden Klick darin - auch
+den auf die Wertanzeige - an den Regler weiter. Der ausgeschriebene Name steht im `aria-label` des
+`<input>` und schlägt dort den sichtbaren Kurztext — Bildschirmleser hören
+weiterhin „Strichstärke", nicht „Stärke".
+
+### 16.4 Farbwähler klappt auf
+
+Acht Farbfelder plus freier Wähler kosteten neun Plätze in einer Leiste, die
+auf dem Handy ohnehin umbricht. Sichtbar bleibt jetzt ein einzelner Knopf in
+der aktuellen Farbe (`annoColorStyle()`); er öffnet die Palette als
+**absolut positionierte** Überlagerung (`.anno-color-pop`, dreispaltiges Raster),
+die beim Aufklappen nichts umbaut und auch am rechten Rand eines Handys noch
+hineinpasst. Geschlossen wird beim Klick daneben (`@click.outside` am
+umschließenden `.anno-colors`, damit der eigene Knopf nicht als „außerhalb"
+zählt) und bei jeder Farbwahl.
+
+`annoSyncToolbar()` bleibt unverändert: Die Farbknöpfe liegen weiterhin
+innerhalb von `$refs.annoToolbar`, nur eine Ebene tiefer.
+
+### 16.5 Der Höhendeckel der Werkzeugleiste ist wieder weg
+
+Abschnitt 15.1 hatte `.anno-toolbar { max-height: 40vh; overflow-y: auto }` für
+Handybreite eingeführt. Das ist mit der aufklappbaren Palette nicht vereinbar —
+ein Scroll-Container schneidet die Überlagerung ab. Der Deckel entfällt wieder;
+tragfähig ist die Sache trotzdem, weil die Leiste durch dieses Aufräumen von
+vier bis fünf auf etwa drei Zeilen geschrumpft ist und die vier Absicherungen
+aus 15.1 (Untergrenze, CSS-Notgröße, totales `annoFitStage()`,
+`ResizeObserver`) unberührt bleiben. Selbst eine übermäßig hohe Leiste lässt
+das Bild jetzt höchstens klein, nie unsichtbar werden.
+
+### 16.6 Dateiübersicht
+
+| Datei | Änderung |
+|---|---|
+| `resources/views/partials/image_annotation_dialog.php` | Knopf „Zeilenlinien" entfernt, Pfeilsymbol getauscht, Palette als `.anno-colors` mit Überlagerung, beide Regler als `.anno-slider` mit Kurztext und Wert |
+| `resources/js/editor/annotations/annotator.js` | `rules` aus `TOOL_DEFAULTS`, `RULES_LINE_GAP` und `annoCreateItem()` entfernt; `annoColorsOpen`, `annoToggleColors()`, `annoCloseColors()`, `annoColorStyle()`, `annoWidthShort()`, `annoOpacityLabel()` |
+| `resources/js/icons.js` | Symbol `arrow-up-right` |
+| `resources/css/app.css` | `.anno-colors`, `.anno-swatch-current`, `.anno-color-pop`, `.anno-slider`, `.anno-slider-value`; Höhendeckel der Leiste entfernt |
+| `tests/Frontend/annotations.test.js` | Test auf Zeilenlinien umgestellt (Werkzeug weg, Typ bleibt), zwei neue Tests für Reglerbeschriftung und Palette |
