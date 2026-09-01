@@ -18,6 +18,8 @@ final class PageService
 {
     private const TYPES = ['note', 'task', 'log'];
     private const VIEWS = ['board', 'list'];
+    /** Kanonische Form einer UUID, wie sie crypto.randomUUID() erzeugt. */
+    private const CLIENT_UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
     public function __construct(
         private readonly PageRepository $pages,
@@ -66,6 +68,84 @@ final class PageService
         ?int $notebookId = null,
         ?array $location = null,
     ): array {
+        return $this->insertWithClientUuid($user, $type, $title, $icon, $notebookId, $location, null);
+    }
+
+    /**
+     * Anlegen einer offline erzeugten Seite. Die clientseitige UUID macht den
+     * Vorgang idempotent: Ging die Antwort der ersten Übertragung verloren und
+     * wiederholt der Outbox-Sync, liefert diese Methode die bereits angelegte
+     * Seite zurück, statt ein Duplikat anzulegen.
+     *
+     * @param array<string, mixed>|null $location Rohdaten des Browsers; ungeprüft übergeben.
+     * @return array{page: array<string, mixed>, created: bool}
+     */
+    public function createOrReplay(
+        User $user,
+        string $type,
+        string $title,
+        ?string $icon,
+        ?int $notebookId = null,
+        ?array $location = null,
+        ?string $clientUuid = null,
+    ): array {
+        if ($clientUuid !== null && preg_match(self::CLIENT_UUID_PATTERN, $clientUuid) !== 1) {
+            throw new ValidationException('Ungültige clientseitige Kennung.');
+        }
+
+        if ($clientUuid !== null) {
+            $workspaceId = $this->resolveCreateWorkspaceId($user, $notebookId);
+            $existing = $this->pages->findByClientUuid($workspaceId, $clientUuid);
+            if ($existing !== null) {
+                return ['page' => $existing, 'created' => false];
+            }
+        }
+
+        try {
+            $page = $this->insertWithClientUuid(
+                $user,
+                $type,
+                $title,
+                $icon,
+                $notebookId,
+                $location,
+                $clientUuid,
+            );
+        } catch (\PDOException $e) {
+            // Zwei parallele Übertragungen derselben Kennung: Der Unique-Index
+            // entscheidet, und die bereits stehende Seite gewinnt. Gehört die
+            // Kennung dagegen zu einer Seite außerhalb des Ziel-Workspaces,
+            // wird sie weder verraten noch übernommen.
+            if ($e->getCode() !== '23000' || $clientUuid === null) {
+                throw $e;
+            }
+            $existing = $this->pages->findByClientUuid(
+                $this->resolveCreateWorkspaceId($user, $notebookId),
+                $clientUuid,
+            );
+            if ($existing === null) {
+                throw new ValidationException('Ungültige clientseitige Kennung.');
+            }
+
+            return ['page' => $existing, 'created' => false];
+        }
+
+        return ['page' => $page, 'created' => true];
+    }
+
+    /**
+     * @param array<string, mixed>|null $location
+     * @return array<string, mixed>
+     */
+    private function insertWithClientUuid(
+        User $user,
+        string $type,
+        string $title,
+        ?string $icon,
+        ?int $notebookId,
+        ?array $location,
+        ?string $clientUuid,
+    ): array {
         if (!in_array($type, self::TYPES, true)) {
             throw new ValidationException('Ungültiger Seitentyp.');
         }
@@ -73,6 +153,25 @@ final class PageService
         $title = $this->validateTitle($title);
         $icon = $this->validateIcon($icon);
 
+        $workspaceId = $this->resolveCreateWorkspaceId($user, $notebookId);
+
+        return $this->pages->create(
+            $workspaceId,
+            $type,
+            $title,
+            $icon,
+            $notebookId,
+            $this->withAddress(self::validatedLocation($location)),
+            $clientUuid,
+        );
+    }
+
+    /**
+     * Workspace, in dem eine neue Seite entsteht: der eigene - oder, bei einem
+     * geteilten Notizbuch als Ziel, der des Notizbuch-Eigentümers.
+     */
+    private function resolveCreateWorkspaceId(User $user, ?int $notebookId): int
+    {
         $workspaceId = $this->workspaceIdFor($user);
         $sharedNotebook = $notebookId !== null ? $this->sharedNotebookFor($user, $notebookId) : null;
         if ($sharedNotebook !== null) {
@@ -83,14 +182,7 @@ final class PageService
             $this->validateNotebookId($notebookId, $workspaceId);
         }
 
-        return $this->pages->create(
-            $workspaceId,
-            $type,
-            $title,
-            $icon,
-            $notebookId,
-            $this->withAddress(self::validatedLocation($location)),
-        );
+        return $workspaceId;
     }
 
     /**

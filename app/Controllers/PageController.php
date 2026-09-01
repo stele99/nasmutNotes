@@ -87,16 +87,27 @@ final class PageController
             }
             $notebookId = (int) $body['notebook_id'];
         }
-        $page = $this->pages->create(
+        // Die optionale clientseitige Kennung gehört zu einer offline
+        // angelegten Seite; ein Wiederholungsversuch erhält die bereits
+        // angelegte Seite als Antwort (200) statt eines Duplikats (201).
+        $clientUuid = null;
+        if (array_key_exists('client_uuid', $body) && $body['client_uuid'] !== null) {
+            if (!is_string($body['client_uuid'])) {
+                throw new ValidationException('Ungültige clientseitige Kennung.');
+            }
+            $clientUuid = $body['client_uuid'];
+        }
+        $result = $this->pages->createOrReplay(
             CurrentUser::require($request),
             (string) ($body['type'] ?? ''),
             (string) ($body['title'] ?? ''),
             isset($body['icon']) ? (string) $body['icon'] : null,
             $notebookId,
             is_array($body['location'] ?? null) ? $body['location'] : null,
+            $clientUuid,
         );
 
-        return JsonResponse::json($response, $this->serialize($page), 201);
+        return JsonResponse::json($response, $this->serialize($result['page']), $result['created'] ? 201 : 200);
     }
 
     public function moveMany(Request $request, Response $response): Response

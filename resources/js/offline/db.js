@@ -195,6 +195,187 @@ export async function deletePageData(pageId) {
   await done;
 }
 
+/**
+ * Negative Kennung für eine offline angelegte Seite (FR-OFFLINE). Server-
+ * AUTOINCREMENT-IDs sind immer positiv, Temporär-IDs immer negativ - eine
+ * Kollision ist ausgeschlossen, und `pageId < 0` kennzeichnet überall die
+ * noch ungesyncte Seite. Lesen und Schreiben des Zählers laufen in einer
+ * Transaktion, die der Browser auch gegen andere Tabs serialisiert.
+ *
+ * @returns {Promise<number>}
+ */
+export async function nextLocalPageId() {
+  const database = await openDb();
+  const tx = database.transaction('meta', 'readwrite');
+  const done = txDone(tx);
+  const meta = tx.objectStore('meta');
+  const current = await req(meta.get('local_page_seq'));
+  const next = Number(current?.value ?? 0) - 1;
+  meta.put({ key: 'local_page_seq', value: next });
+  await done;
+
+  return next;
+}
+
+/**
+ * Legt eine offline erzeugte Seite atomar an: Metadaten, leerer Notizinhalt
+ * und der Create-Eintrag der Outbox entstehen in einer Transaktion - eine
+ * halbfertige lokale Seite kann es nicht geben.
+ *
+ * @param {Record<string, unknown>} pageRow
+ * @param {Record<string, unknown>} noteRow
+ * @param {Record<string, unknown>} createPayload
+ * @returns {Promise<number>} Kennung des Outbox-Eintrags
+ */
+export async function createLocalPage(pageRow, noteRow, createPayload) {
+  const database = await openDb();
+  const tx = database.transaction(['pages', 'note_contents', 'outbox'], 'readwrite');
+  const done = txDone(tx);
+  const localId = Number(pageRow.id);
+  tx.objectStore('pages').put({ ...pageRow, id: localId });
+  tx.objectStore('note_contents').put({ ...noteRow, page_id: localId });
+  const outboxId = await req(tx.objectStore('outbox').add({
+    type: 'page.create',
+    page_id: localId,
+    payload: createPayload,
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    retries: 0,
+    revision: 1,
+  }));
+  await done;
+
+  return Number(outboxId);
+}
+
+/**
+ * Ändert den Titel einer noch ungesyncten lokalen Seite. Der Create-Eintrag
+ * der Outbox erhält dieselbe Änderung, damit der Server bei der ersten
+ * Übertragung den endgültigen Titel anlegt - ein separater Patch-Typ ist dafür
+ * nicht nötig, solange die Seite noch nie übertragen wurde.
+ *
+ * @param {number} pageId
+ * @param {string} title
+ */
+export async function updateLocalPageTitle(pageId, title) {
+  const database = await openDb();
+  const tx = database.transaction(['pages', 'outbox'], 'readwrite');
+  const done = txDone(tx);
+  const localId = Number(pageId);
+  const pages = tx.objectStore('pages');
+  const page = await req(pages.get(localId));
+  const outbox = tx.objectStore('outbox');
+  const entries = await req(outbox.getAll());
+  const create = entries.find(
+    (item) => item.type === 'page.create' && Number(item.page_id) === localId,
+  );
+  if (!page || !create) {
+    tx.abort();
+    try {
+      await done;
+    } catch {
+      /* expected abort */
+    }
+    throw new Error('Die Seite wurde bereits synchronisiert.');
+  }
+  const now = new Date().toISOString();
+  pages.put({ ...page, title, updated_at: now });
+  outbox.put({ ...create, payload: { ...create.payload, title }, updated_at: now });
+  await done;
+}
+
+/**
+ * Überführt eine offline angelegte Seite auf ihre Server-Kennung, nachdem der
+ * Create-Eintrag übertragen wurde. Metadaten, Inhalt, Bild-Entwürfe und die
+ * übrige Outbox wechseln in einer Transaktion auf die echte ID; die negative
+ * Temporär-Kennung verschwindet damit vollständig.
+ *
+ * @param {number} localId
+ * @param {Record<string, unknown>} serverPage
+ * @param {{ content: Record<string, unknown>, version: number, updated_at: ?string, last_editor_name: ?string }} serverNote
+ */
+export async function remapLocalPage(localId, serverPage, serverNote) {
+  const database = await openDb();
+  const names = ['pages', 'note_contents', 'outbox', 'attachment_drafts', 'documents', 'page_attachments'];
+  const tx = database.transaction(names, 'readwrite');
+  const done = txDone(tx);
+  const tempId = Number(localId);
+  const serverId = Number(serverPage.id);
+
+  const pages = tx.objectStore('pages');
+  pages.delete(tempId);
+  pages.put({ ...serverPage, id: serverId, cached_at: new Date().toISOString() });
+
+  const outbox = tx.objectStore('outbox');
+  const entries = await req(outbox.getAll());
+  const createEntry = entries.find(
+    (item) => item.type === 'page.create' && Number(item.page_id) === tempId,
+  );
+  if (createEntry) {
+    // Statt zu löschen bleibt ein abgeschlossener Eintrag stehen: Er hält die
+    // Zuordnung Temporär-Kennung -> Server-Kennung bereit, falls ein Editor
+    // genau während des Remappings geladen wurde, und wird zusammen mit der
+    // Seite aufgeräumt (deletePageData).
+    outbox.put({
+      ...createEntry,
+      page_id: serverId,
+      payload: { ...createEntry.payload, local_page_id: tempId, server_page_id: serverId },
+      status: 'done',
+      completed_at: new Date().toISOString(),
+    });
+  }
+  const noteEntries = entries.filter(
+    (item) => item.type === 'note.putContent' && Number(item.page_id) === tempId,
+  );
+  for (const entry of noteEntries) {
+    outbox.put({
+      ...entry,
+      page_id: serverId,
+      payload: { ...entry.payload, version: Number(serverNote.version) },
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  const notes = tx.objectStore('note_contents');
+  const localNote = await req(notes.get(tempId));
+  notes.delete(tempId);
+  if (localNote && noteEntries.length > 0) {
+    // Noch nicht übertragene lokale Inhalte behalten ihren Vorrang; nur die
+    // Basisversion wird auf den Serverstand - die frisch angelegte, leere
+    // Notiz - umgestellt.
+    notes.put({ ...localNote, page_id: serverId, version: Number(serverNote.version) });
+  } else {
+    notes.put({
+      page_id: serverId,
+      content: serverNote.content,
+      version: Number(serverNote.version),
+      updated_at: serverNote.updated_at || null,
+      last_editor_name: serverNote.last_editor_name || null,
+      encryption_state: 'plain',
+      dirty: false,
+      cached_at: new Date().toISOString(),
+    });
+  }
+
+  const drafts = tx.objectStore('attachment_drafts');
+  const pageDrafts = await req(drafts.index('by_page').getAll(tempId));
+  for (const draft of pageDrafts) {
+    drafts.put({ ...draft, page_id: serverId });
+  }
+
+  tx.objectStore('documents').delete(`/app/page/${tempId}`);
+
+  const files = tx.objectStore('page_attachments');
+  const fileRow = await req(files.get(tempId));
+  files.delete(tempId);
+  if (fileRow) {
+    files.put({ ...fileRow, page_id: serverId });
+  }
+
+  await done;
+}
+
 /** @param {Record<string, unknown>[]} notebooks */
 export async function putNotebooks(notebooks) {
   if (!Array.isArray(notebooks)) {
@@ -442,6 +623,20 @@ export async function saveNoteAndUpsertOutbox(pageId, contentRow, payload) {
   const matches = all
     .filter((item) => item.type === 'note.putContent' && Number(item.page_id) === Number(pageId))
     .sort((a, b) => Number(a.id) - Number(b.id));
+  // Schreibzugriff auf eine Temporär-Kennung: Der Create-Eintrag muss noch
+  // stehen. Ist er weg, hat das Remapping auf die Server-Kennung gewonnen -
+  // dieser Speichervorgang müsste sonst einen verwaisten Eintrag anlegen, der
+  // beim Sync auf eine nicht existierende Seite liefe.
+  if (Number(pageId) < 0
+    && !all.some((item) => item.type === 'page.create' && Number(item.page_id) === Number(pageId))) {
+    tx.abort();
+    try {
+      await done;
+    } catch {
+      /* expected abort */
+    }
+    throw new Error('Die Seite wurde gerade synchronisiert. Bitte erneut speichern.');
+  }
   const operation = payload.operation || 'save';
   const expectedState = payload.expected_encryption_state || 'plain';
   if (matches.some((item) => (item.payload?.operation || 'save') !== operation
@@ -782,6 +977,44 @@ export async function getNoteOutboxForPage(pageId) {
   return unresolved.find(
     (item) => item.type === 'note.putContent' && Number(item.page_id) === Number(pageId),
   ) ?? null;
+}
+
+/**
+ * Steht der Create-Eintrag einer lokal angelegten Seite noch an - wurde sie
+ * also noch nicht an den Server übertragen? Nach dem Remapping existiert die
+ * Temporär-Kennung nicht mehr; neue Entwürfe für sie gehören abgelehnt.
+ *
+ * @param {number} pageId
+ * @returns {Promise<boolean>}
+ */
+export async function localCreatePending(pageId) {
+  const s = await store('outbox');
+  const all = await req(s.getAll());
+
+  return all.some(
+    (item) => item.type === 'page.create'
+      && Number(item.page_id) === Number(pageId)
+      && item.status !== 'done',
+  );
+}
+
+/**
+ * Server-Kennung einer inzwischen übertragenen, lokal angelegten Seite - oder
+ * null, wenn die Temporär-Kennung noch ansteht oder unbekannt ist.
+ *
+ * @param {number} localId
+ * @returns {Promise<number|null>}
+ */
+export async function resolveRemappedPage(localId) {
+  const s = await store('outbox');
+  const all = await req(s.getAll());
+  const tombstone = all.find(
+    (item) => item.type === 'page.create'
+      && item.status === 'done'
+      && Number(item.payload?.local_page_id) === Number(localId),
+  );
+
+  return tombstone ? Number(tombstone.payload.server_page_id) : null;
 }
 
 /** @param {number} id */

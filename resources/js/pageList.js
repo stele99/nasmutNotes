@@ -10,12 +10,14 @@ import {
   cachePageList,
   clearOfflineData,
   countUnsyncedChanges,
+  createPageOffline,
   getCachedPage,
   getCachedPages,
   prefetchSelected,
   readCachedDocument,
   removeCachedPage,
   syncOutbox,
+  updateLocalPageTitle,
 } from './offline/runtime.js';
 
 function escapeHtml(value) {
@@ -401,7 +403,34 @@ export function pageList() {
 
     async createPage(type) {
       if (!navigator.onLine) {
-        window.alert('Neue Seiten können nur online angelegt werden.');
+        // Offline sind ausschließlich Notizen möglich: Task-Seiten und
+        // Logbücher brauchen Server-Strukturen (Board bzw. Spalten), die
+        // lokal nicht entstehen können. Die Notiz selbst bekommt eine
+        // negative Temporär-Kennung und wird beim nächsten Sync angelegt.
+        if (type !== 'note') {
+          window.alert('Offline können nur Notizen angelegt werden. Task-Seiten und Logbücher brauchen eine Verbindung.');
+          return;
+        }
+        if (this.activeCollection === 'shared' || this.activeCollection === 'favorites' || this.activeCollection === 'trash') {
+          return;
+        }
+        const location = await captureLocationOnCreate();
+        let page;
+        try {
+          page = await createPageOffline({
+            type: 'note',
+            title: 'Neue Notiz',
+            notebookId: this.activeCollection === 'notebook' ? this.activeNotebookId : null,
+            location,
+          });
+        } catch (error) {
+          window.alert(error.message || 'Die Notiz konnte offline nicht angelegt werden.');
+          return;
+        }
+        this.notifyPagesChanged();
+        // Der Vorschlagstitel soll auf der neuen Seite gleich überschreibbar sein.
+        markNewPageForTitleEdit(page.id);
+        await this.navigate(page);
         return;
       }
       const title = type === 'note' ? 'Neue Notiz' : 'Neue Task-Seite';
@@ -471,7 +500,28 @@ export function pageList() {
 
     async rename(page) {
       if (!navigator.onLine) {
-        window.alert('Umbenennen ist offline nicht möglich.');
+        // Eine offline angelegte, noch ungesyncte Notiz (negative Kennung)
+        // trägt ihren Titel nur im Create-Eintrag der Outbox - der lässt sich
+        // offline ändern, der Server legt dann gleich den endgültigen Titel an.
+        if (Number(page.id) >= 0) {
+          window.alert('Umbenennen ist offline nur für noch nicht synchronisierte Notizen möglich.');
+          return;
+        }
+        const title = prompt('Neuer Titel', page.title);
+        if (!title || title === page.title) {
+          return;
+        }
+        const trimmed = title.trim();
+        if (trimmed === '' || trimmed.length > 200) {
+          window.alert('Der Titel muss 1–200 Zeichen lang sein.');
+          return;
+        }
+        try {
+          await updateLocalPageTitle(page.id, trimmed);
+          this.notifyPagesChanged();
+        } catch (error) {
+          window.alert(error.message || 'Der Titel konnte nicht geändert werden.');
+        }
         return;
       }
       const title = prompt('Neuer Titel', page.title);
@@ -603,18 +653,25 @@ export function pageList() {
 
         let html = null;
         try {
-          const response = await fetch(url, {
-            credentials: 'same-origin',
-            headers: {
-              Accept: 'text/html',
-              'X-Requested-With': 'XMLHttpRequest',
-            },
-          });
-          if (!response.ok) {
-            throw new Error(`Navigation fehlgeschlagen (${response.status})`);
+          if (page && Number(page.id) < 0) {
+            // Offline angelegte, ungesyncte Seite: Es gibt keine Serverfassung
+            // - der Service Worker würde sonst die App-Shell als vermeintliche
+            // Antwort liefern und unter der Temporär-URL cachen.
+            html = offlinePageHtml(page);
+          } else {
+            const response = await fetch(url, {
+              credentials: 'same-origin',
+              headers: {
+                Accept: 'text/html',
+                'X-Requested-With': 'XMLHttpRequest',
+              },
+            });
+            if (!response.ok) {
+              throw new Error(`Navigation fehlgeschlagen (${response.status})`);
+            }
+            html = await response.text();
+            await cacheDocument(url, html);
           }
-          html = await response.text();
-          await cacheDocument(url, html);
         } catch (error) {
           html = await readCachedDocument(url);
           if (!html && page) {

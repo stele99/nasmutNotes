@@ -498,6 +498,104 @@ export async function hasQueuedNoteChange(pageId) {
   return (await db.getNoteOutboxForPage(Number(pageId))) !== null;
 }
 
+/**
+ * Legt offline eine neue Notiz an (FR-OFFLINE). Die Seite erhält eine negative
+ * Temporär-Kennung und einen Outbox-Eintrag, der sie beim nächsten Sync auf
+ * dem Server anlegt; Titel und Inhalt sind sofort lokal bearbeitbar, Bilder
+ * laufen über die bekannte Entwurfs-Mechanik mit. Die clientseitige UUID macht
+ * eine Wiederholung nach verlorener Antwort idempotent.
+ *
+ * @param {{ type: string, title: string, notebookId: ?number, location: ?Record<string, unknown> }} input
+ * @returns {Promise<Record<string, unknown>>}
+ */
+export async function createPageOffline(input) {
+  if (input.type !== 'note') {
+    throw new Error('Offline können nur Notizen angelegt werden.');
+  }
+  const localId = await db.nextLocalPageId();
+  const clientUuid = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  const now = new Date().toISOString();
+  const notebookId = input.notebookId ?? null;
+  const notebook = notebookId !== null
+    ? (await db.getAllNotebooks()).find((entry) => Number(entry.id) === Number(notebookId)) ?? null
+    : null;
+  const page = {
+    id: localId,
+    type: 'note',
+    title: input.title,
+    icon: null,
+    is_favorite: false,
+    sort_order: 0,
+    default_view: 'board',
+    notebook_id: notebookId,
+    notebook_name: notebook?.name ?? null,
+    notebook_icon: notebook?.icon ?? null,
+    notebook_color: notebook?.color ?? null,
+    location: input.location ?? null,
+    deleted_at: null,
+    created_at: now,
+    updated_at: now,
+    is_encrypted: false,
+    voice_template_id: null,
+    is_shared: false,
+    share_permission: null,
+    share_source: null,
+    can_edit: true,
+    preview: null,
+    last_editor_name: null,
+    task_count: null,
+    open_task_count: null,
+    attachment_count: 0,
+    log_entry_count: null,
+    latest_entry_at: null,
+  };
+  await db.createLocalPage(page, {
+    page_id: localId,
+    content: { type: 'doc', content: [] },
+    version: 1,
+    updated_at: null,
+    last_editor_name: null,
+    encryption_state: 'plain',
+    dirty: false,
+    cached_at: now,
+  }, {
+    type: 'note',
+    title: input.title,
+    notebook_id: notebookId,
+    location: input.location ?? null,
+    client_uuid: clientUuid,
+  });
+  await refreshQueueState();
+  syncChannel?.postMessage({ type: 'queue-changed' });
+
+  return page;
+}
+
+/**
+ * Titel einer noch ungesyncten lokalen Seite ändern; der Create-Eintrag der
+ * Outbox nimmt die Änderung mit, der Server legt die Seite dann gleich mit dem
+ * endgültigen Titel an.
+ *
+ * @param {number} pageId
+ * @param {string} title
+ */
+export async function updateLocalPageTitle(pageId, title) {
+  await db.updateLocalPageTitle(Number(pageId), title);
+}
+
+/**
+ * Server-Kennung einer lokal angelegten Seite, deren Übertragung bereits
+ * abgeschlossen ist - oder null, wenn die Kennung noch aussteht.
+ *
+ * @param {number} localId
+ * @returns {Promise<number|null>}
+ */
+export async function resolveRemappedPageId(localId) {
+  return db.resolveRemappedPage(Number(localId));
+}
+
 /** Anzahl noch nicht übertragener Änderungen – für Warnungen vor dem Abmelden. */
 export async function countUnsyncedChanges() {
   try {
@@ -554,10 +652,47 @@ async function runSyncOutbox() {
 
   try {
     const pending = await db.listOutboxPending();
-    for (const item of pending) {
+    for (const snapshot of pending) {
       let uploadedContent = null;
+      let item = null;
       try {
-        if (item.type === 'note.putContent') {
+        // Ein im selben Durchgang erledigtes page.create hat nachfolgende
+        // Einträge auf die echte Seiten-ID umgeschrieben - der Snapshot von
+        // listOutboxPending() kennt die neue Kennung noch nicht. Deshalb wird
+        // jeder Eintrag vor der Verarbeitung frisch gelesen; ist er nicht mehr
+        // vorhanden oder nicht mehr offen, greift der alte Snapshot bzw. wird
+        // übersprungen.
+        const fresh = await db.getOutbox(Number(snapshot.id)).catch(() => null);
+        item = fresh ?? snapshot;
+        if (item.status !== 'pending') {
+          continue;
+        }
+        if (item.type === 'page.create') {
+          const page = await apiFetch('/api/pages', {
+            method: 'POST',
+            body: JSON.stringify({
+              type: item.payload.type,
+              title: item.payload.title,
+              notebook_id: item.payload.notebook_id ?? null,
+              location: item.payload.location ?? null,
+              client_uuid: item.payload.client_uuid,
+            }),
+          });
+          // Der Server legt die Notiz mit leerem Inhalt und Version 1 an
+          // (siehe PageRepository::create) - mehr braucht das Remapping nicht.
+          await db.remapLocalPage(Number(item.page_id), page, {
+            content: { type: 'doc', content: [] },
+            version: 1,
+            updated_at: page.updated_at || null,
+            last_editor_name: null,
+          });
+          dispatchNoteSync('created', Number(page.id), page, Number(item.id), null, Number(item.page_id));
+          // Die Seitenliste kennt die neue Kennung sonst erst beim nächsten
+          // Refresh - ohne dieses Ereignis stünde die Temporär-Seite weiter
+          // dort, auch wenn der Editor bereits umgeschaltet hat.
+          window.dispatchEvent(new Event('pages-changed'));
+          synced += 1;
+        } else if (item.type === 'note.putContent') {
           const sentRevision = Number(item.revision || 0);
           const sourceContent = item.payload.content;
           const content = await uploadOfflineAttachments(Number(item.page_id), item.payload.content);
@@ -588,7 +723,7 @@ async function runSyncOutbox() {
           errors += 1;
         }
       } catch (error) {
-        if (error.status === 409) {
+        if (error.status === 409 && item?.type === 'note.putContent') {
           const conflict = error.payload?.current || null;
           const attemptedContent = uploadedContent ?? item.payload.content;
           if (conflict && contentsEqual(attemptedContent, conflict.content)) {
@@ -602,7 +737,7 @@ async function runSyncOutbox() {
             await db.markNoteConflict(Number(item.id), conflict);
             dispatchNoteSync('conflict', Number(item.page_id), conflict, Number(item.id));
           }
-        } else if ([400, 403, 404, 413, 422].includes(error.status)) {
+        } else if ([400, 403, 404, 409, 413, 422].includes(error.status)) {
           errors += 1;
           await db.markOutboxBlocked(
             Number(item.id),
@@ -703,8 +838,8 @@ async function autoAcceptServerVersion(item, sentRevision, conflict) {
   return completion;
 }
 
-function dispatchNoteSync(action, pageId, result, outboxId, sourceContent = null) {
-  const detail = { action, pageId, result, outboxId, sourceContent };
+function dispatchNoteSync(action, pageId, result, outboxId, sourceContent = null, localId = null) {
+  const detail = { action, pageId, result, outboxId, sourceContent, localId };
   dispatchLocalNoteSync(detail);
   syncChannel?.postMessage({ type: 'note-sync', detail });
 }
@@ -721,7 +856,7 @@ export async function listSyncConflicts() {
     result.push({
       id: Number(item.id),
       page_id: Number(item.page_id),
-      title: page?.title || `Notiz #${item.page_id}`,
+      title: page?.title || item.payload?.title || `Notiz #${item.page_id}`,
       local_content: item.payload?.content || null,
       server_content: item.conflict?.content || null,
       server_version: Number(item.conflict?.version || 0),
@@ -856,7 +991,7 @@ export async function listBlockedEntries() {
     result.push({
       id: Number(item.id),
       page_id: Number(item.page_id),
-      title: page?.title || `Notiz #${item.page_id}`,
+      title: page?.title || item.payload?.title || `Notiz #${item.page_id}`,
       last_error: item.last_error || 'Sync fehlgeschlagen',
       retries: Number(item.retries || 0),
     });
@@ -883,7 +1018,11 @@ export async function discardBlockedEntry(outboxId) {
   if (!deleted) {
     throw new Error('Der Eintrag wurde zwischenzeitlich geändert und nicht verworfen.');
   }
-  if (online) {
+  if (item.type === 'page.create') {
+    // Eine offline angelegte Seite ohne Create-Eintrag existiert serverseitig
+    // nicht - verwerfen heißt hier, sie lokal endgültig zu löschen.
+    await db.deletePageData(Number(item.page_id));
+  } else if (online) {
     try {
       const content = await apiFetch(`/api/pages/${item.page_id}/content`);
       await cacheNoteContent(Number(item.page_id), { ...content, dirty: false });
@@ -1218,6 +1357,12 @@ export async function saveOfflineAttachment(file, pageId) {
   }
   if (file.size < 1 || file.size > 10 * 1024 * 1024) {
     throw new Error('Das Bild darf maximal 10 MB groß sein.');
+  }
+  // Bild für eine Temporär-Kennung, deren Create-Eintrag bereits abgearbeitet
+  // wurde: Der Entwurf wäre nach dem Remapping verwaist, der Sync kennt die
+  // zugehörige Seite nicht mehr.
+  if (Number(pageId) < 0 && !(await db.localCreatePending(Number(pageId)))) {
+    throw new Error('Die Seite wurde gerade synchronisiert. Bitte das Bild erneut einfügen.');
   }
   const id = crypto.randomUUID();
   const dimensions = await imageDimensions(file);

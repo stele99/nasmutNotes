@@ -32,9 +32,11 @@ import {
   replaceNoteEncryptionState,
   resolveConflictKeepLocal,
   resolveConflictUseServer,
+  resolveRemappedPageId,
   saveOfflineAttachment,
   saveNoteOffline,
   syncOutbox,
+  updateLocalPageTitle,
 } from './offline/runtime.js';
 
 const DEBOUNCE_MS = 1500;
@@ -198,6 +200,17 @@ export function noteEditorPage() {
         return;
       }
 
+      if (this.pageId < 0) {
+        // Wurde die Übertragung genau während des Ladens abgearbeitet, ist
+        // die Temporär-Kennung bereits verschwunden - der Editor wechselt auf
+        // die echte Kennung, statt auf einer toten Adresse zu enden.
+        const remapped = await resolveRemappedPageId(this.pageId);
+        if (remapped !== null) {
+          this.pageId = remapped;
+          window.history.replaceState({}, '', `/app/page/${this.pageId}`);
+        }
+      }
+
       this.initStickyInsets();
 
       if (this.canEditPage) {
@@ -356,6 +369,10 @@ export function noteEditorPage() {
       window.addEventListener('keydown', this.keyDownHandler);
       this.syncHandler = (event) => {
         const detail = event.detail || {};
+        if (detail.action === 'created') {
+          this.handlePageCreated(detail);
+          return;
+        }
         if (Number(detail.pageId) !== this.pageId) {
           return;
         }
@@ -1537,7 +1554,11 @@ export function noteEditorPage() {
       }
       this.imageUploadError = '';
       const request = (async () => {
-        if (navigator.onLine) {
+        // Eine noch ungesyncte, offline angelegte Notiz (negative Kennung)
+        // hat serverseitig keine Adresse: Der Server-Upload würde mit 404
+        // scheitern. Das Bild läuft deshalb immer über den lokalen Entwurf;
+        // der Sync lädt ihn nach dem Anlegen zusammen mit dem Inhalt hoch.
+        if (navigator.onLine && Number(this.pageId) >= 0) {
           try {
             const body = new FormData();
             body.append('file', file, file.name || 'screenshot.png');
@@ -2069,20 +2090,56 @@ export function noteEditorPage() {
       }
       this.savingPageTitle = true;
       try {
-        const page = await apiFetch(`/api/pages/${this.pageId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ title }),
-        });
-        this.pageTitle = page.title;
-        this.savedPageTitle = page.title;
-        document.title = page.title;
+        if (Number(this.pageId) < 0) {
+          // Offline angelegte, noch ungesyncte Notiz (negative Kennung): Der
+          // Titel wandert direkt in den Create-Eintrag der Outbox; der Server
+          // legt die Seite dann gleich mit dem endgültigen Titel an.
+          if (title.length > 200) {
+            throw new Error('Der Titel muss 1–200 Zeichen lang sein.');
+          }
+          await updateLocalPageTitle(this.pageId, title);
+          this.savedPageTitle = title;
+          document.title = title;
+        } else {
+          const page = await apiFetch(`/api/pages/${this.pageId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ title }),
+          });
+          this.pageTitle = page.title;
+          this.savedPageTitle = page.title;
+          document.title = page.title;
+        }
         // Die Seitenleiste ist eine eigene Alpine-Komponente und bekäme den
         // neuen Titel sonst erst nach einem Reload zu sehen.
         this.$dispatch('pages-changed');
+      } catch (error) {
+        this.pageTitle = this.savedPageTitle;
+        window.alert(error.message || 'Der Titel konnte nicht gespeichert werden.');
       } finally {
         this.savingPageTitle = false;
         this.editingPageTitle = false;
       }
+    },
+
+    /**
+     * Der Server hat eine offline angelegte Notiz übernommen: Kennung und URL
+     * wechseln auf die echte Seiten-ID, damit weitere Speicherungen und die
+     * Versionsanzeige ohne Neuladen auf dem Serverstand weiterlaufen. Die
+     * frisch angelegte Notiz startet bei Version 1 mit dem Titel aus dem
+     * Create-Eintrag.
+     */
+    handlePageCreated(detail) {
+      if (Number(detail.localId) !== this.pageId || !detail.result || typeof detail.result !== 'object') {
+        return;
+      }
+      const page = detail.result;
+      this.pageId = Number(page.id);
+      window.history.replaceState({}, '', `/app/page/${this.pageId}`);
+      this.pageTitle = page.title;
+      this.savedPageTitle = page.title;
+      document.title = page.title;
+      this.version = 1;
+      this.$dispatch('pages-changed');
     },
 
     /**

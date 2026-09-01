@@ -22,6 +22,7 @@ final class PageRepository
 
     /**
      * @param array{lat: float, lon: float, accuracy: ?float, label?: ?string}|null $location Aufnahmeort (FR-NOTE-25).
+     * @param string|null $clientUuid Kennung einer offline angelegten Seite; macht das Anlegen bei Wiederholung idempotent.
      * @return array<string, mixed>
      */
     public function create(
@@ -31,13 +32,14 @@ final class PageRepository
         ?string $icon,
         ?int $notebookId = null,
         ?array $location = null,
+        ?string $clientUuid = null,
     ): array {
         $now = gmdate('Y-m-d\TH:i:s.v\Z');
         $stmt = $this->pdo->prepare(
             'INSERT INTO pages (workspace_id, type, title, icon, notebook_id, created_at, updated_at,
-                                location_lat, location_lon, location_accuracy, location_label, location_at)
+                                location_lat, location_lon, location_accuracy, location_label, location_at, client_uuid)
              VALUES (:workspace_id, :type, :title, :icon, :notebook_id, :now, :now,
-                     :location_lat, :location_lon, :location_accuracy, :location_label, :location_at)'
+                     :location_lat, :location_lon, :location_accuracy, :location_label, :location_at, :client_uuid)'
         );
         $stmt->execute([
             'workspace_id' => $workspaceId,
@@ -51,6 +53,7 @@ final class PageRepository
             'location_accuracy' => $location['accuracy'] ?? null,
             'location_label' => $location['label'] ?? null,
             'location_at' => $location === null ? null : $now,
+            'client_uuid' => $clientUuid,
         ]);
 
         $id = (int) $this->pdo->lastInsertId();
@@ -79,6 +82,30 @@ final class PageRepository
         assert($page !== null);
 
         return $page;
+    }
+
+    /**
+     * Seite zur clientseitigen UUID einer offline angelegten Seite. Der
+     * Ziel-Workspace gehört zur Abfrage, damit eine Kennung, die zufällig zu
+     * einer fremden Seite passt, weder verraten noch übernommen wird.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findByClientUuid(int $workspaceId, string $clientUuid): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT pages.*, notebooks.name AS notebook_name, notebooks.icon AS notebook_icon, notebooks.color AS notebook_color,
+                    owner.name AS owner_name
+               FROM pages
+          LEFT JOIN notebooks ON notebooks.id = pages.notebook_id
+          LEFT JOIN workspaces owner_workspace ON owner_workspace.id = pages.workspace_id
+          LEFT JOIN users owner ON owner.id = owner_workspace.user_id
+              WHERE pages.client_uuid = :client_uuid AND pages.workspace_id = :workspace_id'
+        );
+        $stmt->execute(['client_uuid' => $clientUuid, 'workspace_id' => $workspaceId]);
+        $row = $stmt->fetch();
+
+        return $row !== false ? $this->serialize($row) : null;
     }
 
     /** @return array<string, mixed>|null */

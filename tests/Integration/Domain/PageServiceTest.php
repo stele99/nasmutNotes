@@ -352,4 +352,65 @@ final class PageServiceTest extends TestCase
 
         self::assertSame('Marienplatz, 80331 München', $page['location_label']);
     }
+
+    public function testCreateOrReplayStoresTheClientUuid(): void
+    {
+        $uuid = '0f14d0ab-9605-4a62-a9e4-5ed26688389b';
+
+        $result = $this->pages->createOrReplay($this->userA, 'note', 'Offline angelegt', null, null, null, $uuid);
+
+        self::assertTrue($result['created']);
+        self::assertSame($uuid, $this->fetchClientUuid((int) $result['page']['id']));
+    }
+
+    public function testCreateOrReplayReplaysAnExistingClientUuidWithoutDuplicate(): void
+    {
+        $uuid = '0f14d0ab-9605-4a62-a9e4-5ed26688389b';
+        $first = $this->pages->createOrReplay($this->userA, 'note', 'Offline angelegt', null, null, null, $uuid);
+
+        // Simulierter Übertragungswiederholung: Antwort verloren, gleiche Kennung.
+        $second = $this->pages->createOrReplay($this->userA, 'note', 'Offline angelegt', null, null, null, $uuid);
+
+        self::assertFalse($second['created']);
+        self::assertSame((int) $first['page']['id'], (int) $second['page']['id']);
+
+        $count = $this->pdo->prepare('SELECT COUNT(*) FROM pages WHERE client_uuid = :uuid');
+        $count->execute(['uuid' => $uuid]);
+        self::assertSame(1, (int) $count->fetchColumn());
+    }
+
+    public function testCreateOrReplayRejectsAnInvalidClientUuid(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        $this->pages->createOrReplay($this->userA, 'note', 'Kaputte Kennung', null, null, null, 'not-a-uuid');
+    }
+
+    public function testCreateOrReplayWithoutClientUuidAlwaysCreates(): void
+    {
+        $first = $this->pages->createOrReplay($this->userA, 'note', 'Erste', null);
+        $second = $this->pages->createOrReplay($this->userA, 'note', 'Zweite', null);
+
+        self::assertTrue($first['created']);
+        self::assertTrue($second['created']);
+        self::assertNotSame((int) $first['page']['id'], (int) $second['page']['id']);
+    }
+
+    public function testCreateOrReplayRejectsAUuidOwnedByAnotherWorkspace(): void
+    {
+        $uuid = '0f14d0ab-9605-4a62-a9e4-5ed26688389b';
+        $this->pages->createOrReplay($this->userA, 'note', 'Fremde Kennung', null, null, null, $uuid);
+
+        $this->expectException(ValidationException::class);
+        $this->pages->createOrReplay($this->userB, 'note', 'Eigene Seite', null, null, null, $uuid);
+    }
+
+    private function fetchClientUuid(int $pageId): ?string
+    {
+        $stmt = $this->pdo->prepare('SELECT client_uuid FROM pages WHERE id = :id');
+        $stmt->execute(['id' => $pageId]);
+        $value = $stmt->fetchColumn();
+
+        return $value === false ? null : (string) $value;
+    }
 }
