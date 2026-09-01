@@ -227,8 +227,11 @@ function registerServiceWorker() {
     return;
   }
   const register = () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
-      /* SW optional */
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((error) => {
+      // Ohne Worker bleibt die App nutzbar, aber `/offline-attachments/`
+      // und die Shell-Auslieferung hängen an ihm - der Grund für eine
+      // fehlende Offline-Funktion soll im Log nachlesbar sein.
+      console.warn('Service Worker konnte nicht registriert werden.', error);
     });
   };
   // Der Offline-Init ist asynchron und kann nach dem load-Event fertig werden -
@@ -594,6 +597,23 @@ export async function updateLocalPageTitle(pageId, title) {
  */
 export async function resolveRemappedPageId(localId) {
   return db.resolveRemappedPage(Number(localId));
+}
+
+/**
+ * Bild-Entwurf einer offline eingefügten Datei. Die Seite nutzt ihn, um
+ * `/offline-attachments/`-Bilder direkt als Object-URL anzuzeigen - ohne
+ * Umweg über den Service Worker, der auf dem Gerät fehlen oder veraltet sein
+ * kann (FR-OFFLINE).
+ *
+ * @param {string} id
+ * @returns {Promise<Record<string, unknown>|null>}
+ */
+export async function getOfflineAttachmentDraft(id) {
+  try {
+    return await db.getAttachmentDraft(String(id));
+  } catch {
+    return null;
+  }
 }
 
 /** Anzahl noch nicht übertragener Änderungen – für Warnungen vor dem Abmelden. */

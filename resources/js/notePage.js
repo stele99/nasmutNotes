@@ -33,6 +33,7 @@ import {
   resolveConflictKeepLocal,
   resolveConflictUseServer,
   resolveRemappedPageId,
+  getOfflineAttachmentDraft,
   saveOfflineAttachment,
   saveNoteOffline,
   syncOutbox,
@@ -49,6 +50,10 @@ export function noteEditorPage() {
   let cryptoEnvelope = null;
   let cryptoChannel = null;
   const pendingUploads = new Set();
+  // Object-URLs für offline eingefügte Bilder, Schlüssel ist der kanonische
+  // Pfad aus dem Dokument. ProseMirror kennt nur die Original-src; die
+  // Anzeige läuft über die lokale Blob-Adresse.
+  const offlineImageUrls = new Map();
   // Von initStickyInsets() gemessen. ProseMirror liest den Abstand bei jedem
   // Scrollvorgang neu; der Getter hält ihn ohne Umweg an der aktuellen Höhe der
   // klebenden Leisten. Beim Tippen klebt nur die Werkzeugleiste (siehe app.css).
@@ -567,6 +572,11 @@ export function noteEditorPage() {
         onImageUploadError: (error) => this.handleImageUploadError(error),
         onPendingImageUploads: (count) => {
           this.pendingImageUploads = count;
+          // Der Zähler fällt erst, nachdem die Bildknoten eingesetzt sind -
+          // genau dann ist der Moment für die lokale Anzeige gekommen.
+          if (count === 0) {
+            void this.hydrateOfflineImages();
+          }
         },
         onLinkClick: (link) => this.openLinkMenu(link),
         scrollInset,
@@ -577,6 +587,42 @@ export function noteEditorPage() {
       this.annoSetEditorAccessor(() => editor);
       this.annoBindNodeViewEntry(editor);
       this.syncToolbar();
+      void this.hydrateOfflineImages();
+    },
+
+    /**
+     * Offline eingefügte Bilder zeigen auf `/offline-attachments/…` - eine
+     * Adresse, die nur der Service Worker beantworten kann. Fehlt dieser auf
+     * dem Gerät (nie registriert, veraltet, blockiert), bliebe sonst ein
+     * leerer Bildkasten. Die Seite liest den Entwurf deshalb selbst aus dem
+     * Offline-Speicher und setzt eine Blob-Adresse ins DOM - der Dokumentinhalt
+     * behält die kanonische Pfad-Angabe, der Sync tauscht sie später aus.
+     */
+    async hydrateOfflineImages() {
+      if (!editor || this.isEncrypted()) {
+        return;
+      }
+      const images = editor.view.dom.querySelectorAll('img[src^="/offline-attachments/"]');
+      for (const image of images) {
+        const path = image.getAttribute('src') || '';
+        if (!path || image.getAttribute('data-offline-blob') === path) {
+          continue;
+        }
+        const known = offlineImageUrls.get(path);
+        if (known) {
+          image.src = known;
+          image.setAttribute('data-offline-blob', path);
+          continue;
+        }
+        const draft = await getOfflineAttachmentDraft(path.slice('/offline-attachments/'.length));
+        if (!draft?.blob) {
+          continue;
+        }
+        const url = URL.createObjectURL(draft.blob);
+        offlineImageUrls.set(path, url);
+        image.src = url;
+        image.setAttribute('data-offline-blob', path);
+      }
     },
 
     /**
@@ -2433,6 +2479,12 @@ export function noteEditorPage() {
 
     destroy() {
       this.destroyPageLocation();
+      // Blob-Adressen der Offline-Bilder freigeben - die Seite ist verlassen,
+      // der Offline-Speicher bleibt die Quelle für den nächsten Besuch.
+      for (const url of offlineImageUrls.values()) {
+        URL.revokeObjectURL(url);
+      }
+      offlineImageUrls.clear();
       if (this.stickyObserver) {
         this.stickyObserver.disconnect();
         this.stickyObserver = null;
