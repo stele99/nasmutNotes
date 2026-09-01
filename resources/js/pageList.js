@@ -93,12 +93,14 @@ function offlinePageHtml(page) {
             <input x-ref="imageInput" type="file" accept="image/*" class="hidden" @change="insertPickedImage">
             <input x-ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="insertPickedImage">
             <input x-ref="attachmentInput" type="file" multiple class="hidden" @change="uploadAttachment">
+            <button x-show="!isEncrypted() && imageSelected" x-cloak type="button" @click.prevent="openImageAnnotator" class="toolbar-button" title="Bild beschriften" aria-label="Bild beschriften" x-icon="pencil"></button>
             <span class="toolbar-divider"></span>
             <button type="button" data-editor-command="undo" @click.prevent="undo" class="toolbar-button" title="Rückgängig" aria-label="Rückgängig" x-icon="undo"></button>
             <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button toolbar-more" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
             <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
           </div>
           <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+          <p x-show="annoError" x-cloak x-text="annoError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
           <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
           <div x-show="cryptoDialogOpen" x-cloak class="fixed inset-0 z-[130] flex items-center justify-center p-4" style="background: rgb(0 0 0 / .5);" role="dialog" aria-modal="true" aria-labelledby="offline-crypto-title">
             <form x-ref="cryptoDialog" @submit.prevent="submitCryptoDialog" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg);">
@@ -108,6 +110,100 @@ function offlinePageHtml(page) {
               <p x-show="cryptoDialogError" x-text="cryptoDialogError" class="mt-3 text-sm" style="color: var(--color-danger);"></p>
               <div class="mt-5 flex justify-end gap-2"><button type="button" @click="closeCryptoDialog" class="btn btn-quiet">Abbrechen</button><button type="submit" class="btn btn-primary">Entsperren</button></div>
             </form>
+          </div>
+          <div x-show="annoOpen" x-cloak class="fixed inset-0 z-[130] flex flex-col" style="background-color: rgb(0 0 0 / 0.92);" @keydown.escape.window="closeImageAnnotator" @keydown.window="annoKeydown" role="dialog" aria-modal="true" aria-labelledby="anno-dialog-title">
+            <div class="flex items-center justify-between gap-3 px-4 py-3" style="background: var(--color-bg);">
+              <h2 id="anno-dialog-title" class="text-base font-semibold">Bild beschriften</h2>
+              <div class="flex items-center gap-2">
+                <span class="hidden text-xs sm:inline" style="color: var(--color-text-muted);" x-text="annoCountLabel()"></span>
+                <button type="button" @click="closeImageAnnotator" class="btn btn-quiet">Abbrechen</button>
+                <button type="button" @click="applyImageAnnotations" class="btn btn-primary">Übernehmen</button>
+              </div>
+            </div>
+            <div x-ref="annoToolbar" class="editor-toolbar flex flex-wrap items-center gap-1 border-b px-4 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+              <button type="button" data-tool="select" @click="annoSelectTool" class="toolbar-button" title="Auswählen" aria-label="Auswählen" x-icon="mouse-pointer-2"></button>
+              <button type="button" data-tool="pen" @click="annoSelectTool" class="toolbar-button" title="Freihand" aria-label="Freihand" x-icon="pencil"></button>
+              <button type="button" data-tool="highlighter" @click="annoSelectTool" class="toolbar-button" title="Marker" aria-label="Marker" x-icon="highlighter"></button>
+              <button type="button" data-tool="arrow" @click="annoSelectTool" class="toolbar-button" title="Pfeil" aria-label="Pfeil" x-icon="arrow-up-right"></button>
+              <button type="button" data-tool="line" @click="annoSelectTool" class="toolbar-button" title="Linie" aria-label="Linie" x-icon="minus"></button>
+              <button type="button" data-tool="measure" @click="annoSelectTool" class="toolbar-button" title="Maßband" aria-label="Maßband" x-icon="ruler"></button>
+              <button type="button" data-tool="rect" @click="annoSelectTool" class="toolbar-button" title="Rechteck" aria-label="Rechteck" x-icon="square"></button>
+              <button type="button" data-tool="ellipse" @click="annoSelectTool" class="toolbar-button" title="Ellipse" aria-label="Ellipse" x-icon="circle"></button>
+              <button type="button" data-tool="text" @click="annoSelectTool" class="toolbar-button" title="Text" aria-label="Text" x-icon="type"></button>
+              <button type="button" data-tool="marker" @click="annoSelectTool" class="toolbar-button" title="Nummer" aria-label="Nummer" x-icon="circle-dot"></button>
+              <button type="button" data-tool="mask" @click="annoSelectTool" class="toolbar-button" title="Abdecken" aria-label="Abdecken" x-icon="eye-off"></button>
+              <span class="toolbar-divider"></span>
+              <div class="anno-colors" @click.outside="annoCloseColors">
+                <button type="button" @click="annoToggleColors" class="anno-swatch anno-swatch-current" :style="annoColorStyle()" :aria-expanded="annoColorsOpen" title="Farbe wählen" aria-label="Farbe wählen"></button>
+                <div x-show="annoColorsOpen" x-cloak class="anno-color-pop">
+                  <button type="button" data-color="#e11d48" @click="annoPickColor" class="anno-swatch" style="background: #e11d48;" title="Farbe #e11d48" aria-label="Farbe #e11d48"></button>
+                  <button type="button" data-color="#f97316" @click="annoPickColor" class="anno-swatch" style="background: #f97316;" title="Farbe #f97316" aria-label="Farbe #f97316"></button>
+                  <button type="button" data-color="#eab308" @click="annoPickColor" class="anno-swatch" style="background: #eab308;" title="Farbe #eab308" aria-label="Farbe #eab308"></button>
+                  <button type="button" data-color="#16a34a" @click="annoPickColor" class="anno-swatch" style="background: #16a34a;" title="Farbe #16a34a" aria-label="Farbe #16a34a"></button>
+                  <button type="button" data-color="#2563eb" @click="annoPickColor" class="anno-swatch" style="background: #2563eb;" title="Farbe #2563eb" aria-label="Farbe #2563eb"></button>
+                  <button type="button" data-color="#7c3aed" @click="annoPickColor" class="anno-swatch" style="background: #7c3aed;" title="Farbe #7c3aed" aria-label="Farbe #7c3aed"></button>
+                  <button type="button" data-color="#111827" @click="annoPickColor" class="anno-swatch" style="background: #111827;" title="Farbe #111827" aria-label="Farbe #111827"></button>
+                  <button type="button" data-color="#ffffff" @click="annoPickColor" class="anno-swatch" style="background: #ffffff;" title="Farbe #ffffff" aria-label="Farbe #ffffff"></button>
+                  <input type="color" :value="annoColor" @input="annoColorInput" class="anno-swatch anno-swatch-picker" aria-label="Eigene Farbe">
+                </div>
+              </div>
+              <span class="toolbar-divider"></span>
+              <span class="anno-slider" :title="annoWidthLabel()">
+                <label for="anno-width" x-text="annoWidthShort()">Stärke</label>
+                <input id="anno-width" type="range" min="1" max="80" step="1" :value="annoWidth" @input="annoWidthInput" :aria-label="annoWidthLabel()" class="w-16">
+                <span class="anno-slider-value" x-text="annoWidth">6</span>
+              </span>
+              <span class="anno-slider" title="Deckkraft">
+                <label for="anno-opacity">Deckkraft</label>
+                <input id="anno-opacity" type="range" min="0.1" max="1" step="0.05" :value="annoOpacity" @input="annoOpacityInput" aria-label="Deckkraft" class="w-16">
+                <span class="anno-slider-value" x-text="annoOpacityLabel()">100 %</span>
+              </span>
+              <span class="toolbar-divider"></span>
+              <button type="button" @click="annoUndoStep" class="toolbar-button" title="Rückgängig" aria-label="Rückgängig" x-icon="undo"></button>
+              <button type="button" @click="annoRedoStep" class="toolbar-button" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
+              <button type="button" @click="annoDeleteSelected" class="toolbar-button toolbar-button-danger" title="Auswahl löschen" aria-label="Auswahl löschen" x-icon="trash"></button>
+              <button type="button" @click="annoClearAll" class="toolbar-button toolbar-button-danger" title="Alle entfernen" aria-label="Alle entfernen" x-icon="x"></button>
+            </div>
+            <p x-show="annoNotice" x-cloak x-text="annoNotice" class="px-4 py-2 text-xs" style="background: color-mix(in srgb, var(--color-danger) 12%, transparent); color: var(--color-danger);" role="status"></p>
+            <p x-show="annoError" x-cloak x-text="annoError" class="px-4 py-2 text-xs" style="background: var(--color-bg); color: var(--color-danger);" role="alert"></p>
+            <div x-ref="annoViewport" class="anno-viewport flex flex-1 items-center justify-center overflow-auto p-4">
+              <div x-ref="annoStage" class="anno-stage" :class="annoStageClass()" @pointerdown="annoPointerDown" @pointermove="annoPointerMove" @pointerup="annoPointerUp" @pointercancel="annoPointerCancel" @dblclick="annoEditSelectedText">
+                <img :src="annoSrc" :alt="annoAlt" class="anno-image" draggable="false">
+                <span x-ref="annoLayer" class="anno-layer" aria-hidden="true"></span>
+                <span x-ref="annoPreview" class="anno-layer" aria-hidden="true"></span>
+                <span x-show="annoHoverStyle" x-cloak class="anno-hover" :style="annoHoverStyle"></span>
+                <span x-show="annoSelectionStyle" x-cloak class="anno-selection" :style="annoSelectionStyle">
+                  <span x-show="annoHasHandle('se')" data-anno-handle="se" class="anno-handle anno-handle-se"></span>
+                  <span x-show="annoHasHandle('nw')" data-anno-handle="nw" class="anno-handle anno-handle-nw"></span>
+                </span>
+                <span x-show="annoHasHandle('p1')" x-cloak class="anno-handles">
+                  <span data-anno-handle="p1" class="anno-handle anno-handle-point" :style="annoHandleStyle('p1')"></span>
+                  <span data-anno-handle="p2" class="anno-handle anno-handle-point" :style="annoHandleStyle('p2')"></span>
+                </span>
+              </div>
+            </div>
+            <div x-show="annoTextOpen" x-cloak class="fixed inset-0 z-[140] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="annoCancelText" role="dialog" aria-modal="true" aria-labelledby="anno-text-title">
+              <div class="w-full max-w-md rounded-xl border p-5" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+                <h3 id="anno-text-title" class="text-lg font-semibold">Text auf dem Bild</h3>
+                <textarea x-ref="annoTextInput" x-model="annoTextDraft" rows="4" maxlength="500" class="mt-3 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);"></textarea>
+                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Zeilenumbrüche werden übernommen; es wird nicht automatisch umbrochen.</p>
+                <div class="mt-4 flex justify-end gap-2">
+                  <button type="button" @click="annoCancelText" class="btn btn-quiet">Abbrechen</button>
+                  <button type="button" @click="annoConfirmText" class="btn btn-primary">Einfügen</button>
+                </div>
+              </div>
+            </div>
+            <div x-show="annoLengthOpen" x-cloak class="fixed inset-0 z-[140] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="annoCancelLength" role="dialog" aria-modal="true" aria-labelledby="anno-length-title">
+              <div class="w-full max-w-sm rounded-xl border p-5" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+                <h3 id="anno-length-title" class="text-lg font-semibold">Länge des Maßbands</h3>
+                <input x-ref="annoLengthInput" x-model="annoLengthDraft" type="text" maxlength="40" @keydown.enter="annoConfirmLength" placeholder="z. B. 3,20 m" class="mt-3 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+                <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Die Länge wird so übernommen, wie sie hier steht - Einheit inbegriffen. Es wird nichts gemessen und nichts umgerechnet.</p>
+                <div class="mt-4 flex justify-end gap-2">
+                  <button type="button" @click="annoCancelLength" class="btn btn-quiet">Abbrechen</button>
+                  <button type="button" @click="annoConfirmLength" class="btn btn-primary">Übernehmen</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>`

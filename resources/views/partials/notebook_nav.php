@@ -148,13 +148,13 @@
                                     <div x-show="aiUsage !== null && !aiUsageError" x-cloak class="mt-3 grid gap-3 sm:grid-cols-2">
                                         <div class="rounded-lg border p-3" style="border-color: var(--color-border);">
                                             <p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Letzte 30 Tage</p>
-                                            <p class="mt-1 text-base font-semibold" x-text="aiUsageTokens(aiUsage?.last_30_days)"></p>
-                                            <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="aiUsageCost(aiUsage?.last_30_days)"></p>
+                                            <p class="mt-1 text-base font-semibold" x-text="aiUsageTokens(aiUsage ? aiUsage.last_30_days : null)"></p>
+                                            <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="aiUsageCost(aiUsage ? aiUsage.last_30_days : null)"></p>
                                         </div>
                                         <div class="rounded-lg border p-3" style="border-color: var(--color-border);">
                                             <p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Gesamt</p>
-                                            <p class="mt-1 text-base font-semibold" x-text="aiUsageTokens(aiUsage?.total)"></p>
-                                            <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="aiUsageCost(aiUsage?.total)"></p>
+                                            <p class="mt-1 text-base font-semibold" x-text="aiUsageTokens(aiUsage ? aiUsage.total : null)"></p>
+                                            <p class="mt-0.5 text-sm" style="color: var(--color-text-muted);" x-text="aiUsageCost(aiUsage ? aiUsage.total : null)"></p>
                                         </div>
                                     </div>
                                 </div>
@@ -216,8 +216,8 @@
                                             </form>
 
                                             <div x-show="deviceTokenLastCreated" x-cloak class="mt-3 rounded-lg p-3" style="background: var(--color-bg-subtle);">
-                                                <p class="text-sm font-medium">Token für „<span x-text="deviceTokenLastCreated?.label"></span>“ (nur jetzt sichtbar)</p>
-                                                <p class="mt-1.5 break-all font-mono text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenLastCreated?.token"></p>
+                                                <p class="text-sm font-medium">Token für „<span x-text="deviceTokenLastCreated ? deviceTokenLastCreated.label : ''"></span>“ (nur jetzt sichtbar)</p>
+                                                <p class="mt-1.5 break-all font-mono text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenLastCreated ? deviceTokenLastCreated.token : ''"></p>
                                                 <p class="mt-2 text-xs" style="color: var(--color-text-muted);">In den Kurzbefehl einfügen (Anleitung unten) - hier verlässt der Token die Seite und ist danach nicht mehr abrufbar.</p>
                                                 <button type="button" @click="copyDeviceToken" class="btn btn-secondary mt-3 w-full" x-text="deviceTokenCopyLabel"></button>
                                             </div>

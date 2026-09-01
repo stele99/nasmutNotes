@@ -240,7 +240,10 @@ export function imageAnnotatorMixin() {
         if (position !== null) {
           return false;
         }
-        if (candidate.type.name === 'image' && candidate.attrs.src === path) {
+        // Neben dem kanonischen Pfad trifft auch die angezeigte Adresse zu:
+        // Offline-Bilder liegen im Betrachter als Blob-Adresse vor.
+        if (candidate.type.name === 'image'
+          && (candidate.attrs.src === path || this.annoImageSrc(candidate.attrs.src) === this.imageViewerSrc)) {
           position = pos;
           node = candidate;
         }
@@ -252,6 +255,15 @@ export function imageAnnotatorMixin() {
       }
       this.closeImageViewer();
       this.annoBegin(position, node);
+    },
+
+    /**
+     * Quellauflösung für das zu beschriftende Bild. Der Mixin kennt keinen
+     * Offline-Speicher; Host-Komponenten, die `/offline-attachments/`-Pfade
+     * selbst in ladefähige Adressen überführen können, überschreiben dies.
+     */
+    annoImageSrc(src) {
+      return src;
     },
 
     /**
@@ -272,7 +284,7 @@ export function imageAnnotatorMixin() {
       }
 
       this.annoPos = position;
-      this.annoSrc = node.attrs.src;
+      this.annoSrc = this.annoImageSrc(node.attrs.src);
       this.annoAlt = node.attrs.alt || '';
       this.annoSpace = stored?.space ?? emptyAnnotations(width, height).space;
       this.annoItems = stored ? JSON.parse(JSON.stringify(stored.items)) : [];

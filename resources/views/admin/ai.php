@@ -346,7 +346,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <template x-for="user in aiUsage?.users || []" :key="user.user_id">
+                        <template x-for="user in aiUsage && aiUsage.users ? aiUsage.users : []" :key="user.user_id">
                             <tr class="border-b" style="border-color: var(--color-border);">
                                 <td class="py-2 pr-3"><span class="font-medium" x-text="user.name || user.email"></span></td>
                                 <td class="py-2 pr-3" x-text="formatTokens(user.tokens_30d)"></td>
@@ -357,10 +357,10 @@
                         </template>
                         <tr class="border-b font-semibold" style="border-color: var(--color-border);">
                             <td class="py-2 pr-3">Gesamt</td>
-                            <td class="py-2 pr-3" x-text="formatTokens(aiUsage?.totals?.tokens_30d)"></td>
-                            <td class="py-2 pr-3" x-text="formatTokens(aiUsage?.totals?.tokens_total)"></td>
-                            <td class="py-2 pr-3" x-text="formatCost(aiUsage?.totals?.cost_30d, aiUsage?.totals?.currency)"></td>
-                            <td class="py-2" x-text="formatCost(aiUsage?.totals?.cost_total, aiUsage?.totals?.currency)"></td>
+                            <td class="py-2 pr-3" x-text="formatTokens(aiUsage && aiUsage.totals ? aiUsage.totals.tokens_30d : null)"></td>
+                            <td class="py-2 pr-3" x-text="formatTokens(aiUsage && aiUsage.totals ? aiUsage.totals.tokens_total : null)"></td>
+                            <td class="py-2 pr-3" x-text="formatCost(aiUsage && aiUsage.totals ? aiUsage.totals.cost_30d : null, aiUsage && aiUsage.totals ? aiUsage.totals.currency : null)"></td>
+                            <td class="py-2" x-text="formatCost(aiUsage && aiUsage.totals ? aiUsage.totals.cost_total : null, aiUsage && aiUsage.totals ? aiUsage.totals.currency : null)"></td>
                         </tr>
                     </tbody>
                 </table>

@@ -626,6 +626,19 @@ export function noteEditorPage() {
     },
 
     /**
+     * Quellauflösung für den Bild-Annotator: `/offline-attachments/`-Pfade
+     * beantwortet nur der Service Worker - fehlt er, liefert die Anzeige-Map
+     * der Hydrierung die Blob-Adresse. Die Annotationen selbst wandern wie
+     * online in das Bild-Attribut und damit in den Notizinhalt.
+     */
+    annoImageSrc(src) {
+      if (typeof src !== 'string' || !src.startsWith('/offline-attachments/')) {
+        return src;
+      }
+      return offlineImageUrls.get(src) ?? src;
+    },
+
+    /**
      * Gedruckt wird die Seite selbst, nicht eine erzeugte Kopie: Ein
      * Druck-Stylesheet blendet Navigation, Werkzeuge und Statuszeilen aus
      * (FR-NOTE-27). Damit stimmt das Papier immer mit dem Bildschirm überein,
