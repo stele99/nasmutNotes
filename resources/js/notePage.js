@@ -570,8 +570,9 @@ export function noteEditorPage() {
         onTransaction: () => {
           this.syncToolbar();
           // Attributänderungen am Bildknoten (übernommene Annotationen,
-          // Größenänderung) bauen das <img> neu - die Blob-Adresse der
-          // Offline-Anzeige muss dann erneut eingesetzt werden.
+          // Größenänderung) setzen die Bildquelle auf den kanonischen Pfad
+          // zurück - die Blob-Adresse der Offline-Anzeige muss dann erneut
+          // eingesetzt werden.
           void this.hydrateOfflineImages();
         },
         onImageUpload: (file) => this.uploadImage(file),
@@ -603,6 +604,12 @@ export function noteEditorPage() {
      * leerer Bildkasten. Die Seite liest den Entwurf deshalb selbst aus dem
      * Offline-Speicher und setzt eine Blob-Adresse ins DOM - der Dokumentinhalt
      * behält die kanonische Pfad-Angabe, der Sync tauscht sie später aus.
+     *
+     * Der Image-NodeView setzt die Quelle bei jeder Attributänderung
+     * (übernommene Annotationen, Größenänderung) auf den kanonischen Pfad
+     * zurück; deshalb läuft diese Methode nach jeder Transaktion erneut. Ob
+     * ein Bild versorgt ist, entscheidet allein der Vergleich der aktuellen
+     * Quelle mit der hinterlegten Blob-Adresse - nicht ein Marker-Attribut.
      */
     async hydrateOfflineImages() {
       if (!editor || this.isEncrypted()) {
@@ -611,23 +618,21 @@ export function noteEditorPage() {
       const images = editor.view.dom.querySelectorAll('img[src^="/offline-attachments/"]');
       for (const image of images) {
         const path = image.getAttribute('src') || '';
-        if (!path || image.getAttribute('data-offline-blob') === path) {
+        if (!path.startsWith('/offline-attachments/')) {
           continue;
         }
-        const known = offlineImageUrls.get(path);
-        if (known) {
-          image.src = known;
-          image.setAttribute('data-offline-blob', path);
-          continue;
+        let url = offlineImageUrls.get(path);
+        if (!url) {
+          const draft = await getOfflineAttachmentDraft(path.slice('/offline-attachments/'.length));
+          if (!draft?.blob) {
+            continue;
+          }
+          url = URL.createObjectURL(draft.blob);
+          offlineImageUrls.set(path, url);
         }
-        const draft = await getOfflineAttachmentDraft(path.slice('/offline-attachments/'.length));
-        if (!draft?.blob) {
-          continue;
+        if (image.src !== url) {
+          image.src = url;
         }
-        const url = URL.createObjectURL(draft.blob);
-        offlineImageUrls.set(path, url);
-        image.src = url;
-        image.setAttribute('data-offline-blob', path);
       }
     },
 
