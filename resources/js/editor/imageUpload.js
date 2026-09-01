@@ -51,7 +51,15 @@ export const ProtectedImageUpload = Extension.create({
           return false;
         }
 
-        upload(files, view, state.selection.from);
+        // Der Upload dispatcht eigene Transaktionen. Geschähe das innerhalb
+        // dieser Chain, wäre die beim Aufruf erzeugte Chain-Transaktion gegen
+        // den inzwischen neuen State "mismatched" - deshalb erst nach dem
+        // Abschluss der Chain anstoßen.
+        Promise.resolve().then(() => {
+          if (!this.editor.isDestroyed) {
+            upload(files, view, state.selection.from);
+          }
+        });
 
         return true;
       },

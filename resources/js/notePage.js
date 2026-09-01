@@ -567,7 +567,13 @@ export function noteEditorPage() {
         content,
         editable: this.canEditPage,
         onUpdate: (json) => this.onChange(json),
-        onTransaction: () => this.syncToolbar(),
+        onTransaction: () => {
+          this.syncToolbar();
+          // Attributänderungen am Bildknoten (übernommene Annotationen,
+          // Größenänderung) bauen das <img> neu - die Blob-Adresse der
+          // Offline-Anzeige muss dann erneut eingesetzt werden.
+          void this.hydrateOfflineImages();
+        },
         onImageUpload: (file) => this.uploadImage(file),
         onImageUploadError: (error) => this.handleImageUploadError(error),
         onPendingImageUploads: (count) => {
