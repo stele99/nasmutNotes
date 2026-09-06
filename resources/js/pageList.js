@@ -83,6 +83,7 @@ function offlinePageHtml(page) {
             <button type="button" data-editor-command="heading1" @click.prevent="toggleHeading1" class="toolbar-button toolbar-more" title="Überschrift 1" aria-label="Überschrift 1" x-icon="heading-1"></button>
             <button type="button" data-editor-command="heading2" @click.prevent="toggleHeading2" class="toolbar-button" title="Überschrift 2" aria-label="Überschrift 2" x-icon="heading-2"></button>
             <button type="button" data-editor-command="bulletList" @click.prevent="toggleBulletList" class="toolbar-button" title="Aufzählung" aria-label="Aufzählung" x-icon="list"></button>
+            <button type="button" data-editor-command="orderedList" @click.prevent="toggleOrderedList" class="toolbar-button" title="Nummerierte Liste" aria-label="Nummerierte Liste" x-icon="list-ordered"></button>
             <button type="button" data-editor-command="taskList" @click.prevent="toggleTaskList" class="toolbar-button" title="Checkliste" aria-label="Checkliste" x-icon="list-checks"></button>
             <button type="button" data-editor-command="blockquote" @click.prevent="toggleBlockquote" class="toolbar-button toolbar-more" title="Zitat" aria-label="Zitat" x-icon="quote"></button>
             <button type="button" data-editor-command="link" @click.prevent="editLink" class="toolbar-button toolbar-more" title="Link" aria-label="Link" x-icon="link"></button>

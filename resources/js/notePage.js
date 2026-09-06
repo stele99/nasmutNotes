@@ -2286,6 +2286,9 @@ export function noteEditorPage() {
         case 'bulletList':
           chain.toggleBulletList().run();
           break;
+        case 'orderedList':
+          chain.toggleOrderedList().run();
+          break;
         case 'taskList':
           chain.toggleTaskList().run();
           break;
@@ -2357,6 +2360,10 @@ export function noteEditorPage() {
       this.runEditorCommand('bulletList');
     },
 
+    toggleOrderedList() {
+      this.runEditorCommand('orderedList');
+    },
+
     toggleTaskList() {
       this.runEditorCommand('taskList');
     },
@@ -2419,6 +2426,7 @@ export function noteEditorPage() {
           heading1: editor.isActive('heading', { level: 1 }),
           heading2: editor.isActive('heading', { level: 2 }),
           bulletList: editor.isActive('bulletList'),
+          orderedList: editor.isActive('orderedList'),
           taskList: editor.isActive('taskList'),
           blockquote: editor.isActive('blockquote'),
           link: editor.isActive('link'),
