@@ -616,6 +616,15 @@ export function noteEditorPage() {
       }
     },
 
+    scrollToPageStart() {
+      const scroller = this.stickyScroller || this.$root?.closest('.workspace-main');
+      if (!(scroller instanceof HTMLElement)) {
+        return;
+      }
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      scroller.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+    },
+
     scrollToHeading(index) {
       if (!editor || !Number.isInteger(index) || index < 0) {
         return;

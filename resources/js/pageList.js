@@ -109,6 +109,7 @@ function offlinePageHtml(page) {
                 <nav aria-label="Inhaltsverzeichnis">
                   <p class="note-toc-title">Inhalt</p>
                   <ol class="note-toc-list">
+                    <li><button type="button" @click="scrollToPageStart" class="note-toc-link" title="Zum Seitenanfang">Anfang</button></li>
                     <template x-for="heading in tableOfContents" :key="heading.index">
                       <li><button type="button" @click="scrollToHeading(heading.index)" class="note-toc-link" :class="heading.level === 2 ? 'is-level-2' : ''" :title="heading.text" x-text="heading.text"></button></li>
                     </template>
