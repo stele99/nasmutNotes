@@ -757,6 +757,19 @@ export function pageList() {
       await this.navigateTo(this.pageUrl(page), page);
     },
 
+    /**
+     * Wechsel auf eine Seite, die anderswo entstanden ist - etwa die Kopie
+     * einer Notiz aus deren Werkzeugleiste (siehe pageCopy.js). Die Seite
+     * kommt serialisiert im Ereignis mit, deshalb ist keine weitere Abfrage
+     * nötig.
+     */
+    async navigateToPage(page) {
+      if (!page || !page.id) {
+        return;
+      }
+      await this.navigate(page);
+    },
+
     async navigateTo(url, page = null, pushHistory = true) {
       if (this.navigating) {
         return;

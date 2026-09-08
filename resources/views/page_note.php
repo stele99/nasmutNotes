@@ -43,6 +43,12 @@
             <?php /* Löschen steht bewusst nur als Symbol da - der rote Papierkorb
                      ist eindeutig genug und die Leiste ist schon gut gefüllt. */ ?>
             <button x-show="!isShared && canEditPage" type="button" @click="trashPage" class="icon-action icon-action-danger flex items-center border p-2" style="border-color: var(--color-border); color: var(--color-danger);" title="In den Papierkorb" aria-label="In den Papierkorb" x-icon="trash"></button>
+            <?php /* Kopie der Notiz (FR-NOTE-28) - auch für Empfänger einer
+                     Freigabe, die dabei ihr Zielnotizbuch wählen. Verschlüsselte
+                     Notizen kann der Server nicht kopieren (FR-CRYPT-05). */ ?>
+            <button x-show="!isEncrypted()" type="button" @click="copyPage" :disabled="copyingPage" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Kopie dieser Notiz erstellen" aria-label="Kopie dieser Notiz erstellen">
+                <span x-icon="copy"></span><span class="hidden lg:inline">Kopie</span>
+            </button>
             <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
                 <span x-icon="history"></span><span class="hidden lg:inline">Verlauf</span>
             </button>
@@ -366,6 +372,35 @@
                 class="sidebar-toggle absolute left-3 top-3 flex rounded-full"
                 style="background-color: rgb(0 0 0 / 0.5); color: #ffffff;"
                 aria-label="Bild beschriften" x-icon="pencil"></button>
+    </div>
+
+    <?php /* Zielnotizbuch für die Kopie einer geteilten Notiz (FR-NOTE-28):
+             Das Notizbuch der Vorlage gehört dem Eigentümer und steht dem
+             Empfänger nicht zur Verfügung, deshalb wird hier gefragt. Bei
+             eigenen Notizen bleibt der Dialog geschlossen. */ ?>
+    <div x-show="copyDialogOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCopyDialog" @keydown.escape.window="closeCopyDialog" role="dialog" aria-modal="true" aria-labelledby="copy-dialog-title">
+        <form @submit.prevent="copyPageToSelectedNotebook" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 id="copy-dialog-title" class="text-xl font-semibold">Kopie erstellen</h2>
+                    <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Die Kopie entsteht mit Bildern und Anhängen in deinem Workspace und ist von der geteilten Notiz unabhängig.</p>
+                </div>
+                <button type="button" @click="closeCopyDialog" :disabled="copyingPage" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+            </div>
+            <label for="copy-notebook" class="mt-5 block text-sm font-medium">Zielnotizbuch</label>
+            <select id="copy-notebook" x-model="copyDialogNotebookId" :disabled="copyingPage || copyDialogLoading" class="mt-2 w-full rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);">
+                <option value="">Ohne Notizbuch</option>
+                <template x-for="notebook in copyDialogNotebooks" :key="notebook.id">
+                    <option :value="notebook.id" x-text="notebook.name"></option>
+                </template>
+            </select>
+            <p x-show="copyDialogLoading" class="mt-2 text-xs" style="color: var(--color-text-muted);">Notizbücher werden geladen…</p>
+            <p x-show="copyError" x-cloak x-text="copyError" class="mt-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
+            <div class="mt-6 flex justify-end gap-2">
+                <button type="button" @click="closeCopyDialog" :disabled="copyingPage" class="btn btn-quiet">Abbrechen</button>
+                <button type="submit" :disabled="copyingPage" class="btn btn-primary" x-text="copyingPage ? 'Kopiere…' : 'Kopie erstellen'"></button>
+            </div>
+        </form>
     </div>
 
     <div x-show="compressionOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCompressionDialog" @keydown.escape.window="closeCompressionDialog" role="dialog" aria-modal="true" aria-labelledby="compression-dialog-title">

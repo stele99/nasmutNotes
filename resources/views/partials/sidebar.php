@@ -3,6 +3,7 @@
     @pages-changed.window="refresh"
     @collection-changed.window="setCollection"
     @navigate-home.window="navigateTo('/app')"
+    @navigate-page.window="navigateToPage($event.detail)"
     @page-drop-move.window="movePagesByIds($event.detail.pageIds, $event.detail.notebookId)"
     @page-drop-trash.window="trashPagesByIds($event.detail.pageIds)"
     class="page-sidebar fixed inset-y-0 left-0 z-40 flex w-full -translate-x-full flex-col border-r transition-transform duration-200 md:sticky md:top-0 md:w-90 md:translate-x-0 xl:w-[22rem]"

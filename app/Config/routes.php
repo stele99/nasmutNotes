@@ -160,6 +160,7 @@ return static function (App $app, ContainerInterface $container): void {
         $group->patch('/{id}', [PageController::class, 'update']);
         $group->delete('/{id}', [PageController::class, 'destroy']);
         $group->post('/{id}/restore', [PageController::class, 'restore']);
+        $group->post('/{id}/duplicate', [PageController::class, 'duplicate']);
         $group->delete('/{id}/purge', [PageController::class, 'purge']);
         $group->get('/{id}/shares', [ShareController::class, 'index']);
         $group->post('/{id}/shares', [ShareController::class, 'store']);

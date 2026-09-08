@@ -15,6 +15,7 @@ import {
 import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
+import { pageCopyMixin } from './pageCopy.js';
 import { imageAnnotatorMixin } from './editor/annotations/annotator.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
 import { viewportShift } from './viewport.js';
@@ -76,6 +77,7 @@ export function noteEditorPage() {
     ...voiceTemplateMixin(),
     ...pageLocationMixin(),
     ...pageTrashMixin(),
+    ...pageCopyMixin(),
     ...imageAnnotatorMixin(),
     status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
     version: 0,
@@ -199,6 +201,7 @@ export function noteEditorPage() {
       this.canRestoreVersions = this.canEditPage && !isShared;
       this.savedPageTitle = this.pageTitle;
       this.initPageLocation(pageRoot);
+      this.initPageCopy(pageRoot);
 
       if (!this.pageId) {
         this.status = 'offline';
@@ -1229,6 +1232,12 @@ export function noteEditorPage() {
             if (blocked) {
               this.status = 'invalid';
               this.saveError = `${blocked.last_error} Der Inhalt liegt weiter lokal vor - über die Seitenleiste (Offline-Inhalte) lässt sich der Sync erneut versuchen oder verwerfen.`;
+            } else {
+              // Vorübergehend gescheitert (Netzwerk, Rate Limit): Der Sync hat
+              // eine Wiederholung eingeplant. Ohne diesen Zweig bliebe die
+              // Anzeige auf „Speichern…" stehen, obwohl der Inhalt längst
+              // lokal liegt und auf den nächsten Versuch wartet.
+              this.status = 'offline';
             }
           }
         }

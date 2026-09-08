@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\Notes\AttachmentService;
+use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\PageAttachmentService;
+use App\Domain\PageCopyService;
 use App\Domain\PageService;
 use App\Repositories\AuditLogRepository;
 use App\Support\CurrentUser;
 use App\Support\Env;
 use App\Support\JsonResponse;
+use App\Support\RateLimiter;
 use App\Support\RequestIp;
 use App\Support\ValidationException;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -23,6 +26,8 @@ final class PageController
         private readonly AuditLogRepository $auditLog,
         private readonly AttachmentService $attachments,
         private readonly PageAttachmentService $files,
+        private readonly PageCopyService $copies,
+        private readonly RateLimiter $rateLimiter,
     ) {
     }
 
@@ -80,13 +85,7 @@ final class PageController
     public function store(Request $request, Response $response): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $notebookId = null;
-        if (array_key_exists('notebook_id', $body) && $body['notebook_id'] !== null) {
-            if (!is_int($body['notebook_id']) && !(is_string($body['notebook_id']) && ctype_digit($body['notebook_id']))) {
-                throw new ValidationException('Ungültiges Notizbuch.');
-            }
-            $notebookId = (int) $body['notebook_id'];
-        }
+        $notebookId = self::parseNotebookId($body['notebook_id'] ?? null);
         // Die optionale clientseitige Kennung gehört zu einer offline
         // angelegten Seite; ein Wiederholungsversuch erhält die bereits
         // angelegte Seite als Antwort (200) statt eines Duplikats (201).
@@ -115,15 +114,10 @@ final class PageController
         $body = (array) ($request->getParsedBody() ?? []);
         $rawIds = is_array($body['page_ids'] ?? null) ? $body['page_ids'] : [];
         $pageIds = array_values(array_map(static fn (mixed $id): int => (int) $id, $rawIds));
-        $notebookId = $body['notebook_id'] ?? null;
-        if ($notebookId !== null && (!is_int($notebookId) && !(is_string($notebookId) && ctype_digit($notebookId)))) {
-            throw new \App\Support\ValidationException('Ungültiges Notizbuch.');
-        }
-
         $moved = $this->pages->moveMany(
             CurrentUser::require($request),
             $pageIds,
-            $notebookId !== null ? (int) $notebookId : null,
+            self::parseNotebookId($body['notebook_id'] ?? null),
         );
 
         return JsonResponse::json($response, ['moved' => $moved]);
@@ -166,6 +160,54 @@ final class PageController
         return $response->withStatus(204);
     }
 
+    /**
+     * Kopie einer Notiz im eigenen Workspace (FR-NOTE-28). Ohne Angabe eines
+     * Notizbuchs landet die Kopie im selben Notizbuch wie die Vorlage - bei
+     * einer geteilten Notiz also ohne Notizbuch, denn deren Zuordnung gehört
+     * dem Eigentümer und bleibt Empfängern verborgen (`PageService`).
+     *
+     * @param array<string, string> $args
+     */
+    public function duplicate(Request $request, Response $response, array $args): Response
+    {
+        $user = CurrentUser::require($request);
+        $sourceId = (int) $args['id'];
+        $source = $this->pages->find($user, $sourceId);
+        if ($source['type'] !== 'note') {
+            throw new ValidationException('Nur Notizen können kopiert werden.');
+        }
+        if ($source['deleted_at'] !== null) {
+            throw new ValidationException('Seiten im Papierkorb können nicht kopiert werden.');
+        }
+
+        $body = (array) ($request->getParsedBody() ?? []);
+        $notebookId = array_key_exists('notebook_id', $body)
+            ? self::parseNotebookId($body['notebook_id'])
+            : ($source['notebook_id'] !== null ? (int) $source['notebook_id'] : null);
+
+        // Wie bei der Kopierfreigabe (FR-SHR-16): Eine Kopie dupliziert Bilder
+        // und Dateianhänge, das ist keine beliebig oft wiederholbare Aktion.
+        if (!$this->rateLimiter->attempt("page-copy:{$user->id}", 30, 3600)) {
+            return JsonResponse::error(
+                $response,
+                'RATE_LIMITED',
+                'Zu viele Kopien. Bitte später erneut versuchen.',
+                429,
+            );
+        }
+
+        try {
+            $copy = $this->copies->duplicate($user, $sourceId, $notebookId);
+        } catch (NoteEncryptionException $e) {
+            return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
+        }
+        $this->auditLog->log($user->id, 'page_copied', 'page', (int) $copy['id'], RequestIp::hash($request), [
+            'source_page_id' => $sourceId,
+        ]);
+
+        return JsonResponse::json($response, $this->serialize($copy), 201);
+    }
+
     /** @param array<string, string> $args */
     public function restore(Request $request, Response $response, array $args): Response
     {
@@ -187,6 +229,22 @@ final class PageController
         $this->auditLog->log($user->id, 'page_purged', 'page', $pageId, RequestIp::hash($request));
 
         return $response->withStatus(204);
+    }
+
+    /**
+     * Notizbuch-Kennung aus dem Anfragekörper. Leer und `null` stehen für
+     * „ohne Notizbuch"; alles andere muss eine Zahl sein.
+     */
+    private static function parseNotebookId(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (!is_int($value) && !(is_string($value) && ctype_digit($value))) {
+            throw new ValidationException('Ungültiges Notizbuch.');
+        }
+
+        return (int) $value;
     }
 
     /**

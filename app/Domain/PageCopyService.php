@@ -27,6 +27,9 @@ final class PageCopyService
         'image/jpeg' => 'jpg',
         'image/webp' => 'webp',
     ];
+    private const COPY_TITLE_PREFIX = 'Kopie von ';
+    /** Wie in `PageService`: Ein Seitentitel ist höchstens 200 Zeichen lang. */
+    private const MAX_TITLE_LENGTH = 200;
 
     public function __construct(
         private readonly PDO $pdo,
@@ -56,6 +59,30 @@ final class PageCopyService
             throw new ValidationException('Nur Freigaben im Modus "read_copy" können kopiert werden.');
         }
 
+        return $this->copyInto($recipient, (int) $resolvedShare['page_id'], $notebookId, null);
+    }
+
+    /**
+     * Kopie einer Seite, auf die der Nutzer bereits Zugriff hat, in seinen
+     * eigenen Workspace (FR-NOTE-28). Der Titel bekommt das Präfix
+     * „Kopie von"; das Zugriffsrecht auf die Quelle prüft der Aufrufer
+     * (`PageService::find`), weil es hier - anders als bei einer
+     * Kopierfreigabe - nicht am Freigabe-Token hängt.
+     *
+     * @return array<string, mixed>
+     */
+    public function duplicate(User $user, int $sourcePageId, ?int $notebookId): array
+    {
+        return $this->copyInto($user, $sourcePageId, $notebookId, 'copy');
+    }
+
+    /**
+     * @param 'copy'|null $titleMode `copy` stellt „Kopie von" voran, `null`
+     *        übernimmt den Titel der Quelle unverändert.
+     * @return array<string, mixed>
+     */
+    private function copyInto(User $recipient, int $sourcePageId, ?int $notebookId, ?string $titleMode): array
+    {
         $workspaceId = $this->workspaces->findByUserId($recipient->id);
         if ($workspaceId === null) {
             throw new NotFoundException('Workspace nicht gefunden.');
@@ -64,7 +91,7 @@ final class PageCopyService
             throw new NotFoundException('Notizbuch nicht gefunden.');
         }
 
-        $source = $this->pages->findById((int) $resolvedShare['page_id']);
+        $source = $this->pages->findById($sourcePageId);
         if ($source === null || $source['deleted_at'] !== null || !in_array($source['type'], ['note', 'task', 'log'], true)) {
             throw new NotFoundException('Quellseite nicht gefunden.');
         }
@@ -82,7 +109,7 @@ final class PageCopyService
             $copy = $this->pages->create(
                 $workspaceId,
                 (string) $source['type'],
-                (string) $source['title'],
+                $titleMode === 'copy' ? self::copyTitle((string) $source['title']) : (string) $source['title'],
                 $source['icon'] !== null ? (string) $source['icon'] : null,
                 $notebookId,
             );
@@ -120,6 +147,16 @@ final class PageCopyService
 
             throw $exception;
         }
+    }
+
+    /**
+     * Titel einer Kopie. Die Obergrenze ist dieselbe wie bei einem selbst
+     * getippten Titel (`PageService::validateTitle`), deshalb weicht das
+     * Präfix bei sehr langen Titeln dem Ende des Originals.
+     */
+    private static function copyTitle(string $title): string
+    {
+        return mb_substr(self::COPY_TITLE_PREFIX . $title, 0, self::MAX_TITLE_LENGTH);
     }
 
     /**

@@ -687,6 +687,31 @@ async function runSyncOutbox() {
         if (item.status !== 'pending') {
           continue;
         }
+        // Negative Kennung an einem Folgeeintrag heißt: Das page.create dieser
+        // Seite ist nicht durchgekommen. Ohne diese Sperre liefen Bild-Upload
+        // und Inhalt gegen `/api/pages/-1/...`, bekämen ein 404 und blockierten
+        // die Notiz mit einer Meldung über das Bild - obwohl das Anlegen der
+        // Seite die eigentliche Ursache ist.
+        if (item.type !== 'page.create' && Number(item.page_id) < 0) {
+          // Ist die Seite inzwischen angelegt, hat das Remapping diesen Eintrag
+          // übersehen (etwa weil er erst danach entstand) - die Zuordnung steht
+          // im abgeschlossenen Create-Eintrag und wird hier nachgezogen.
+          const remapped = await db.resolveRemappedPage(Number(item.page_id));
+          if (remapped !== null) {
+            await db.patchOutbox(Number(item.id), { page_id: remapped });
+            item = { ...item, page_id: remapped };
+          } else {
+            const blocker = await pageCreateBlocker(Number(item.page_id));
+            if (blocker === null) {
+              // Das Anlegen steht noch aus (Wiederholung eingeplant oder ein
+              // späterer Eintrag im selben Durchgang) - der Eintrag bleibt offen.
+              continue;
+            }
+            errors += 1;
+            await db.markOutboxBlocked(Number(item.id), Number(item.revision || 0), blocker);
+            continue;
+          }
+        }
         if (item.type === 'page.create') {
           const page = await apiFetch('/api/pages', {
             method: 'POST',
@@ -789,6 +814,28 @@ async function runSyncOutbox() {
   }
 
   return { synced, conflicts, errors };
+}
+
+/**
+ * Grund, aus dem eine offline angelegte Seite serverseitig noch nicht
+ * existiert - oder `null`, wenn ihr Create-Eintrag lediglich noch aussteht.
+ *
+ * @param {number} localPageId
+ * @returns {Promise<string|null>}
+ */
+async function pageCreateBlocker(localPageId) {
+  const entries = await db.listOutboxUnresolved();
+  const create = entries.find(
+    (entry) => entry.type === 'page.create' && Number(entry.page_id) === Number(localPageId),
+  );
+  if (!create) {
+    return 'Die zugehörige Seite wurde nie angelegt und kann nicht mehr übertragen werden.';
+  }
+  if (create.status === 'blocked') {
+    return `Die Seite konnte nicht angelegt werden: ${create.last_error || 'unbekannter Fehler'}`;
+  }
+
+  return null;
 }
 
 function retryDelay(retries, retryAfter) {
@@ -1433,6 +1480,14 @@ async function imageDimensions(file) {
   }
 }
 
+/**
+ * Lädt die lokal abgelegten Bildentwürfe eines Dokuments hoch und ersetzt die
+ * `/offline-attachments/`-Pfade durch die Serveradressen.
+ *
+ * @param {number} pageId Server-Kennung der Seite - eine negative Temporär-
+ *        Kennung ist hier immer ein Programmierfehler, siehe runSyncOutbox().
+ * @param {Record<string, unknown>} content
+ */
 async function uploadOfflineAttachments(pageId, content) {
   const cloned = typeof structuredClone === 'function'
     ? structuredClone(content)
@@ -1441,12 +1496,22 @@ async function uploadOfflineAttachments(pageId, content) {
   if (ids.length === 0) {
     return cloned;
   }
+  if (!(Number(pageId) > 0)) {
+    throw permanentSyncError('Die Seite ist noch nicht angelegt; Bilder können erst danach hochgeladen werden.');
+  }
 
   const replacements = new Map();
   for (const id of ids) {
     const draft = await db.getAttachmentDraft(id);
-    if (!draft) {
-      throw new Error('Ein lokal eingefügtes Bild ist nicht mehr verfügbar.');
+    if (!draft?.blob) {
+      // Endgültig, nicht vorübergehend: Wiederholen kann den verlorenen
+      // Entwurf nicht zurückbringen. Ohne `status` gälte der Fehler als
+      // Netzwerkproblem - der Sync bliebe in einer endlosen Wiederholung
+      // stehen und mit ihm die gesamte übrige Warteschlange.
+      throw permanentSyncError(
+        'Ein lokal eingefügtes Bild ist nicht mehr verfügbar. '
+        + 'Bitte das Bild in der Notiz entfernen oder neu einfügen.',
+      );
     }
     let serverSrc = draft.server_src;
     if (!serverSrc) {
@@ -1465,6 +1530,19 @@ async function uploadOfflineAttachments(pageId, content) {
 
   replaceOfflineAttachmentUrls(cloned, replacements);
   return cloned;
+}
+
+/**
+ * Fehler, den die Warteschlange wie eine Serverabweisung behandelt: Der
+ * Eintrag wird blockiert und gemeldet, statt endlos wiederholt zu werden.
+ * `status` ist dieselbe Weiche, an der auch echte HTTP-Fehler hängen.
+ */
+function permanentSyncError(message) {
+  const error = new Error(message);
+  error.status = 422;
+  error.payload = null;
+
+  return error;
 }
 
 async function cacheUploadedAttachment(src, blob, mimeType) {

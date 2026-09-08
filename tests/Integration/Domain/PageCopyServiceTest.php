@@ -238,6 +238,46 @@ final class PageCopyServiceTest extends TestCase
         self::assertSame($this->recipient->id, (int) $copiedEntries[0]['created_by']);
     }
 
+    public function testDuplicatePrefixesTheTitleAndKeepsTheChosenNotebook(): void
+    {
+        $workspaceId = $this->workspaceId($this->owner);
+        $notebook = $this->notebooks->create($workspaceId, 'Projekte', 'projekte', 0);
+        $source = $this->pages->create($workspaceId, 'note', 'Reisebericht', 'file-text', (int) $notebook['id']);
+
+        $copy = $this->service->duplicate($this->owner, (int) $source['id'], (int) $notebook['id']);
+
+        self::assertSame('Kopie von Reisebericht', $copy['title']);
+        self::assertSame((int) $notebook['id'], (int) $copy['notebook_id']);
+        self::assertSame('file-text', $copy['icon']);
+        self::assertNotSame((int) $source['id'], (int) $copy['id']);
+    }
+
+    public function testDuplicateKeepsTheTitleWithinTheLimitOfATypedTitle(): void
+    {
+        $title = str_repeat('a', 200);
+        $source = $this->pages->create($this->workspaceId($this->owner), 'note', $title, null);
+
+        $copy = $this->service->duplicate($this->owner, (int) $source['id'], null);
+
+        self::assertSame(200, mb_strlen((string) $copy['title']));
+        self::assertStringStartsWith('Kopie von ', (string) $copy['title']);
+    }
+
+    /**
+     * Die Kopie einer geteilten Notiz entsteht im Workspace des Empfängers -
+     * das Notizbuch der Vorlage bleibt dabei außen vor.
+     */
+    public function testDuplicateOfAForeignPageLandsInTheOwnWorkspace(): void
+    {
+        $source = $this->pages->create($this->workspaceId($this->owner), 'note', 'Geteilt', null);
+
+        $copy = $this->service->duplicate($this->recipient, (int) $source['id'], null);
+
+        self::assertSame('Kopie von Geteilt', $copy['title']);
+        self::assertSame($this->workspaceId($this->recipient), (int) $copy['workspace_id']);
+        self::assertNull($copy['notebook_id']);
+    }
+
     public function testRejectsNotebookOwnedByAnotherUserWithoutCreatingPage(): void
     {
         $source = $this->pages->create($this->workspaceId($this->owner), 'note', 'Source', null);
