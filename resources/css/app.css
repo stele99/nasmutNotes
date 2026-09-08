@@ -1240,6 +1240,93 @@ button:disabled,
   }
 }
 
+.note-document-shell {
+  container: note-document / inline-size;
+}
+
+.note-document-layout {
+  min-width: 0;
+}
+
+.note-table-of-contents {
+  display: none;
+}
+
+@container note-document (min-width: 60rem) {
+  .note-document-layout.has-table-of-contents {
+    align-items: start;
+    display: grid;
+    gap: 2.5rem;
+    grid-template-columns: minmax(0, 1fr) 13rem;
+  }
+
+  .note-document-layout.has-table-of-contents .note-table-of-contents {
+    --note-toc-top: calc(var(--sticky-header-height, var(--note-sticky-header-height, 3rem)) + var(--sticky-toolbar-height, 0px) + 1rem);
+    align-self: start;
+    border-left: 1px solid var(--color-border);
+    display: block;
+    max-height: calc(100dvh - var(--note-toc-top) - 1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-left: 1rem;
+    position: sticky;
+    scrollbar-width: thin;
+    top: var(--note-toc-top);
+  }
+}
+
+.note-toc-title {
+  color: var(--color-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.note-toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.note-toc-link {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  display: block;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  text-decoration: none;
+  width: 100%;
+}
+
+.note-toc-link.is-level-2 {
+  font-size: 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.note-toc-link:hover {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+  color: var(--color-text);
+}
+
+.note-toc-link:focus-visible {
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  color: var(--color-text);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.prose-editor .tiptap h1,
+.prose-editor .tiptap h2 {
+  scroll-margin-top: calc(var(--sticky-header-height, var(--note-sticky-header-height, 3rem)) + var(--sticky-toolbar-height, 0px) + 1rem);
+}
+
 .prose-editor .tiptap {
   outline: none;
   min-height: 60vh;
@@ -2089,6 +2176,14 @@ button:disabled,
   .prose-editor {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  .note-document-shell {
+    container-type: normal;
+  }
+
+  .note-document-layout {
+    display: block !important;
   }
 
   .prose-editor .tiptap {

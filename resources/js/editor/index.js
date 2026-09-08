@@ -99,9 +99,9 @@ export function createEditor({
         onUpdate(editor.getJSON());
       }
     },
-    onTransaction: ({ editor }) => {
+    onTransaction: ({ editor, transaction }) => {
       if (onTransaction) {
-        onTransaction(editor);
+        onTransaction(editor, transaction);
       }
     },
   });

@@ -80,7 +80,7 @@
     </div>
     <div class="pt-4 md:pt-10">
         <div class="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-4" :class="(attachments.length > 0 || uploadingAttachment) ? 'mb-6 md:mb-10' : 'mb-3 md:mb-6'">
-            <div class="min-w-0">
+            <div class="min-w-0 md:flex-1">
                 <?php /* leading-tight: siehe page_log.php - `truncate` schnitte
                          sonst die Unterlängen ab. */ ?>
                 <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
@@ -219,7 +219,23 @@
             <p x-show="cryptoStatus === 'error'" x-text="cryptoError" class="mt-2 max-w-md text-sm" style="color: var(--color-danger);" role="alert"></p>
             <button x-show="cryptoStatus === 'locked'" type="button" @click="openCryptoDialog('unlock')" class="btn btn-primary mt-5"><span x-icon="lock-open"></span>Entsperren</button>
         </section>
-        <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
+        <div class="note-document-shell">
+            <div class="note-document-layout" :class="tableOfContents.length > 0 ? 'has-table-of-contents' : ''">
+                <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
+                <aside x-show="tableOfContents.length > 0" x-cloak class="note-table-of-contents note-print-hide">
+                    <nav aria-label="Inhaltsverzeichnis">
+                        <p class="note-toc-title">Inhalt</p>
+                        <ol class="note-toc-list">
+                            <template x-for="heading in tableOfContents" :key="heading.index">
+                                <li>
+                                    <button type="button" @click="scrollToHeading(heading.index)" class="note-toc-link" :class="heading.level === 2 ? 'is-level-2' : ''" :title="heading.text" x-text="heading.text"></button>
+                                </li>
+                            </template>
+                        </ol>
+                    </nav>
+                </aside>
+            </div>
+        </div>
         <div x-show="linkMenuOpen" x-cloak @click.outside="closeLinkMenu" @keydown.escape.window="closeLinkMenu" class="link-action-menu" :style="linkMenuStyle">
             <button type="button" @click="openActiveLink" class="link-action-button">Öffnen</button>
             <button x-show="canEditPage" type="button" @click="editActiveLink" class="link-action-button">Bearbeiten</button>

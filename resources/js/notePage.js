@@ -18,6 +18,7 @@ import { pageTrashMixin } from './pageTrash.js';
 import { pageCopyMixin } from './pageCopy.js';
 import { imageAnnotatorMixin } from './editor/annotations/annotator.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
+import { noteTableOfContents } from './noteToc.js';
 import { viewportShift } from './viewport.js';
 import {
   acquireNoteEditLock,
@@ -50,6 +51,7 @@ export function noteEditorPage() {
   let cryptoKey = null;
   let cryptoEnvelope = null;
   let cryptoChannel = null;
+  let tableOfContentsSignature = '';
   const pendingUploads = new Set();
   // Object-URLs für offline eingefügte Bilder, Schlüssel ist der kanonische
   // Pfad aus dem Dokument. ProseMirror kennt nur die Original-src; die
@@ -183,6 +185,7 @@ export function noteEditorPage() {
     cryptoDialogError: '',
     encryptionMenuOpen: false,
     encryptionHandler: null,
+    tableOfContents: [],
 
     async init() {
       const pageRoot = this.$root;
@@ -570,8 +573,11 @@ export function noteEditorPage() {
         content,
         editable: this.canEditPage,
         onUpdate: (json) => this.onChange(json),
-        onTransaction: () => {
+        onTransaction: (currentEditor, transaction) => {
           this.syncToolbar();
+          if (transaction.docChanged) {
+            this.refreshTableOfContents(currentEditor);
+          }
           // Attributänderungen am Bildknoten (übernommene Annotationen,
           // Größenänderung) setzen die Bildquelle auf den kanonischen Pfad
           // zurück - die Blob-Adresse der Offline-Anzeige muss dann erneut
@@ -597,7 +603,29 @@ export function noteEditorPage() {
       this.annoSetEditorAccessor(() => editor);
       this.annoBindNodeViewEntry(editor);
       this.syncToolbar();
+      this.refreshTableOfContents();
       void this.hydrateOfflineImages();
+    },
+
+    refreshTableOfContents(currentEditor = editor) {
+      const headings = currentEditor ? noteTableOfContents(currentEditor.getJSON()) : [];
+      const signature = JSON.stringify(headings);
+      if (signature !== tableOfContentsSignature) {
+        tableOfContentsSignature = signature;
+        this.tableOfContents = headings;
+      }
+    },
+
+    scrollToHeading(index) {
+      if (!editor || !Number.isInteger(index) || index < 0) {
+        return;
+      }
+      const target = editor.view.dom.querySelectorAll('h1, h2').item(index);
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
     },
 
     /**
@@ -934,6 +962,7 @@ export function noteEditorPage() {
     discardCryptoSession() {
       editor?.destroy();
       editor = null;
+      this.refreshTableOfContents();
       cryptoKey = null;
       this.cryptoStatus = cryptoEnvelope ? 'locked' : 'error';
       this.linkMenuOpen = false;

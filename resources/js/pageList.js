@@ -56,7 +56,7 @@ function offlinePageHtml(page) {
       </div>`;
 
   const body = isNote
-    ? `<div class="note-page page-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="${id}" data-page-title="${title}" data-page-can-edit="${canEdit}" data-page-is-shared="${isShared}" data-page-encrypted="${isEncrypted}">
+    ? `<div class="note-page page-canvas page-content-canvas mx-auto px-6 pb-16 pt-20 sm:px-10 md:pt-14" x-data="noteEditorPage" data-page-id="${id}" data-page-title="${title}" data-page-can-edit="${canEdit}" data-page-is-shared="${isShared}" data-page-encrypted="${isEncrypted}">
         <div class="note-sticky-header page-toolbar flex items-center gap-2">
           <span style="color: ${notebookColor};" x-icon="${notebookIcon}"></span>
           ${notebookLabel}
@@ -102,7 +102,21 @@ function offlinePageHtml(page) {
           </div>
           <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
           <p x-show="annoError" x-cloak x-text="annoError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
-          <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
+          <div class="note-document-shell">
+            <div class="note-document-layout" :class="tableOfContents.length > 0 ? 'has-table-of-contents' : ''">
+              <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
+              <aside x-show="tableOfContents.length > 0" x-cloak class="note-table-of-contents note-print-hide">
+                <nav aria-label="Inhaltsverzeichnis">
+                  <p class="note-toc-title">Inhalt</p>
+                  <ol class="note-toc-list">
+                    <template x-for="heading in tableOfContents" :key="heading.index">
+                      <li><button type="button" @click="scrollToHeading(heading.index)" class="note-toc-link" :class="heading.level === 2 ? 'is-level-2' : ''" :title="heading.text" x-text="heading.text"></button></li>
+                    </template>
+                  </ol>
+                </nav>
+              </aside>
+            </div>
+          </div>
           <div x-show="cryptoDialogOpen" x-cloak class="fixed inset-0 z-[130] flex items-center justify-center p-4" style="background: rgb(0 0 0 / .5);" role="dialog" aria-modal="true" aria-labelledby="offline-crypto-title">
             <form x-ref="cryptoDialog" @submit.prevent="submitCryptoDialog" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg);">
               <h2 id="offline-crypto-title" class="text-xl font-semibold">Notiz entsperren</h2>
