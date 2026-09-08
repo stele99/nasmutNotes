@@ -495,11 +495,47 @@ body.is-resizing-sidebar {
   max-width: 1200px;
 }
 
+/* Reicht der Platz nicht, bricht die Leiste um, statt die Schaltflächen zu
+   stauchen oder aus der Spalte zu schieben. Der Kopf trägt Freigabe-Status,
+   Kollaboratoren und Aktionen; ohne Umbruch würde der Freigabe-Hinweis auf
+   schmalen Displays aus dem sichtbaren Bereich geschoben (FR-SHR-13). */
 .page-toolbar {
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-muted);
+  flex-wrap: wrap;
   font-size: 0.875rem;
   padding-bottom: 1rem;
+  row-gap: 0.5rem;
+}
+
+/* Der Notizkopf trägt sieben Aktionen und ist damit der einzige, der eng wird.
+   Er steht in der Inhaltsspalte, nicht im Fenster: Neben Notizbuchleiste und
+   Seitenliste bleiben bei 1024 px Fensterbreite nur rund 660 px übrig, und die
+   Notizbuchleiste ist obendrein in der Breite verstellbar. Ein
+   Viewport-Breakpoint träfe deshalb daneben.
+
+   `container-type` erzeugt einen Stapelkontext - deshalb steht es hier und
+   nicht an `.page-toolbar`: Dieser Kopf ist über `.note-sticky-header` bereits
+   einer (z-index 30), die Aufklappmenüs darin behalten also ihre Ebene. Am
+   nicht positionierten Kopf der Aufgabenliste würde derselbe Zusatz die
+   Mitbearbeiter-Liste hinter das Board fallen lassen. */
+.page-toolbar-note {
+  container-type: inline-size;
+}
+
+/* Beschriftung neben dem Symbol einer Seitenaktion. Ohne Platz steht das
+   Symbol allein - `title` und `aria-label` tragen die Bedeutung ohnehin.
+   Papierkorb, Kopie, Verlauf, Drucken, Komprimieren, Teilen und Verschlüsseln
+   brauchen beschriftet rund 725 px, dazu Personenkreise und ein Rest für den
+   Breadcrumb. */
+.page-action-label {
+  display: none;
+}
+
+@container (min-width: 750px) {
+  .page-action-label {
+    display: inline;
+  }
 }
 
 .note-page {
@@ -513,6 +549,32 @@ body.is-resizing-sidebar {
   position: sticky;
   top: 0;
   z-index: 30;
+}
+
+/* In eine Zeile passen rund neun Schaltflächen, die volle Werkzeugleiste
+   braucht zwei. Wird die Spalte schmaler, wandern die beim Schreiben
+   selteneren Werkzeuge hinter den Mehr-Schalter - der deshalb genau dann
+   erscheint, wenn tatsächlich etwas verborgen ist, und sonst gar nicht.
+   Maßgeblich ist auch hier die Breite der Leiste, nicht die des Fensters:
+   Neben der Seitenliste bleiben ab 768 px Fensterbreite nur rund 360 px.
+
+   Die Klasse trägt nur die Leiste der Notiz, nicht `.editor-toolbar` selbst:
+   Dieselbe Klasse hängt am Werkzeugkasten des Annotations-Dialogs, und der
+   Stapelkontext aus `container-type` sperrte dort die Farbpalette
+   (`.anno-color-pop`) hinter die Bühne. Die Notiz-Leiste ist über
+   `.note-sticky-toolbar` ohnehin schon ein Stapelkontext (z-index 25). */
+.editor-toolbar-collapsible {
+  container-type: inline-size;
+}
+
+@container (max-width: 639px) {
+  .editor-toolbar-collapsible:not(.is-expanded) .toolbar-more {
+    display: none;
+  }
+
+  .editor-toolbar-collapsible .toolbar-more-toggle {
+    display: inline-flex;
+  }
 }
 
 /* Der Versatz folgt der gemessenen Kopfhöhe (notePage.js), nicht der
@@ -800,6 +862,10 @@ button:disabled,
 .toolbar-button.toolbar-button-danger:focus-visible {
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
   color: var(--color-danger);
+}
+
+.toolbar-more-toggle {
+  display: none;
 }
 
 .toolbar-button.toolbar-text {
@@ -1809,25 +1875,6 @@ button:disabled,
 
   .note-page {
     --note-sticky-header-height: 3.5rem;
-  }
-
-  /* In eine Zeile passen auf dem Handy rund neun Schaltflächen, die volle
-     Werkzeugleiste braucht zwei. Mit eingeblendeter Tastatur kostet die zweite
-     Zeile ein Viertel des sichtbaren Bereichs. Sichtbar bleiben deshalb die
-     beim Schreiben am Telefon gebräuchlichen Werkzeuge; der Rest steht hinter
-     dem Mehr-Schalter, der die Leiste aufklappt. Ab 768 px ist alles zu sehen,
-     die Regel greift dort nicht. */
-  .editor-toolbar:not(.is-expanded) .toolbar-more {
-    display: none;
-  }
-
-  /* Der Kopfbereich trägt Freigabe-Status, Kollaboratoren und Aktionen. Ohne
-     Umbruch würde der Freigabe-Hinweis auf schmalen Displays aus dem sichtbaren
-     Bereich geschoben (FR-SHR-13). */
-  .note-sticky-header,
-  .page-toolbar {
-    flex-wrap: wrap;
-    row-gap: 0.5rem;
   }
 
   .prose-editor .tiptap {

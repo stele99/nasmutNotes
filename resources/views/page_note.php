@@ -1,5 +1,5 @@
 <div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>" data-page-encrypted="<?= !empty($page['is_encrypted']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>">
-    <div class="note-sticky-header page-toolbar flex items-center gap-2">
+    <div class="note-sticky-header page-toolbar page-toolbar-note flex items-center gap-2">
         <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
         <button type="button" @click="goBack()" class="icon-action flex shrink-0 items-center border p-2 md:hidden" style="border-color: var(--color-border);" title="Zurück zur Seitenauswahl" aria-label="Zurück zur Seitenauswahl" x-icon="chevron-left"></button>
@@ -38,7 +38,7 @@
                 title="Sync-Konflikt: beide Fassungen ansehen und entscheiden"
                 aria-label="Sync-Konflikt"
             >
-                <span x-icon="triangle-alert"></span><span class="hidden lg:inline">Sync-Konflikt</span>
+                <span x-icon="triangle-alert"></span><span class="page-action-label">Sync-Konflikt</span>
             </button>
             <?php /* Löschen steht bewusst nur als Symbol da - der rote Papierkorb
                      ist eindeutig genug und die Leiste ist schon gut gefüllt. */ ?>
@@ -47,27 +47,27 @@
                      Freigabe, die dabei ihr Zielnotizbuch wählen. Verschlüsselte
                      Notizen kann der Server nicht kopieren (FR-CRYPT-05). */ ?>
             <button x-show="!isEncrypted()" type="button" @click="copyPage" :disabled="copyingPage" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Kopie dieser Notiz erstellen" aria-label="Kopie dieser Notiz erstellen">
-                <span x-icon="copy"></span><span class="hidden lg:inline">Kopie</span>
+                <span x-icon="copy"></span><span class="page-action-label">Kopie</span>
             </button>
             <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
-                <span x-icon="history"></span><span class="hidden lg:inline">Verlauf</span>
+                <span x-icon="history"></span><span class="page-action-label">Verlauf</span>
             </button>
             <?php /* Druckt allein Titel und Inhalt; das Ausblenden der Oberfläche
                      übernimmt das Druck-Stylesheet (FR-NOTE-27). */ ?>
             <button x-show="!isEncrypted() || isCryptoUnlocked()" type="button" @click="printNote" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Notiz drucken" aria-label="Notiz drucken">
-                <span x-icon="printer"></span><span class="hidden lg:inline">Drucken</span>
+                <span x-icon="printer"></span><span class="page-action-label">Drucken</span>
             </button>
             <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
-                <span x-icon="image"></span><span class="hidden lg:inline">Komprimieren</span>
+                <span x-icon="image"></span><span class="page-action-label">Komprimieren</span>
             </button>
             <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" :class="shareButtonClass()" style="border-color: var(--color-border);" :title="shareButtonLabel()" :aria-label="shareButtonLabel()">
-                <span x-icon="share-2"></span><span class="hidden lg:inline">Teilen</span>
+                <span x-icon="share-2"></span><span class="page-action-label">Teilen</span>
             </button>
             <div x-show="!isShared && canEditPage" class="relative" @click.outside="encryptionMenuOpen = false">
                 <button type="button" @click="handleEncryptionButton" :disabled="!isEncrypted() && attachments.length > 0" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" :class="isEncrypted() ? 'note-encryption-active' : ''" style="border-color: var(--color-border);" :title="encryptionButtonLabel()" :aria-label="encryptionButtonLabel()" :aria-expanded="encryptionMenuOpen">
                     <span x-show="!isEncrypted()" x-icon="lock-open"></span>
                     <span x-show="isEncrypted()" x-cloak x-icon="lock"></span>
-                    <span class="hidden lg:inline" x-text="isEncrypted() ? (isCryptoUnlocked() ? 'Entsperrt' : 'Gesperrt') : 'Verschlüsseln'"></span>
+                    <span class="page-action-label" x-text="isEncrypted() ? (isCryptoUnlocked() ? 'Entsperrt' : 'Gesperrt') : 'Verschlüsseln'"></span>
                 </button>
                 <div x-show="encryptionMenuOpen" x-cloak class="popup-menu" @keydown.escape.window="encryptionMenuOpen = false">
                     <p class="px-3 py-2 text-xs font-medium" style="color: var(--color-text-muted);" x-text="encryptionButtonLabel()"></p>
@@ -147,7 +147,7 @@
             <span x-text="saveError"></span>
         </div>
 
-        <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar mb-5 flex flex-wrap items-center gap-1 border-b pb-4" :class="toolbarExpandedClass()" style="border-color: var(--color-border);" x-ref="toolbar">
+        <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar editor-toolbar-collapsible mb-5 flex flex-wrap items-center gap-1 border-b pb-4" :class="toolbarExpandedClass()" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" aria-label="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" aria-label="Kursiv" x-icon="italic"></button>
             <button type="button" data-editor-command="strike" @click.prevent="toggleStrike" class="toolbar-button toolbar-text toolbar-more" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
@@ -196,14 +196,15 @@
             <span class="toolbar-divider"></span>
             <button type="button" data-editor-command="undo" @click.prevent="undo" class="toolbar-button" title="Rückgängig" aria-label="Rückgängig" x-icon="undo"></button>
             <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button toolbar-more" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
-            <?php /* Klappt auf dem Handy die übrigen Werkzeuge auf (NFR-UI-24).
-                     Ab 768 px steht ohnehin alles in der Leiste. */ ?>
+            <?php /* Klappt die übrigen Werkzeuge auf (NFR-UI-24). Der Schalter
+                     erscheint nur, solange die Leiste zu schmal für alle
+                     Werkzeuge ist - siehe .toolbar-more-toggle in app.css. */ ?>
             <?php /* touchstart/mousedown halten den Fokus im Editor: Ohne sie
                      nähme der Schalter ihn an sich, die Textauswahl ginge
                      verloren und die Tastatur führe ein. Die übrigen Werkzeuge
                      fallen damit nicht auf, weil sie den Editor über
                      runEditorCommand() ohnehin wieder fokussieren. */ ?>
-            <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
+            <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button toolbar-more-toggle" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
         </div>
         <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <p x-show="annoError" x-cloak x-text="annoError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>

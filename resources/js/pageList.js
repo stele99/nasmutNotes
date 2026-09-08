@@ -73,7 +73,7 @@ function offlinePageHtml(page) {
             <button x-show="cryptoStatus === 'locked'" type="button" @click="openCryptoDialog('unlock')" class="btn btn-primary mt-5">Entsperren</button>
             <p x-show="cryptoStatus === 'error'" x-text="cryptoError" class="mt-3 text-sm" style="color: var(--color-danger);"></p>
           </section>
-          <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar mb-5 mt-6 flex flex-wrap items-center gap-1 border-b pb-4" :class="toolbarExpandedClass()" style="border-color: var(--color-border);" x-ref="toolbar">
+          <div x-show="canEditPage && (!isEncrypted() || isCryptoUnlocked())" class="note-sticky-toolbar editor-toolbar editor-toolbar-collapsible mb-5 mt-6 flex flex-wrap items-center gap-1 border-b pb-4" :class="toolbarExpandedClass()" style="border-color: var(--color-border);" x-ref="toolbar">
             <button type="button" data-editor-command="bold" @click.prevent="toggleBold" class="toolbar-button" title="Fett" aria-label="Fett" x-icon="bold"></button>
             <button type="button" data-editor-command="italic" @click.prevent="toggleItalic" class="toolbar-button" title="Kursiv" aria-label="Kursiv" x-icon="italic"></button>
             <button type="button" data-editor-command="strike" @click.prevent="toggleStrike" class="toolbar-button toolbar-text toolbar-more" title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
@@ -98,7 +98,7 @@ function offlinePageHtml(page) {
             <span class="toolbar-divider"></span>
             <button type="button" data-editor-command="undo" @click.prevent="undo" class="toolbar-button" title="Rückgängig" aria-label="Rückgängig" x-icon="undo"></button>
             <button type="button" data-editor-command="redo" @click.prevent="redo" class="toolbar-button toolbar-more" title="Wiederholen" aria-label="Wiederholen" x-icon="redo"></button>
-            <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button md:hidden" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
+            <button type="button" @touchstart="rememberEditorFocus" @mousedown.prevent="rememberEditorFocus" @click.prevent="toggleToolbarMore" class="toolbar-button toolbar-more-toggle" :class="toolbarMoreButtonClass()" :aria-expanded="toolbarExpanded" :title="toolbarMoreLabel()" :aria-label="toolbarMoreLabel()" x-icon="more-horizontal"></button>
           </div>
           <p x-show="imageUploadError" x-text="imageUploadError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
           <p x-show="annoError" x-cloak x-text="annoError" class="note-print-hide mb-4 text-sm" style="color: var(--color-danger);" role="alert"></p>
