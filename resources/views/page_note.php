@@ -46,18 +46,18 @@
             <?php /* Kopie der Notiz (FR-NOTE-28) - auch für Empfänger einer
                      Freigabe, die dabei ihr Zielnotizbuch wählen. Verschlüsselte
                      Notizen kann der Server nicht kopieren (FR-CRYPT-05). */ ?>
-            <button x-show="!isEncrypted()" type="button" @click="copyPage" :disabled="copyingPage" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Kopie dieser Notiz erstellen" aria-label="Kopie dieser Notiz erstellen">
+            <button x-show="!isEncrypted()" type="button" @click="copyPage" :disabled="copyingPage" class="icon-action page-action-secondary flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Kopie dieser Notiz erstellen" aria-label="Kopie dieser Notiz erstellen">
                 <span x-icon="copy"></span><span class="page-action-label">Kopie</span>
             </button>
-            <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
+            <button x-show="!isEncrypted()" type="button" @click="openHistory" class="icon-action page-action-secondary flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Versionsverlauf" aria-label="Versionsverlauf">
                 <span x-icon="history"></span><span class="page-action-label">Verlauf</span>
             </button>
             <?php /* Druckt allein Titel und Inhalt; das Ausblenden der Oberfläche
                      übernimmt das Druck-Stylesheet (FR-NOTE-27). */ ?>
-            <button x-show="!isEncrypted() || isCryptoUnlocked()" type="button" @click="printNote" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Notiz drucken" aria-label="Notiz drucken">
+            <button x-show="!isEncrypted() || isCryptoUnlocked()" type="button" @click="printNote" class="icon-action page-action-secondary flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Notiz drucken" aria-label="Notiz drucken">
                 <span x-icon="printer"></span><span class="page-action-label">Drucken</span>
             </button>
-            <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
+            <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialog" class="icon-action page-action-secondary flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" style="border-color: var(--color-border);" title="Bilder komprimieren" aria-label="Bilder komprimieren">
                 <span x-icon="image"></span><span class="page-action-label">Komprimieren</span>
             </button>
             <button x-show="!isShared && canEditPage" @click="openShareDialog" class="icon-action flex items-center gap-1.5 border p-2 text-sm font-medium lg:px-3 lg:py-1.5" :class="shareButtonClass()" style="border-color: var(--color-border);" :title="shareButtonLabel()" :aria-label="shareButtonLabel()">
@@ -74,6 +74,21 @@
                     <button type="button" @click="lockEncryptedNote" class="popup-menu-button"><span x-icon="lock"></span>Sperren</button>
                     <button type="button" @click="openCryptoDialog('rewrap')" class="popup-menu-button"><span x-icon="key-round"></span>Kennwort ändern</button>
                     <button type="button" @click="openCryptoDialog('decrypt')" class="popup-menu-button popup-menu-danger"><span x-icon="lock-open"></span>Verschlüsselung aufheben</button>
+                </div>
+            </div>
+            <?php /* Schmaler Kopf (Handy): Kopie, Verlauf, Drucken und Komprimieren
+                     passen nicht mehr in eine Zeile und liegen hinter diesem
+                     „..."-Schalter - Papierkorb, Teilen und Verschlüsselung bleiben
+                     direkt sichtbar. Auf breiten Köpfen ist der Schalter versteckt
+                     und die vier Aktionen stehen daneben (siehe
+                     .page-action-overflow in app.css). */ ?>
+            <div x-show="hasPageMenuActions()" class="page-action-overflow relative" @click.outside="closePageMenu" @keydown.escape.window="closePageMenu">
+                <button type="button" @click="togglePageMenu" class="icon-action flex items-center border p-2" style="border-color: var(--color-border);" :aria-expanded="pageMenuOpen" title="Weitere Aktionen" aria-label="Weitere Aktionen" x-icon="more-horizontal"></button>
+                <div x-show="pageMenuOpen" x-cloak class="popup-menu" role="menu" aria-label="Weitere Aktionen">
+                    <button x-show="!isEncrypted()" type="button" @click="copyPageFromMenu" :disabled="copyingPage" class="popup-menu-button"><span x-icon="copy"></span>Kopie</button>
+                    <button x-show="!isEncrypted()" type="button" @click="openHistoryFromMenu" class="popup-menu-button"><span x-icon="history"></span>Verlauf</button>
+                    <button x-show="!isEncrypted() || isCryptoUnlocked()" type="button" @click="printNoteFromMenu" class="popup-menu-button"><span x-icon="printer"></span>Drucken</button>
+                    <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialogFromMenu" class="popup-menu-button"><span x-icon="image"></span>Bilder komprimieren</button>
                 </div>
             </div>
         </div>

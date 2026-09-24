@@ -185,6 +185,7 @@ export function noteEditorPage() {
     cryptoDialogError: '',
     encryptionMenuOpen: false,
     encryptionHandler: null,
+    pageMenuOpen: false,
     tableOfContents: [],
 
     async init() {
@@ -745,6 +746,44 @@ export function noteEditorPage() {
       } else {
         this.encryptionMenuOpen = true;
       }
+    },
+
+    // Überlaufmenü des Notizkopfes: Auf schmalen Köpfen (Handy) passen Kopie,
+    // Verlauf, Drucken und Komprimieren nicht mehr in eine Zeile und liegen
+    // hinter dem „..."-Schalter - Papierkorb, Teilen und Verschlüsselung
+    // bleiben direkt sichtbar. Die Sichtbarkeit der Einträge spiegelt die der
+    // danebenstehenden Schalter auf breiten Köpfen.
+    togglePageMenu() {
+      this.pageMenuOpen = !this.pageMenuOpen;
+    },
+
+    closePageMenu() {
+      this.pageMenuOpen = false;
+    },
+
+    hasPageMenuActions() {
+      if (!this.isEncrypted()) return true;
+      return this.isCryptoUnlocked();
+    },
+
+    copyPageFromMenu() {
+      this.pageMenuOpen = false;
+      return this.copyPage();
+    },
+
+    openHistoryFromMenu() {
+      this.pageMenuOpen = false;
+      return this.openHistory();
+    },
+
+    printNoteFromMenu() {
+      this.pageMenuOpen = false;
+      this.printNote();
+    },
+
+    openCompressionDialogFromMenu() {
+      this.pageMenuOpen = false;
+      this.openCompressionDialog();
     },
 
     openCryptoDialog(mode) {

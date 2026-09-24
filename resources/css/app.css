@@ -538,6 +538,29 @@ body.is-resizing-sidebar {
   }
 }
 
+/* Überlaufmenü des Notizkopfes: Auf schmalen Köpfen (Handy) passen Kopie,
+   Verlauf, Drucken und Komprimieren nicht mehr in eine Zeile und liegen
+   hinter dem „..."-Schalter - der Kopf bleibt damit einzeilig, statt
+   umzubrechen. Maßgeblich ist wie bei der Werkzeugleiste die Breite des
+   Kopfes, nicht die des Fensters. */
+.page-action-overflow {
+  display: none;
+}
+
+@container (max-width: 639px) {
+  .page-toolbar-note {
+    flex-wrap: nowrap;
+  }
+
+  .page-toolbar-note .page-action-secondary {
+    display: none;
+  }
+
+  .page-toolbar-note .page-action-overflow {
+    display: block;
+  }
+}
+
 .note-page {
   --note-sticky-header-height: 3rem;
 }
