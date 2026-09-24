@@ -88,7 +88,7 @@ function offlinePageHtml(page) {
             <button type="button" data-editor-command="blockquote" @click.prevent="toggleBlockquote" class="toolbar-button toolbar-more" title="Zitat" aria-label="Zitat" x-icon="quote"></button>
             <button type="button" data-editor-command="link" @click.prevent="editLink" class="toolbar-button toolbar-more" title="Link" aria-label="Link" x-icon="link"></button>
             <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button toolbar-more" title="Tabelle einfügen" aria-label="Tabelle einfügen" x-icon="table"></button>
-            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button toolbar-more" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button toolbar-more" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
             <input x-ref="imageInput" type="file" accept="image/*" class="hidden" @change="insertPickedImage">

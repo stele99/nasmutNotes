@@ -164,7 +164,7 @@
             <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button toolbar-more" title="Tabelle einfügen" aria-label="Tabelle einfügen" x-icon="table"></button>
             <?php /* Auf dem Handy gibt es weder Drag & Drop noch bequemes Einfügen aus der
                      Zwischenablage - Bilder kommen dort über Dateiauswahl und Kamera. */ ?>
-            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button toolbar-more" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button toolbar-more" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
             <button x-show="!isEncrypted() && imageSelected" x-cloak type="button"
