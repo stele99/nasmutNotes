@@ -175,6 +175,7 @@ return static function (App $app, ContainerInterface $container): void {
         $group->post('/trash', [PageController::class, 'trashMany']);
         $group->post('/move', [PageController::class, 'moveMany']);
         $group->post('', [PageController::class, 'store']);
+        $group->get('/{id}', [PageController::class, 'show']);
         $group->patch('/{id}', [PageController::class, 'update']);
         $group->delete('/{id}', [PageController::class, 'destroy']);
         $group->post('/{id}/restore', [PageController::class, 'restore']);

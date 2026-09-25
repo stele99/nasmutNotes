@@ -1,6 +1,7 @@
 import { apiFetch } from '../api.js';
 import * as db from './db.js';
 import { isRecordType, syncRecordItem } from './records.js';
+import { kindLabel, resolvePageTitle } from './blockedDetails.js';
 
 export const CACHE_LIMITS = [100, 250, 500, 1000, 5000, 10000, 'all'];
 const ATTACHMENT_CACHE = 'shareinfo-attachments-v1';
@@ -952,8 +953,7 @@ export async function listSyncConflicts() {
   const conflicts = await db.listOutboxConflicts();
   const result = [];
   for (const item of conflicts) {
-    const page = await db.getPage(Number(item.page_id));
-    const pageTitle = page?.title || item.payload?.title || `Notiz #${item.page_id}`;
+    const { title: pageTitle } = await resolvePageTitle(item);
     result.push({
       id: Number(item.id),
       page_id: Number(item.page_id),
@@ -1088,11 +1088,14 @@ export async function listBlockedEntries() {
   const unresolved = await db.listOutboxUnresolved();
   const result = [];
   for (const item of unresolved.filter((entry) => entry.status === 'blocked')) {
-    const page = await db.getPage(Number(item.page_id));
-    const pageTitle = page?.title || item.payload?.title || `Notiz #${item.page_id}`;
+    const { title: pageTitle, missing } = await resolvePageTitle(item);
     result.push({
       id: Number(item.id),
       page_id: Number(item.page_id),
+      type: String(item.type || ''),
+      kind: kindLabel(item.type),
+      page_title: pageTitle,
+      page_missing: missing,
       title: item.payload?.label ? `${pageTitle} · ${item.payload.label}` : pageTitle,
       last_error: item.last_error || 'Sync fehlgeschlagen',
       retries: Number(item.retries || 0),
@@ -1112,6 +1115,63 @@ export async function retryBlockedEntry(outboxId) {
   await refreshQueueState();
 
   return syncOutbox();
+}
+
+/**
+ * Seite aus dem Papierkorb holen und die blockierte Änderung erneut senden.
+ *
+ * @param {number} outboxId
+ */
+export async function restorePageAndRetry(outboxId) {
+  const item = await db.getOutbox(Number(outboxId));
+  if (!item) {
+    throw new Error('Der Eintrag ist nicht mehr vorhanden.');
+  }
+  await apiFetch(`/api/pages/${item.page_id}/restore`, { method: 'POST' });
+  window.dispatchEvent(new Event('pages-changed'));
+
+  return retryBlockedEntry(outboxId);
+}
+
+/**
+ * Rettet einen nicht mehr speicherbaren Notizinhalt (Seite gelöscht, nur
+ * noch Leserecht) in eine neue eigene Notiz: Der Eintrag wird auf die neue
+ * Seite umgelenkt und normal übertragen - offline eingefügte Bilder inklusive.
+ *
+ * @param {number} outboxId
+ * @returns {Promise<number>} Kennung der neuen Notiz
+ */
+export async function saveBlockedNoteAsCopy(outboxId) {
+  const item = await db.getOutbox(Number(outboxId));
+  if (!item || item.type !== 'note.putContent') {
+    throw new Error('Nur Notizinhalte lassen sich als neue Notiz sichern.');
+  }
+  if (item.payload?.content?.zk === 1) {
+    throw new Error('Verschlüsselte Notizen lassen sich nicht als Kopie sichern.');
+  }
+  const { title } = await resolvePageTitle(item);
+  const page = await apiFetch('/api/pages', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'note', title: `${title} (gerettet)`.slice(0, 200), notebook_id: null }),
+  });
+  await db.patchOutbox(Number(outboxId), {
+    page_id: Number(page.id),
+    status: 'pending',
+    last_error: null,
+    retries: 0,
+    payload: {
+      ...item.payload,
+      version: 1,
+      expected_encryption_state: 'plain',
+      force_snapshot: false,
+      page_title: page.title,
+    },
+  });
+  window.dispatchEvent(new Event('pages-changed'));
+  await refreshQueueState();
+  await syncOutbox();
+
+  return Number(page.id);
 }
 
 /** @param {number} outboxId */

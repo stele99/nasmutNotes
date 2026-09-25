@@ -51,6 +51,23 @@ final class PageServiceTest extends TestCase
         return new User($id, $email, $email, $email, null, true, false);
     }
 
+    public function testWritingToATrashedPageNamesTheTrashInsteadOfAReadOnlyShare(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Im Papierkorb', null);
+        $this->pages->softDelete($this->userA, (int) $page['id']);
+
+        try {
+            $this->pages->assertCanWrite($this->userA, (int) $page['id']);
+            self::fail('Eine Seite im Papierkorb darf nicht beschrieben werden.');
+        } catch (ForbiddenException $e) {
+            self::assertStringContainsString('Papierkorb', $e->getMessage());
+        }
+
+        $this->expectException(ForbiddenException::class);
+        $this->expectExceptionMessage('Papierkorb');
+        $this->pages->update($this->userA, (int) $page['id'], ['title' => 'Neu']);
+    }
+
     public function testListAddsNotePreviewAndLastEditor(): void
     {
         $page = $this->pages->create($this->userA, 'note', 'Meine Notiz', null);

@@ -399,10 +399,26 @@ final class PageService
 
     public function assertCanWrite(User $user, int $pageId): void
     {
-        $page = $this->find($user, $pageId);
-        if (($page['can_edit'] ?? false) !== true) {
-            throw new ForbiddenException('Diese Freigabe ist nur lesend.');
+        self::assertEditable($this->find($user, $pageId));
+    }
+
+    /**
+     * Unterscheidet für die Fehlermeldung, warum nicht geschrieben werden darf:
+     * Eine Seite im Papierkorb ist etwas anderes als eine Lesefreigabe - der
+     * Offline-Sync zeigt die Meldung dem Nutzer als Grund an.
+     *
+     * @param array<string, mixed> $page
+     */
+    private static function assertEditable(array $page): void
+    {
+        if (($page['can_edit'] ?? false) === true) {
+            return;
         }
+        if (($page['deleted_at'] ?? null) !== null) {
+            throw new ForbiddenException('Die Seite liegt im Papierkorb. Stelle sie wieder her, um sie zu bearbeiten.');
+        }
+
+        throw new ForbiddenException('Diese Freigabe ist nur lesend.');
     }
 
     /** @param array<string, mixed> $page */
@@ -423,9 +439,7 @@ final class PageService
     public function update(User $user, int $pageId, array $input): array
     {
         $page = $this->find($user, $pageId);
-        if (($page['can_edit'] ?? false) !== true) {
-            throw new ForbiddenException('Diese Freigabe ist nur lesend.');
-        }
+        self::assertEditable($page);
 
         if (($page['is_shared'] ?? false) === true) {
             foreach (['is_favorite', 'sort_order', 'default_view', 'notebook_id', 'location'] as $field) {

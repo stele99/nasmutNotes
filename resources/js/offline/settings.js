@@ -11,11 +11,14 @@ import {
   normalizeCacheLimit,
   onStatusChange,
   prefetchSelected,
+  restorePageAndRetry,
   retryBlockedEntry,
+  saveBlockedNoteAsCopy,
   setCacheLimit,
   syncOutbox,
 } from './runtime.js';
 import { onInstallStateChange, promptInstall } from '../install.js';
+import { loadBlockedDetails } from './blockedDetails.js';
 import { apiFetch } from '../api.js';
 import { getLocationMode, isLocationSupported, loadLocationMode, saveLocationMode } from '../geo.js';
 
@@ -54,6 +57,11 @@ export function offlineSettings() {
     blockedCount: 0,
     conflicts: [],
     blocked: [],
+    // Aufgeklappte Detailansicht eines blockierten Eintrags (Outbox-ID) und
+    // die geladenen Details je Eintrag.
+    openBlockedId: null,
+    blockedDetails: {},
+    blockedDetailsLoading: false,
     resolvingConflictId: null,
     usageLabel: '–',
     quotaLabel: '–',
@@ -789,7 +797,10 @@ export function offlineSettings() {
     },
 
     async discardBlocked(entry) {
-      if (!window.confirm(`Nicht übertragbare Änderungen an „${entry.title}“ endgültig verwerfen?`)) {
+      if (!window.confirm(
+        `Deine lokale Änderung an „${entry.page_title || entry.title}“ endgültig verwerfen?\n\n`
+        + 'Es bleibt der Stand, der auf dem Server steht.',
+      )) {
         return;
       }
       this.resolvingConflictId = entry.id;
@@ -807,6 +818,154 @@ export function offlineSettings() {
 
     isResolvingBlocked(entry) {
       return this.resolvingConflictId === entry.id;
+    },
+
+    // ------------------------------------------- Details blockierter Einträge
+
+    isBlockedOpen(entry) {
+      return this.openBlockedId === entry.id;
+    },
+
+    async toggleBlockedDetails(entry) {
+      if (this.isBlockedOpen(entry)) {
+        this.openBlockedId = null;
+        return;
+      }
+      this.openBlockedId = entry.id;
+      await this.reloadBlockedDetails(entry);
+    },
+
+    async reloadBlockedDetails(entry) {
+      this.blockedDetailsLoading = true;
+      try {
+        const details = await loadBlockedDetails(entry.id);
+        this.blockedDetails = { ...this.blockedDetails, [entry.id]: details };
+      } catch (error) {
+        this.error = error.message || 'Die Details konnten nicht geladen werden.';
+      } finally {
+        this.blockedDetailsLoading = false;
+      }
+    },
+
+    blockedDetail(entry) {
+      return this.blockedDetails[entry.id] || null;
+    },
+
+    blockedHeading(entry) {
+      return `${entry.kind} · ${entry.page_title}`;
+    },
+
+    blockedExplanation(entry) {
+      return this.blockedDetail(entry)?.explanation || '';
+    },
+
+    blockedCompareMode(entry) {
+      return this.blockedDetail(entry)?.compare?.mode || '';
+    },
+
+    blockedDiffRows(entry) {
+      return this.blockedDetail(entry)?.compare?.rows || [];
+    },
+
+    blockedFieldRows(entry) {
+      return this.blockedCompareMode(entry) === 'fields' ? this.blockedDiffRows(entry) : [];
+    },
+
+    blockedCompareText(entry) {
+      const compare = this.blockedDetail(entry)?.compare;
+      if (!compare) {
+        return '';
+      }
+      return compare.mode === 'text' ? compare.local : (compare.text || '');
+    },
+
+    blockedServerMeta(entry) {
+      return this.blockedDetail(entry)?.compare?.serverMeta || '';
+    },
+
+    blockedDiffSummary(entry) {
+      const rows = this.blockedDiffRows(entry);
+      const local = rows.filter((row) => row.type === 'added').length;
+      const server = rows.filter((row) => row.type === 'removed').length;
+      if (local === 0 && server === 0) {
+        return 'Lokal und auf dem Server gleich.';
+      }
+      return `${local} Absatz/Absätze nur lokal · ${server} nur auf dem Server`;
+    },
+
+    blockedFieldRowClass(row) {
+      return row.changed ? 'font-medium' : '';
+    },
+
+    canOpenBlocked(entry) {
+      const details = this.blockedDetail(entry);
+      return details ? details.actions.open : entry.page_id > 0 && !entry.page_missing;
+    },
+
+    canRetryBlocked(entry) {
+      const details = this.blockedDetail(entry);
+      return details ? details.actions.retry : true;
+    },
+
+    canRestoreBlockedPage(entry) {
+      return Boolean(this.blockedDetail(entry)?.actions.restorePage);
+    },
+
+    canSaveBlockedAsCopy(entry) {
+      return Boolean(this.blockedDetail(entry)?.actions.saveAsCopy);
+    },
+
+    canCopyBlockedText(entry) {
+      return Boolean(this.blockedDetail(entry)?.localText);
+    },
+
+    retryBlockedLabel(entry) {
+      return this.blockedDetail(entry)?.retryLabel || 'Erneut versuchen';
+    },
+
+    openBlockedPage(entry) {
+      this.openConflictNote({ page_id: entry.page_id });
+    },
+
+    async restoreBlockedPage(entry) {
+      this.resolvingConflictId = entry.id;
+      this.error = '';
+      try {
+        await restorePageAndRetry(entry.id);
+        this.message = `„${entry.page_title}“ ist wiederhergestellt, die Änderung wurde übertragen.`;
+        this.openBlockedId = null;
+        await this.refreshStats();
+      } catch (error) {
+        this.error = error.message || 'Die Seite konnte nicht wiederhergestellt werden.';
+      } finally {
+        this.resolvingConflictId = null;
+      }
+    },
+
+    async saveBlockedAsCopy(entry) {
+      this.resolvingConflictId = entry.id;
+      this.error = '';
+      try {
+        const pageId = await saveBlockedNoteAsCopy(entry.id);
+        this.message = `Dein Stand wurde als neue Notiz „${entry.page_title} (gerettet)“ gesichert.`;
+        this.openBlockedId = null;
+        await this.refreshStats();
+        this.openConflictNote({ page_id: pageId });
+      } catch (error) {
+        this.error = error.message || 'Die Notiz konnte nicht gesichert werden.';
+      } finally {
+        this.resolvingConflictId = null;
+      }
+    },
+
+    async copyBlockedText(entry) {
+      const text = this.blockedDetail(entry)?.localText || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        this.message = 'Deine lokale Fassung liegt in der Zwischenablage.';
+      } catch {
+        this.error = 'Die Zwischenablage ist nicht verfügbar.';
+      }
     },
 
     async saveLimit() {

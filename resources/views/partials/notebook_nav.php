@@ -381,15 +381,58 @@
                                     </template>
                                 </div>
 
+                                <?php /* Blockierte Einträge: Erklärung, Vergleich lokal/Server und
+                                         die Auswege, die zur Lage passen (siehe blockedDetails.js). */ ?>
                                 <div x-show="blocked.length > 0" x-cloak class="mt-5 space-y-3">
-                                    <h4 class="text-sm font-semibold" style="color: var(--color-danger);">Blockierte Änderungen</h4>
+                                    <h4 class="text-sm font-semibold" style="color: var(--color-danger);">Nicht übertragene Änderungen</h4>
                                     <template x-for="entry in blocked" :key="entry.id">
                                         <div class="rounded-lg border p-4" style="border-color: var(--color-danger);">
-                                            <p class="font-medium" x-text="entry.title"></p>
-                                            <p class="mt-1 text-sm" style="color: var(--color-text-muted);" x-text="entry.last_error"></p>
+                                            <p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);" x-text="entry.kind"></p>
+                                            <p class="mt-0.5 font-medium break-words" x-text="entry.page_title"></p>
+                                            <p x-show="!isBlockedOpen(entry)" class="mt-1 text-sm break-words" style="color: var(--color-text-muted);" x-text="entry.last_error"></p>
                                             <div class="mt-3 flex flex-wrap gap-2">
-                                                <button type="button" @click="retryBlocked(entry)" :disabled="isResolvingBlocked(entry) || !statusOnline" class="btn btn-secondary">Erneut versuchen</button>
-                                                <button type="button" @click="discardBlocked(entry)" :disabled="isResolvingBlocked(entry)" class="btn btn-quiet">Lokale Änderung verwerfen</button>
+                                                <button type="button" @click="toggleBlockedDetails(entry)" class="btn btn-secondary" :aria-expanded="isBlockedOpen(entry)" x-text="isBlockedOpen(entry) ? 'Details schließen' : 'Details & Vergleich'"></button>
+                                                <button type="button" x-show="canOpenBlocked(entry)" @click="openBlockedPage(entry)" class="btn btn-quiet">Seite öffnen</button>
+                                            </div>
+
+                                            <div x-show="isBlockedOpen(entry)" x-cloak class="mt-4 border-t pt-4" style="border-color: var(--color-border);">
+                                                <p x-show="blockedDetailsLoading && !blockedDetail(entry)" class="text-sm" style="color: var(--color-text-muted);">Lädt Serverstand…</p>
+                                                <p x-show="blockedExplanation(entry)" class="text-sm" x-text="blockedExplanation(entry)"></p>
+
+                                                <div x-show="blockedCompareMode(entry) === 'diff'" class="mt-3">
+                                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" style="color: var(--color-text-muted);">
+                                                        <span><span class="font-semibold" style="color: var(--color-success);">+</span> nur in deiner lokalen Fassung</span>
+                                                        <span><span class="font-semibold" style="color: var(--color-danger);">−</span> nur auf dem Server</span>
+                                                        <span x-text="blockedServerMeta(entry)"></span>
+                                                    </div>
+                                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);" x-text="blockedDiffSummary(entry)"></p>
+                                                    <div class="note-history-diff mt-2 max-h-72 overflow-auto rounded-lg border" style="border-color: var(--color-border);">
+                                                        <template x-for="row in blockedDiffRows(entry)" :key="row.key">
+                                                            <div :class="'note-history-diff-row is-' + row.type"><span class="note-history-diff-marker" x-text="row.marker"></span><span class="note-history-diff-text" x-text="row.text"></span></div>
+                                                        </template>
+                                                    </div>
+                                                </div>
+
+                                                <div x-show="blockedCompareMode(entry) === 'fields'" class="mt-3 overflow-hidden rounded-lg border text-sm" style="border-color: var(--color-border);">
+                                                    <div class="grid grid-cols-3 gap-2 px-3 py-2 text-xs font-medium" style="background: var(--color-bg-subtle); color: var(--color-text-muted);"><span>Feld</span><span>Lokal (deine Fassung)</span><span>Server</span></div>
+                                                    <template x-for="row in blockedFieldRows(entry)" :key="row.label">
+                                                        <div class="grid grid-cols-3 gap-2 border-t px-3 py-2 break-words" style="border-color: var(--color-border);" :class="blockedFieldRowClass(row)">
+                                                            <span style="color: var(--color-text-muted);" x-text="row.label"></span>
+                                                            <span x-text="row.local"></span>
+                                                            <span x-text="row.server"></span>
+                                                        </div>
+                                                    </template>
+                                                </div>
+
+                                                <p x-show="blockedCompareMode(entry) === 'text' || blockedCompareMode(entry) === 'note'" class="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border p-3 text-sm" style="border-color: var(--color-border);" x-text="blockedCompareText(entry)"></p>
+
+                                                <div class="mt-4 flex flex-wrap gap-2">
+                                                    <button type="button" x-show="canRestoreBlockedPage(entry)" @click="restoreBlockedPage(entry)" :disabled="isResolvingBlocked(entry) || !statusOnline" class="btn btn-primary">Seite wiederherstellen &amp; übertragen</button>
+                                                    <button type="button" x-show="canSaveBlockedAsCopy(entry)" @click="saveBlockedAsCopy(entry)" :disabled="isResolvingBlocked(entry) || !statusOnline" class="btn btn-primary">Als neue Notiz sichern</button>
+                                                    <button type="button" x-show="canRetryBlocked(entry)" @click="retryBlocked(entry)" :disabled="isResolvingBlocked(entry) || !statusOnline" class="btn btn-secondary" x-text="retryBlockedLabel(entry)"></button>
+                                                    <button type="button" x-show="canCopyBlockedText(entry)" @click="copyBlockedText(entry)" class="btn btn-quiet">Meine Fassung kopieren</button>
+                                                    <button type="button" @click="discardBlocked(entry)" :disabled="isResolvingBlocked(entry)" class="btn btn-quiet" style="color: var(--color-danger);">Serverstand behalten (lokal verwerfen)</button>
+                                                </div>
                                             </div>
                                         </div>
                                     </template>

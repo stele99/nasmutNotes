@@ -56,6 +56,20 @@ final class PageController
     }
 
     /**
+     * Einzelne Seite - etwa für die Sync-Übersicht, die zu einer lokal nicht
+     * mehr vorgehaltenen Seite Titel und Zustand (Papierkorb, Schreibrecht)
+     * braucht.
+     *
+     * @param array<string, string> $args
+     */
+    public function show(Request $request, Response $response, array $args): Response
+    {
+        $page = $this->pages->find(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, $this->serialize($page));
+    }
+
+    /**
      * Leert den Papierkorb vollständig: Alle Seiten samt Bilddateien werden
      * endgültig entfernt (FR-WS-06).
      */
