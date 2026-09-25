@@ -103,7 +103,10 @@
                     style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-text);"
                 >
                     <template x-for="category in categories" :key="category.id">
-                        <option :value="category.id" x-text="category.name"></option>
+                        <?php /* :selected zusätzlich zu x-model: Die Optionen entstehen
+                                 erst nach dem Setzen des Werts (x-for), ohne das
+                                 fiele der Browser auf die erste Option zurück. */ ?>
+                        <option :value="category.id" :selected="isSelectedCategory(category)" x-text="category.name"></option>
                     </template>
                 </select>
                 <div x-show="canEditPage" class="relative shrink-0">
