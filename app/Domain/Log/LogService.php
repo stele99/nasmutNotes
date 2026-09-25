@@ -6,6 +6,7 @@ namespace App\Domain\Log;
 
 use App\Domain\Geo\ReverseGeocoder;
 use App\Domain\PageService;
+use App\Domain\TaskBoardService;
 use App\Domain\User;
 use App\Repositories\LogRepository;
 use App\Repositories\PageRepository;
@@ -163,6 +164,20 @@ final class LogService
     {
         $column = $this->requireOwnedColumn($user, $columnId);
         $this->log->deleteColumn((int) $column['id']);
+        $this->pageRepository->touchUpdatedAt((int) $column['page_id'], gmdate('Y-m-d\TH:i:s.v\Z'));
+    }
+
+    /** @return array<string, mixed> die wiederhergestellte Spalte samt Werten */
+    public function restoreColumn(User $user, int $columnId): array
+    {
+        $column = $this->requireOwnedColumn($user, $columnId, true);
+        $this->log->restoreColumn((int) $column['id']);
+        $this->pageRepository->touchUpdatedAt((int) $column['page_id'], gmdate('Y-m-d\TH:i:s.v\Z'));
+
+        $restored = $this->log->findColumn((int) $column['id']);
+        assert($restored !== null);
+
+        return $restored;
     }
 
     /**
@@ -171,13 +186,43 @@ final class LogService
      * @param array<array-key, mixed> $values Spalten-ID => Wert
      * @return array<string, mixed>
      */
-    public function createEntry(User $user, int $pageId, mixed $occurredAt, array $values): array
-    {
+    public function createEntry(
+        User $user,
+        int $pageId,
+        mixed $occurredAt,
+        array $values,
+        ?string $clientUuid = null,
+    ): array {
         $page = $this->requireLogPage($user, $pageId);
         $pageId = (int) $page['id'];
         $this->pages->assertCanWrite($user, $pageId);
+        $clientUuid = TaskBoardService::validatedClientUuid($clientUuid);
+
+        // Offline erfasst und nach einem Abbruch erneut gesendet: den schon
+        // angelegten Eintrag liefern, nicht verdoppeln.
+        if ($clientUuid !== null) {
+            $existingId = $this->log->findEntryIdByClientUuid($clientUuid);
+            if ($existingId !== null) {
+                $existing = $this->log->findEntry($existingId);
+                if ($existing === null || (int) $existing['page_id'] !== $pageId) {
+                    throw new ValidationException('Ungültige Client-Kennung.');
+                }
+
+                return $existing;
+            }
+        }
 
         $columns = $this->indexedColumns($pageId);
+        // Ein offline erfasster Eintrag kann auf eine Spalte zeigen, die
+        // inzwischen gelöscht wurde. Dieser Wert entfällt, der Eintrag selbst
+        // (Stunden, Material ...) geht nicht verloren.
+        if ($clientUuid !== null) {
+            $values = array_filter(
+                $values,
+                static fn (mixed $key): bool => isset($columns[(int) $key]),
+                ARRAY_FILTER_USE_KEY,
+            );
+        }
         $normalized = $this->normalizeValues($columns, $values);
 
         $this->pdo->beginTransaction();
@@ -186,6 +231,7 @@ final class LogService
                 $pageId,
                 $this->validatedTimestamp($occurredAt) ?? gmdate('Y-m-d\TH:i:s.v\Z'),
                 $user->id,
+                $clientUuid,
             );
             foreach ($normalized as $columnId => $value) {
                 if ($value !== null) {
@@ -221,9 +267,15 @@ final class LogService
 
         $values = is_array($input['values'] ?? null) ? $input['values'] : [];
         $normalized = $this->normalizeValues($columns, $values);
+        $expectedVersion = is_int($input['version'] ?? null) ? $input['version'] : null;
 
         $this->pdo->beginTransaction();
         try {
+            // Mit Versionsangabe: nur ändern, wenn niemand dazwischen gespeichert
+            // hat. Ältere Clients ohne Version überschreiben wie bisher.
+            if ($expectedVersion !== null && !$this->log->claimEntryVersion((int) $entry['id'], $expectedVersion)) {
+                throw new LogEntryVersionConflictException($this->log->findEntry((int) $entry['id']));
+            }
             if (array_key_exists('occurred_at', $input)) {
                 $occurredAt = $this->validatedTimestamp($input['occurred_at']);
                 if ($occurredAt === null) {
@@ -260,6 +312,19 @@ final class LogService
         $entry = $this->requireOwnedEntry($user, $entryId);
         $this->log->deleteEntry((int) $entry['id']);
         $this->pageRepository->touchUpdatedAt((int) $entry['page_id'], gmdate('Y-m-d\TH:i:s.v\Z'));
+    }
+
+    /** @return array<string, mixed> der wiederhergestellte Eintrag */
+    public function restoreEntry(User $user, int $entryId): array
+    {
+        $entry = $this->requireOwnedEntry($user, $entryId, true);
+        $this->log->restoreEntry((int) $entry['id']);
+        $this->pageRepository->touchUpdatedAt((int) $entry['page_id'], gmdate('Y-m-d\TH:i:s.v\Z'));
+
+        $restored = $this->log->findEntry((int) $entry['id']);
+        assert($restored !== null);
+
+        return $restored;
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -531,11 +596,14 @@ final class LogService
         return $page;
     }
 
-    /** @return array<string, mixed> */
-    private function requireOwnedColumn(User $user, int $columnId): array
+    /**
+     * @param bool $deleted true: nur eine gelöschte Spalte passt (Wiederherstellen)
+     * @return array<string, mixed>
+     */
+    private function requireOwnedColumn(User $user, int $columnId, bool $deleted = false): array
     {
         $column = $this->log->findColumn($columnId);
-        if ($column === null) {
+        if ($column === null || ($column['deleted_at'] !== null) !== $deleted) {
             throw new NotFoundException("Spalte #{$columnId} nicht gefunden.");
         }
         $this->requireLogPage($user, (int) $column['page_id']);
@@ -544,11 +612,14 @@ final class LogService
         return $column;
     }
 
-    /** @return array<string, mixed> */
-    private function requireOwnedEntry(User $user, int $entryId): array
+    /**
+     * @param bool $deleted true: nur ein gelöschter Eintrag passt (Wiederherstellen)
+     * @return array<string, mixed>
+     */
+    private function requireOwnedEntry(User $user, int $entryId, bool $deleted = false): array
     {
         $entry = $this->log->findEntry($entryId);
-        if ($entry === null) {
+        if ($entry === null || ($entry['deleted_at'] !== null) !== $deleted) {
             throw new NotFoundException("Eintrag #{$entryId} nicht gefunden.");
         }
         $this->requireLogPage($user, (int) $entry['page_id']);

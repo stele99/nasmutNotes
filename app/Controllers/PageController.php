@@ -9,6 +9,7 @@ use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\PageCopyService;
 use App\Domain\PageService;
+use App\Domain\PageTransferConfirmationRequiredException;
 use App\Repositories\AuditLogRepository;
 use App\Support\CurrentUser;
 use App\Support\Env;
@@ -114,11 +115,24 @@ final class PageController
         $body = (array) ($request->getParsedBody() ?? []);
         $rawIds = is_array($body['page_ids'] ?? null) ? $body['page_ids'] : [];
         $pageIds = array_values(array_map(static fn (mixed $id): int => (int) $id, $rawIds));
-        $moved = $this->pages->moveMany(
-            CurrentUser::require($request),
-            $pageIds,
-            self::parseNotebookId($body['notebook_id'] ?? null),
-        );
+        $user = CurrentUser::require($request);
+        $notebookId = self::parseNotebookId($body['notebook_id'] ?? null);
+        $confirmed = ($body['confirm_transfer'] ?? false) === true;
+        try {
+            $moved = $this->pages->moveMany($user, $pageIds, $notebookId, $confirmed);
+        } catch (PageTransferConfirmationRequiredException $e) {
+            return JsonResponse::json($response, [
+                'error' => ['code' => 'TRANSFER_CONFIRMATION_REQUIRED', 'message' => $e->getMessage()],
+                'owner_name' => $e->ownerName,
+                'notebook_name' => $e->notebookName,
+            ], 409);
+        }
+
+        if ($confirmed && $moved > 0) {
+            $this->auditLog->log($user->id, 'pages_transferred', 'notebook', $notebookId, RequestIp::hash($request), [
+                'pages' => $pageIds,
+            ]);
+        }
 
         return JsonResponse::json($response, ['moved' => $moved]);
     }

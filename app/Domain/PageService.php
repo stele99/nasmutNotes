@@ -175,6 +175,9 @@ final class PageService
         $workspaceId = $this->workspaceIdFor($user);
         $sharedNotebook = $notebookId !== null ? $this->sharedNotebookFor($user, $notebookId) : null;
         if ($sharedNotebook !== null) {
+            if (self::notebookPermission($sharedNotebook) !== 'write') {
+                throw new ForbiddenException('In diesem Notizbuch darfst du nur lesen.');
+            }
             // Die Seite entsteht im Workspace des Eigentümers und gehört
             // damit dem Eigentümer des geteilten Notizbuchs.
             $workspaceId = (int) $sharedNotebook['workspace_id'];
@@ -243,11 +246,13 @@ final class PageService
         // vorbehalten, deshalb nur aktive Seiten.
         $notebookWorkspaceId = null;
         $isNotebookShared = false;
+        $notebookPermission = null;
         if ($notebookId !== null) {
             $sharedNotebook = $this->sharedNotebookFor($user, $notebookId);
             if ($sharedNotebook !== null) {
                 $notebookWorkspaceId = (int) $sharedNotebook['workspace_id'];
                 $isNotebookShared = true;
+                $notebookPermission = self::notebookPermission($sharedNotebook);
                 $trashed = false;
             } else {
                 $this->validateNotebookId($notebookId, $this->workspaceIdFor($user));
@@ -272,7 +277,7 @@ final class PageService
                 $pages[(int) $page['id']] = $this->withAccess(
                     $page,
                     $isNotebookShared,
-                    $isNotebookShared ? 'write' : null,
+                    $notebookPermission,
                     $isNotebookShared ? 'notebook' : null,
                 );
             }
@@ -368,7 +373,12 @@ final class PageService
         // geteilt bekommen hat - alle Beteiligten dürfen sie bearbeiten.
         $sharedNotebookPage = $this->notebookShares?->findPageInSharedNotebook($user->id, $pageId);
         if ($sharedNotebookPage !== null) {
-            return $this->withAccess($sharedNotebookPage, true, 'write', 'notebook');
+            return $this->withAccess(
+                $sharedNotebookPage,
+                true,
+                self::notebookPermission($sharedNotebookPage),
+                'notebook',
+            );
         }
 
         throw new NotFoundException("Seite #{$pageId} nicht gefunden.");
@@ -483,8 +493,14 @@ final class PageService
         return $this->find($user, $pageId);
     }
 
-    /** @param list<int> $pageIds */
-    public function moveMany(User $user, array $pageIds, ?int $notebookId): int
+    /**
+     * @param list<int> $pageIds
+     * @param bool $confirmTransfer Der Nutzer hat bestätigt, dass die Seiten in
+     *                              einem fremden Notizbuch dessen Eigentümer gehören;
+     *                              ohne Bestätigung folgt eine
+     *                              PageTransferConfirmationRequiredException.
+     */
+    public function moveMany(User $user, array $pageIds, ?int $notebookId, bool $confirmTransfer = false): int
     {
         $pageIds = array_values(array_unique(array_filter($pageIds, static fn (int $id): bool => $id > 0)));
         if ($pageIds === [] || count($pageIds) > 200) {
@@ -495,12 +511,21 @@ final class PageService
         $sharedNotebook = $notebookId !== null ? $this->sharedNotebookFor($user, $notebookId) : null;
         if ($sharedNotebook === null) {
             $this->validateNotebookId($notebookId, $workspaceId);
+        } elseif (self::notebookPermission($sharedNotebook) !== 'write') {
+            throw new ForbiddenException('In diesem Notizbuch darfst du nur lesen.');
         }
         foreach ($pageIds as $pageId) {
             $page = $this->findOwned($user, $pageId);
             if ($page['deleted_at'] !== null) {
                 throw new ValidationException('Seiten im Papierkorb können nicht verschoben werden.');
             }
+        }
+
+        if ($sharedNotebook !== null && !$confirmTransfer) {
+            throw new PageTransferConfirmationRequiredException(
+                (string) ($sharedNotebook['owner_name'] ?? ''),
+                (string) $sharedNotebook['name'],
+            );
         }
 
         if ($sharedNotebook !== null) {
@@ -621,5 +646,11 @@ final class PageService
     private function sharedNotebookFor(User $user, int $notebookId): ?array
     {
         return $this->notebookShares?->findSharedNotebookForUser($user->id, $notebookId);
+    }
+
+    /** @param array<string, mixed> $row Zeile mit `share_permission` aus notebook_shares */
+    private static function notebookPermission(array $row): string
+    {
+        return ($row['share_permission'] ?? 'write') === 'read' ? 'read' : 'write';
     }
 }

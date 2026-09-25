@@ -80,6 +80,7 @@
         <?php endif; ?>
 
         <p x-show="error" x-cloak x-text="error" class="mb-4 rounded-lg p-4 text-sm" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent); color: var(--color-danger);" role="alert"></p>
+        <p x-show="offline" x-cloak class="mb-4 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); color: var(--color-text-muted);">Offline: Einträge lassen sich erfassen und ändern, sie werden übertragen, sobald wieder Netz da ist. Spalten und Sortierung brauchen eine Verbindung.</p>
 
         <?php /* Die Tabelle scrollt für sich, damit die Seite selbst bei vielen
                  Spalten nicht seitlich wandert. */ ?>
@@ -105,7 +106,7 @@
                 <tbody>
                     <template x-for="entry in entries" :key="entry.id">
                         <tr class="log-row" @click="openEntry(entry)">
-                            <td class="log-cell whitespace-nowrap font-medium" x-text="entryTimeLabel(entry)"></td>
+                            <td class="log-cell whitespace-nowrap font-medium"><span x-text="entryTimeLabel(entry)"></span><span x-show="isPendingEntry(entry)" x-cloak class="ml-1 inline-flex align-middle" style="color: var(--color-text-muted);" title="Noch nicht übertragen" aria-label="Noch nicht übertragen" x-icon="cloud-off"></span></td>
                             <template x-for="column in columns" :key="column.id">
                                 <td class="log-cell align-top" :class="column.is_numeric ? 'text-right tabular-nums whitespace-nowrap' : ''">
                                     <a x-show="hasCellMapUrl(entry, column)" :href="cellMapUrl(entry, column)" :title="cellTitle(entry, column)" target="_blank" rel="noopener" @click.stop class="inline-flex items-center gap-1 hover:underline">

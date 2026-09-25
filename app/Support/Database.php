@@ -17,8 +17,18 @@ final class Database
             }
         }
 
-        $pdo = new PDO('sqlite:' . $path);
+        $pdo = PDO::connect('sqlite:' . $path);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        // SQLites LOWER() und NOCASE kennen nur ASCII - „Änderung“ und
+        // „änderung“ gälten sonst als verschieden. fold() senkt Unicode-korrekt.
+        if ($pdo instanceof \Pdo\Sqlite) {
+            $pdo->createFunction(
+                'fold',
+                static fn (mixed $value): ?string => $value === null ? null : mb_strtolower((string) $value),
+                1,
+                \Pdo\Sqlite::DETERMINISTIC,
+            );
+        }
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
         $pdo->exec('PRAGMA journal_mode = WAL');

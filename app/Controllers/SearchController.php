@@ -36,6 +36,10 @@ final class SearchController
             ? (int) $params['notebook_id']
             : null;
 
+        $offset = isset($params['offset']) && ctype_digit((string) $params['offset'])
+            ? (int) $params['offset']
+            : 0;
+
         $user = CurrentUser::require($request);
         $results = $this->search->search(
             $this->pages->workspaceIdFor($user),
@@ -43,9 +47,10 @@ final class SearchController
             $query,
             $collection,
             $notebookId,
+            $offset,
         );
 
-        return JsonResponse::json($response, ['pages' => $results]);
+        return JsonResponse::json($response, $results);
     }
 
     /**

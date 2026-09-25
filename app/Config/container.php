@@ -118,7 +118,10 @@ return static function (string $rootPath): DI\Container {
 
         SessionRepository::class => static fn (PDO $pdo): SessionRepository => new SessionRepository($pdo),
 
-        SearchRepository::class => static fn (PDO $pdo): SearchRepository => new SearchRepository($pdo),
+        SearchRepository::class => static fn (PDO $pdo): SearchRepository => new SearchRepository(
+            $pdo,
+            max(1, Env::int('SEARCH_RESULT_LIMIT', SearchRepository::DEFAULT_LIMIT)),
+        ),
 
         NoteAttachmentRepository::class => static fn (PDO $pdo): NoteAttachmentRepository
             => new NoteAttachmentRepository($pdo),
@@ -307,8 +310,8 @@ return static function (string $rootPath): DI\Container {
             Env::int('IMPORT_MAX_ARCHIVE_MB', 500),
         ),
 
-        HealthController::class => static fn (PDO $pdo, UploadStorage $storage): HealthController
-            => new HealthController($pdo, $storage),
+        HealthController::class => static fn (PDO $pdo, UploadStorage $storage, BackupLayout $backups): HealthController
+            => new HealthController($pdo, $storage, $backups),
 
         WorkspaceRepository::class => static fn (PDO $pdo): WorkspaceRepository => new WorkspaceRepository($pdo),
 

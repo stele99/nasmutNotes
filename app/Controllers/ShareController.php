@@ -6,16 +6,20 @@ namespace App\Controllers;
 
 use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\ShareService;
+use App\Repositories\AuditLogRepository;
 use App\Support\CurrentUser;
 use App\Support\Env;
 use App\Support\JsonResponse;
+use App\Support\RequestIp;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 final class ShareController
 {
-    public function __construct(private readonly ShareService $shares)
-    {
+    public function __construct(
+        private readonly ShareService $shares,
+        private readonly AuditLogRepository $auditLog,
+    ) {
     }
 
     /** @param array<string, string> $args */
@@ -77,9 +81,10 @@ final class ShareController
     public function store(Request $request, Response $response, array $args): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
+        $user = CurrentUser::require($request);
         try {
             $share = $this->shares->create(
-                CurrentUser::require($request),
+                $user,
                 (int) $args['id'],
                 (string) ($body['permission'] ?? ''),
                 isset($body['expires_at']) && $body['expires_at'] !== '' ? (string) $body['expires_at'] : null,
@@ -89,6 +94,14 @@ final class ShareController
         } catch (NoteEncryptionException $e) {
             return JsonResponse::error($response, $e->errorCode, $e->getMessage(), $e->status);
         }
+
+        // Nur Eckdaten, nie Token oder Kennwort.
+        $this->auditLog->log($user->id, 'share_created', 'page', (int) $args['id'], RequestIp::hash($request), [
+            'share_id' => (int) $share['id'],
+            'permission' => (string) $share['permission'],
+            'password' => isset($body['password']) && $body['password'] !== '',
+            'expires_at' => isset($body['expires_at']) && $body['expires_at'] !== '' ? (string) $body['expires_at'] : null,
+        ]);
 
         return JsonResponse::json($response, [
             'id' => $share['id'],
@@ -101,7 +114,9 @@ final class ShareController
     /** @param array<string, string> $args */
     public function destroy(Request $request, Response $response, array $args): Response
     {
-        $this->shares->revoke(CurrentUser::require($request), (int) $args['id']);
+        $user = CurrentUser::require($request);
+        $this->shares->revoke($user, (int) $args['id']);
+        $this->auditLog->log($user->id, 'share_revoked', 'share', (int) $args['id'], RequestIp::hash($request));
 
         return $response->withStatus(204);
     }
@@ -109,7 +124,9 @@ final class ShareController
     /** @param array<string, string> $args */
     public function stop(Request $request, Response $response, array $args): Response
     {
-        $this->shares->revokeAll(CurrentUser::require($request), (int) $args['id']);
+        $user = CurrentUser::require($request);
+        $this->shares->revokeAll($user, (int) $args['id']);
+        $this->auditLog->log($user->id, 'shares_stopped', 'page', (int) $args['id'], RequestIp::hash($request));
 
         return $response->withStatus(204);
     }
@@ -117,7 +134,9 @@ final class ShareController
     /** @param array<string, string> $args */
     public function leave(Request $request, Response $response, array $args): Response
     {
-        $this->shares->leave(CurrentUser::require($request), (int) $args['id']);
+        $user = CurrentUser::require($request);
+        $this->shares->leave($user, (int) $args['id']);
+        $this->auditLog->log($user->id, 'share_left', 'page', (int) $args['id'], RequestIp::hash($request));
 
         return $response->withStatus(204);
     }

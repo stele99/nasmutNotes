@@ -6,21 +6,26 @@ PHP 8.4+/Slim 4, SQLite (WAL + FTS5-Schema vorbereitet), Vite 7 + Alpine.js (CSP
 
 ## Umsetzungsstand
 
-Diese erste Ausbaustufe deckt den kompletten Kernablauf ab:
+Umgesetzt sind:
 
 - Google-OAuth-2.0-Login (Authorization Code Flow + PKCE), Invite-Link-Registrierung, Admin-Bootstrap über `ADMIN_EMAILS`
-- Workspace- und Seitenverwaltung (Notiz-/Task-Seiten, Papierkorb, Favoriten, Sortierung/Filter)
-- Freigabe von Notiz- und Task-Seiten per Link in drei Stufen: Nur lesen, Lesen und Kopieren (öffentliche Ansicht, angemeldete Nutzer erzeugen eine unabhängige Kopie samt Bildern/Anhängen) sowie Lesen und Schreiben (Anmeldung erforderlich, gemeinsame Bearbeitung im Workspace)
-- Notizseiten mit TipTap-Editor, Autosave, Screenshot-Paste/Drag-and-drop, serverseitiger Schema-Allowlist-Validierung und Versionskonflikt-Erkennung
-- Task-Seiten mit Kategorien und Tasks (Anlegen, Bearbeiten, Verschieben, Duplizieren, Löschen mit Verschieben/Kaskade)
-- Logbuch-Seiten: Einträge mit Zeitpunkt und frei definierbaren Spalten (Text, Standort, Uhrzeit, Stunden, Zahl, Betrag), neueste oben, Sortierung nach jeder Spalte, Summen der Zahlenspalten, Einträge auch per Diktat
+- Workspace- und Seitenverwaltung (Notiz-, Aufgaben- und Logbuch-Seiten, Notizbücher, Papierkorb mit Aufbewahrungsfrist, Favoriten, Sortierung/Filter)
+- Freigabe von Seiten per Link in drei Stufen: Nur lesen, Lesen und Kopieren (öffentliche Ansicht, angemeldete Nutzer erzeugen eine unabhängige Kopie samt Bildern/Anhängen) sowie Lesen und Schreiben (Anmeldung erforderlich)
+- Notizbücher mit registrierten Nutzern teilen, je Teilnehmer mit dem Recht „Bearbeiten“ oder „Nur lesen“. Wer eigene Seiten in ein fremdes, geteiltes Notizbuch verschiebt, muss den Eigentümerwechsel ausdrücklich bestätigen
+- Notizseiten mit TipTap-Editor, Autosave, Screenshot-Paste/Drag-and-drop, Bildannotationen, Dateianhängen, Versionsverlauf (20 Stände) mit Diff und Wiederherstellen, optionaler Ende-zu-Ende-Verschlüsselung
+- Aufgaben-Seiten mit Kapiteln und Aufgaben (Anlegen, Bearbeiten, Fälligkeit, Verantwortliche aus den Teilnehmern, Verschieben, Duplizieren). Gelöschte Aufgaben und Kapitel lassen sich über „Rückgängig“ wiederherstellen
+- Logbuch-Seiten: Einträge mit Zeitpunkt und frei definierbaren Spalten (Text, Standort, Uhrzeit, Stunden, Zahl, Betrag, Bewertung, Nutzer), Summen, Export als CSV/XML/XLSX, Einträge auch per Diktat. Gleichzeitige Änderungen am selben Eintrag werden als Konflikt erkannt, gelöschte Einträge und Spalten lassen sich wiederherstellen
+- Offline-Betrieb (PWA): Notizen (inkl. Fotos), Aufgaben und Logbuch-Einträge lassen sich ohne Netz lesen, anlegen, ändern und löschen. Die Änderungen werden beim nächsten Sync übertragen; ändert jemand anderes gleichzeitig andere Felder, werden die Änderungen zusammengeführt, echte Konflikte erscheinen unter *Einstellungen → Sync*
+- Suche über Titel, Inhalte, Aufgaben, Logbuch-Werte, Verantwortliche, Ortsangaben und Dateinamen - auch in geteilten Notizbüchern und mit Umlauten unabhängig von Groß-/Kleinschreibung
 - Sprachnotizen: Aufnahme im Browser, serverseitige Transkription über OpenAI, optionale Aufbereitung durch ein zweites Modell samt Überschrift und abgeleitetem Notizbuch; Diktat auch in eine geöffnete Notiz. Alle Parameter im Admin-Dashboard, der Schlüssel nur in `OPENAI_KEY`
 - Optionaler Aufnahmeort von Notizen: je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar, mit serverseitig ermittelter Anschrift
-- Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting (Login, Invite-Einlösung, Autosave), Audit-Log, IDOR-Schutz auf jedem Objektzugriff
+- Datenhoheit: ZIP-Export und -Import (Markdown + Dateien), Konto selbst löschen (*Einstellungen → Import / Export*)
+- Administration: Nutzerübersicht mit Speicher und KI-Verbrauch, Nutzer deaktivieren (beendet Sitzungen und Geräte-Tokens), Inhalte an einen anderen Nutzer übergeben, Einladungen, Sicherungen, Protokoll (Audit-Log) mit Filter
+- Sicherheits-Querschnitt: CSP (Nonce, kein `unsafe-eval`), CSRF (Double-Submit-Cookie + Origin-Prüfung), Rate-Limiting, Audit-Log (u. a. Freigaben, Notizbuch-Teilnehmer, Verschlüsselung, Kontoänderungen), eigene Sitzungen einsehen und beenden, IDOR-Schutz auf jedem Objektzugriff
 - Desktop-Assistant: Die Desktop-App ruft KI-Funktionen (Chat inkl. Streaming, Audio-Transkription) über diesen Server ab - gekoppelt an die Nutzerkonten per Paarung, mit Verbrauchs- und Kostenübersicht für Nutzer und Admin
-- Automatisierte Tests (PHPUnit) und PHPStan Level 8 für `app/`, `bin/console.php`, `tests/`
+- Automatisierte Tests (PHPUnit, Node-Test für das Frontend) und PHPStan Level 8 für `app/`, `bin/console.php`, `tests/`
 
-Noch nicht umgesetzt (spätere Ausbaustufen, siehe `docs/URS.md`): Volltextsuche (Kap. 6 — Schema ist vorbereitet), Export (5.8), vollständiges Admin-Panel (Nutzerliste/Audit-Ansicht), Papierkorb-Retention-Cron, Versionsverlauf-UI und Listen-Ansicht für Tasks.
+Noch offen (siehe `docs/URS.md`): FTS5-Volltextindex (Schema vorbereitet; bei der heutigen Datenmenge genügt die Direktsuche), Listen-Ansicht für Aufgaben, Diktat ohne Netz.
 
 ## Voraussetzungen
 
@@ -195,25 +200,44 @@ Vollständige Referenz in [`.env.example`](.env.example); Details siehe `docs/UR
 | `GEOCODER_URL` / `GEOCODER_LANGUAGE` | Adresssuche zum Aufnahmeort (Vorgabe: Nominatim). Leerer `GEOCODER_URL` schaltet sie ab |
 | `LOG_LEVEL` | Monolog-Level (`debug`, `info`, `warning`, `error`) |
 | `VITE_DEV_SERVER` | Nur `APP_ENV=development`: URL des Vite-Dev-Servers |
-
 | `BACKUP_PATH` | Ablage der Sicherungen, außerhalb des Webroots; relativ zum Projekt-Root oder absolut |
 | `BACKUP_KEEP` | Anzahl aufbewahrter Sicherungen (Standard 14) |
 | `EXPORT_TMP_PATH` | Ablage der zusammengebauten Export-Archive; sie verfallen nach einer Stunde |
-
-Weitere Variablen (`TRASH_RETENTION_DAYS`, `IMPORT_MAX_LINES`, `SEARCH_RESULT_LIMIT`) sind für spätere Ausbaustufen vorgesehen und bereits in `.env.example` dokumentiert.
+| `TRASH_RETENTION_DAYS` | Tage, nach denen `trash:purge` Seiten im Papierkorb sowie gelöschte Aufgaben, Kapitel, Logbuch-Einträge und -Spalten endgültig entfernt (Standard 90) |
+| `AUDIT_RETENTION_DAYS` | Aufbewahrung des Protokolls in Tagen, mindestens 30 (Standard 365) |
+| `SEARCH_RESULT_LIMIT` | Treffer je Suchseite (Standard 50), weitere per „Weitere Treffer laden“ |
+| `IMPORT_MAX_LINES` | Obergrenze für den Textimport von Aufgaben |
 
 ## CLI-Kommandos
 
 ```bash
-php bin/console.php migrate     # ausstehende Migrationen anwenden (idempotent)
-php bin/console.php user:list   # alle Nutzer auflisten
-php bin/console.php trash:purge # abgelaufene Papierkorb-Seiten entfernen
+php bin/console.php migrate            # ausstehende Migrationen anwenden (idempotent)
+php bin/console.php migrate --backup   # dito, vorher eine Sicherung, falls sich das Schema ändert (Deploy)
+php bin/console.php user:list          # alle Nutzer auflisten
+php bin/console.php trash:purge        # tägliche Wartung: Papierkorb, gelöschte Aufgaben/Einträge, Protokoll
 
 php bin/console.php backup:run             # Sicherung anlegen (für Cron)
 php bin/console.php backup:list            # vorhandene Sicherungen anzeigen
 php bin/console.php backup:verify <id>     # Prüfsummen und Vollständigkeit prüfen
-php bin/console.php backup:restore <id>    # Sicherung einspielen
+php bin/console.php backup:restore <id>    # Sicherung vollständig einspielen
+php bin/console.php backup:extract <id> <email> [--with-trash] [--out=datei.zip]
+                                           # Stand eines Nutzers als Import-Archiv herausziehen
 ```
+
+### Cronjobs (erforderlich)
+
+Ohne diese beiden Einträge gibt es keine regelmäßigen Sicherungen, und
+Papierkorb, gelöschte Aufgaben und Protokoll wachsen unbegrenzt. `/health`
+meldet einen ausgefallenen Lauf nach 36 Stunden unter `warnings`
+(`backup_stale`, `trash_purge_stale`).
+
+```cron
+0 3 * * *  cd /pfad/zum/projekt && php bin/console.php backup:run  >> var/log/backup.log 2>&1
+30 3 * * * cd /pfad/zum/projekt && php bin/console.php trash:purge >> var/log/maintenance.log 2>&1
+```
+
+Den PHP-Befehl (`php`, `php8.4`, absoluter Pfad) wie beim Deployment an den
+Hoster anpassen.
 
 ## Export
 
@@ -283,11 +307,9 @@ Der Admin-Bereich unter **`/admin/backups`** zeigt alle Sicherungen, legt neue
 an und lädt eine beliebige davon als vollständiges, in sich geschlossenes ZIP
 herunter (aus Pool und Manifest zusammengesetzt).
 
-Täglicher Cron-Eintrag:
-
-```cron
-0 3 * * * cd /pfad/zum/projekt && php bin/console.php backup:run >> var/log/backup.log 2>&1
-```
+Der tägliche Lauf gehört in die Cronjobs (siehe [Cronjobs](#cronjobs-erforderlich)).
+Zusätzlich sichert jedes Deployment vor einer Schemaänderung automatisch
+(`migrate --backup`); der Migrator kennt kein Rollback.
 
 **Wiederherstellen** — bewusst nur über die CLI, denn der Vorgang ersetzt
 Datenbank und Anhänge. Die Anwendung sollte dabei gestoppt sein:
@@ -314,6 +336,23 @@ Zwei bewusste Auslassungen:
 - **Der Pool liegt auf demselben Server.** Er schützt gegen versehentliches
   Löschen in der Anwendung, nicht gegen einen Plattenschaden. Für den Ernstfall
   regelmäßig ein Voll-ZIP herunterladen und außerhalb des Servers ablegen.
+
+**Außer Haus sichern:** Am einfachsten zieht ein Rechner im Betrieb (NAS,
+Büro-PC) das Sicherungsverzeichnis nachts per SSH ab. Der Server braucht dafür
+keine Zugangsdaten zum NAS, und durch den inhaltsadressierten Pool überträgt
+`rsync` nur neue Dateien:
+
+```bash
+# auf dem NAS, täglich nach dem Sicherungslauf
+rsync -a --delete nutzer@server:/pfad/zum/projekt/var/backups/ /volume1/backup/nasmutnotes/
+```
+
+**Einzelne Seiten zurückholen:** Statt eines Voll-Restores, der die Arbeit
+aller anderen zurückdreht, zieht `backup:extract` den Stand eines Nutzers aus
+einer Sicherung als Import-Archiv heraus (`--with-trash` nimmt Seiten mit, die
+damals im Papierkorb lagen). Der Nutzer spielt es über *Einstellungen →
+Import / Export* ein; es entstehen Kopien, die bestehenden Seiten bleiben
+unberührt.
 
 ## Qualitätssicherung
 
@@ -350,5 +389,6 @@ tests/
 ## Bekannte Einschränkungen dieser Ausbaustufe
 
 - Task-Beschreibung ist Klartext (kein eigener Rich-Text-Editor je Task).
-- Keine Team-Workspaces — jede Seite hat genau einen Besitzer (siehe `docs/URS.md`, Annahme 3).
+- Keine Team-Workspaces — jede Seite hat genau einen Besitzer (siehe `docs/URS.md`, Annahme 3). Zusammenarbeit läuft über geteilte Notizbücher.
+- Offline lassen sich keine neuen Aufgaben- oder Logbuch-Seiten, Kapitel oder Spalten anlegen, und Diktate brauchen eine Verbindung.
 - Alpine.js läuft im CSP-kompatiblen Build (`@alpinejs/csp`); Templates dürfen daher keine beliebigen JS-Ausdrücke (z. B. Arrow Functions, Template-Strings) in `x-*`-Attributen verwenden — Logik gehört in die Alpine-Komponenten (`resources/js/*.js`).

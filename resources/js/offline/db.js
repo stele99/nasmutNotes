@@ -218,6 +218,50 @@ export async function nextLocalPageId() {
 }
 
 /**
+ * Temporär-Kennung für offline angelegte Aufgaben und Logbuch-Einträge -
+ * negativ wie bei Seiten, aber mit eigenem Zähler.
+ *
+ * @returns {Promise<number>}
+ */
+export async function nextLocalRecordId() {
+  const database = await openDb();
+  const tx = database.transaction('meta', 'readwrite');
+  const done = txDone(tx);
+  const meta = tx.objectStore('meta');
+  const current = await req(meta.get('local_record_seq'));
+  const next = Number(current?.value ?? 0) - 1;
+  meta.put({ key: 'local_record_seq', value: next });
+  await done;
+
+  return next;
+}
+
+/**
+ * Liest die gesamte Outbox und lässt `mutate` darin in derselben Transaktion
+ * schreiben. `mutate` darf nur synchron `put`/`add`/`delete` aufrufen - ein
+ * `await` dazwischen beendete die IndexedDB-Transaktion vorzeitig. Liefert
+ * den Rückgabewert von `mutate`; ein zurückgegebener IDBRequest wird nach dem
+ * Abschluss durch sein Ergebnis ersetzt.
+ *
+ * @template T
+ * @param {(items: Record<string, unknown>[], outbox: IDBObjectStore) => T} mutate
+ * @returns {Promise<unknown>}
+ */
+export async function withOutbox(mutate) {
+  const database = await openDb();
+  const tx = database.transaction('outbox', 'readwrite');
+  const done = txDone(tx);
+  const outbox = tx.objectStore('outbox');
+  const items = await req(outbox.getAll());
+  const result = mutate(items, outbox);
+  await done;
+
+  const isRequest = result !== null && typeof result === 'object' && 'readyState' in result && 'onsuccess' in result;
+
+  return isRequest ? result.result : result;
+}
+
+/**
  * Legt eine offline erzeugte Seite atomar an: Metadaten, leerer Notizinhalt
  * und der Create-Eintrag der Outbox entstehen in einer Transaktion - eine
  * halbfertige lokale Seite kann es nicht geben.

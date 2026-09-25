@@ -252,8 +252,9 @@ final class PageRepository
                         COUNT(tasks.id) AS task_count,
                         COALESCE(SUM(CASE WHEN tasks.is_done = 0 THEN 1 ELSE 0 END), 0) AS open_task_count
                  FROM categories
-                 LEFT JOIN tasks ON tasks.category_id = categories.id
+                 LEFT JOIN tasks ON tasks.category_id = categories.id AND tasks.deleted_at IS NULL
                  WHERE categories.page_id IN ({$placeholders})
+                   AND categories.deleted_at IS NULL
                  GROUP BY categories.page_id"
             );
             $stmt->execute($chunk);
@@ -273,7 +274,7 @@ final class PageRepository
             $stmt = $this->pdo->prepare(
                 "SELECT page_id, COUNT(*) AS entry_count, MAX(occurred_at) AS latest_entry_at
                  FROM log_entries
-                 WHERE page_id IN ({$placeholders})
+                 WHERE page_id IN ({$placeholders}) AND deleted_at IS NULL
                  GROUP BY page_id"
             );
             $stmt->execute($chunk);
@@ -538,7 +539,8 @@ final class PageRepository
                    FROM tasks
                    JOIN categories ON categories.id = tasks.category_id
                    JOIN pages ON pages.id = categories.page_id
-                  WHERE pages.workspace_id = :workspace_id AND pages.deleted_at IS NULL) AS tasks,
+                  WHERE pages.workspace_id = :workspace_id AND pages.deleted_at IS NULL
+                    AND tasks.deleted_at IS NULL AND categories.deleted_at IS NULL) AS tasks,
                 ((SELECT COUNT(note_attachments.id)
                     FROM note_attachments
                     JOIN pages ON pages.id = note_attachments.page_id

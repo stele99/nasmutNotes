@@ -9,9 +9,11 @@ use App\Domain\Notes\NoteEncryptionException;
 use App\Domain\Notes\NoteService;
 use App\Domain\Notes\NoteWriteUnavailableException;
 use App\Domain\Notes\VersionConflictException;
+use App\Repositories\AuditLogRepository;
 use App\Support\CurrentUser;
 use App\Support\JsonResponse;
 use App\Support\RateLimiter;
+use App\Support\RequestIp;
 use App\Support\ValidationException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -22,6 +24,7 @@ final class NoteController
     public function __construct(
         private readonly NoteService $notes,
         private readonly RateLimiter $rateLimiter,
+        private readonly AuditLogRepository $auditLog,
     ) {
     }
 
@@ -135,6 +138,15 @@ final class NoteController
             );
         }
 
+        $this->auditLog->log(
+            $user->id,
+            'page_encryption_changed',
+            'page',
+            (int) $args['id'],
+            RequestIp::hash($request),
+            ['transition' => $body['transition']],
+        );
+
         return $this->noStore(JsonResponse::json($response, $result));
     }
 
@@ -200,6 +212,10 @@ final class NoteController
                 503,
             );
         }
+
+        $this->auditLog->log($user->id, 'note_version_restored', 'page', (int) $args['id'], RequestIp::hash($request), [
+            'version_id' => (int) $args['vid'],
+        ]);
 
         return $this->noStore(JsonResponse::json($response, $result));
     }

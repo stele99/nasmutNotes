@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\Admin\AdminDashboardController;
+use App\Controllers\Admin\AuditAdminController;
 use App\Controllers\Admin\BackupAdminController;
 use App\Controllers\Admin\InviteAdminController;
 use App\Controllers\AppController;
@@ -29,6 +30,7 @@ use App\Controllers\PageController;
 use App\Controllers\ProfileController;
 use App\Controllers\PublicShareController;
 use App\Controllers\SearchController;
+use App\Controllers\SessionController;
 use App\Controllers\ShareController;
 use App\Controllers\TaskController;
 use App\Controllers\UserInviteController;
@@ -71,13 +73,20 @@ return static function (App $app, ContainerInterface $container): void {
         ->add(new RequireAdminMiddleware(false))
         ->add(new RequireAuthMiddleware(false));
 
+    $app->get('/admin/audit', [AuditAdminController::class, 'page'])
+        ->add(new RequireAdminMiddleware(false))
+        ->add(new RequireAuthMiddleware(false));
+
     $app->group('/api/admin', function ($group): void {
         $group->get('/invites', [InviteAdminController::class, 'index']);
         $group->post('/invites', [InviteAdminController::class, 'store']);
         $group->delete('/invites/{id}', [InviteAdminController::class, 'destroy']);
         $group->get('/overview', [AdminDashboardController::class, 'overview']);
+        $group->get('/audit', [AuditAdminController::class, 'index']);
         $group->delete('/users/{id}', [AdminDashboardController::class, 'destroyUser']);
         $group->patch('/users/{id}/quota', [AdminDashboardController::class, 'updateUserQuota']);
+        $group->patch('/users/{id}/active', [AdminDashboardController::class, 'updateUserActive']);
+        $group->post('/users/{id}/transfer', [AdminDashboardController::class, 'transferUserContent']);
         $group->post('/users/{id}/compress-images', [AdminDashboardController::class, 'compressUserImages']);
         $group->patch('/settings/default-quota', [AdminDashboardController::class, 'updateDefaultQuota']);
         $group->patch('/settings/max-attachment', [AdminDashboardController::class, 'updateMaxAttachment']);
@@ -114,6 +123,7 @@ return static function (App $app, ContainerInterface $container): void {
 
     $app->get('/api/session', [AppController::class, 'session'])->add(new RequireAuthMiddleware(true));
     $app->patch('/api/profile', [ProfileController::class, 'update'])->add(new RequireAuthMiddleware(true));
+    $app->delete('/api/profile', [ProfileController::class, 'destroy'])->add(new RequireAuthMiddleware(true));
     $app->get('/api/profile/ai-usage', [ProfileController::class, 'aiUsage'])
         ->add(new RequireAuthMiddleware(true));
 
@@ -123,6 +133,13 @@ return static function (App $app, ContainerInterface $container): void {
         $group->get('', [DeviceTokenController::class, 'index']);
         $group->post('', [DeviceTokenController::class, 'store']);
         $group->delete('/{id}', [DeviceTokenController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
+
+    // Eigene Anmeldungen: einsehen, einzeln oder alle anderen beenden.
+    $app->group('/api/profile/sessions', function ($group): void {
+        $group->get('', [SessionController::class, 'index']);
+        $group->delete('', [SessionController::class, 'destroyOthers']);
+        $group->delete('/{id}', [SessionController::class, 'destroy']);
     })->add(new RequireAuthMiddleware(true));
 
     // Persönliche Diktier-Vorlagen (FR-VOICE): eigene Anweisungen für die
@@ -146,6 +163,7 @@ return static function (App $app, ContainerInterface $container): void {
         $group->delete('/{id}', [NotebookController::class, 'destroy']);
         $group->get('/{id}/shares', [NotebookShareController::class, 'index']);
         $group->post('/{id}/shares', [NotebookShareController::class, 'store']);
+        $group->patch('/{id}/shares/{userId}', [NotebookShareController::class, 'update']);
         $group->delete('/{id}/shares/{userId}', [NotebookShareController::class, 'destroy']);
         $group->delete('/{id}/share-access', [NotebookShareController::class, 'leave']);
     })->add(new RequireAuthMiddleware(true));
@@ -191,6 +209,7 @@ return static function (App $app, ContainerInterface $container): void {
     $app->group('/api/categories', function ($group): void {
         $group->patch('/{id}', [CategoryController::class, 'update']);
         $group->delete('/{id}', [CategoryController::class, 'destroy']);
+        $group->post('/{id}/restore', [CategoryController::class, 'restore']);
         $group->post('/{id}/tasks/import', [TaskController::class, 'import']);
         $group->post('/{id}/tasks/voice', [TaskController::class, 'voice']);
         $group->post('/{id}/tasks', [TaskController::class, 'store']);
@@ -199,11 +218,13 @@ return static function (App $app, ContainerInterface $container): void {
     $app->group('/api/log-columns', function ($group): void {
         $group->patch('/{id}', [LogController::class, 'updateColumn']);
         $group->delete('/{id}', [LogController::class, 'destroyColumn']);
+        $group->post('/{id}/restore', [LogController::class, 'restoreColumn']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->group('/api/log-entries', function ($group): void {
         $group->patch('/{id}', [LogController::class, 'updateEntry']);
         $group->delete('/{id}', [LogController::class, 'destroyEntry']);
+        $group->post('/{id}/restore', [LogController::class, 'restoreEntry']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->group('/api/tasks', function ($group): void {
@@ -211,6 +232,7 @@ return static function (App $app, ContainerInterface $container): void {
         $group->delete('/{id}', [TaskController::class, 'destroy']);
         $group->post('/{id}/move', [TaskController::class, 'move']);
         $group->post('/{id}/duplicate', [TaskController::class, 'duplicate']);
+        $group->post('/{id}/restore', [TaskController::class, 'restore']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->delete('/api/shares/{id}', [ShareController::class, 'destroy'])

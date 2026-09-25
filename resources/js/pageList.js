@@ -274,6 +274,8 @@ export function pageList() {
     currentPageId: window.__CURRENT_PAGE_ID__ || null,
     searchQuery: '',
     searchResults: [],
+    searchHasMore: false,
+    searchLoadingMore: false,
     searchLoading: false,
     navigating: false,
     activeCollection: 'home',
@@ -349,7 +351,11 @@ export function pageList() {
       window.dispatchEvent(new Event('page-drag-end'));
     },
 
-    async movePagesByIds(pageIds, notebookId) {
+    /**
+     * @param {boolean} confirmed Der Eigentümerwechsel in ein fremdes Notizbuch
+     *   wurde schon bestätigt (Drag-and-drop fragt vorher selbst).
+     */
+    async movePagesByIds(pageIds, notebookId, confirmed = false) {
       const ownedIds = pageIds
         .map(Number)
         .filter((pageId) => this.pages.some(
@@ -359,10 +365,23 @@ export function pageList() {
         return;
       }
       const target = notebookId === '' || notebookId === null ? null : Number(notebookId);
-      await apiFetch('/api/pages/move', {
+      const send = (confirmTransfer) => apiFetch('/api/pages/move', {
         method: 'POST',
-        body: JSON.stringify({ page_ids: ownedIds, notebook_id: target }),
+        body: JSON.stringify({ page_ids: ownedIds, notebook_id: target, confirm_transfer: confirmTransfer }),
       });
+      try {
+        await send(Boolean(confirmed));
+      } catch (error) {
+        // Der Server verlangt die Bestätigung, sobald die Seiten den
+        // Eigentümer wechseln würden - egal über welchen Weg verschoben wird.
+        if (error.payload?.error?.code !== 'TRANSFER_CONFIRMATION_REQUIRED') {
+          throw error;
+        }
+        if (!window.confirm(`${error.message}\n\nTrotzdem verschieben?`)) {
+          return;
+        }
+        await send(true);
+      }
       this.clearPageSelection();
       this.notifyPagesChanged();
     },
@@ -573,15 +592,22 @@ export function pageList() {
       // Vorgabe „manuell" bleibt der Ort hier leer und wird erst auf der Seite
       // per Klick gesetzt.
       const location = await captureLocationOnCreate();
-      const page = await apiFetch('/api/pages', {
-        method: 'POST',
-        body: JSON.stringify({
-          type,
-          title,
-          notebook_id: this.activeCollection === 'notebook' ? this.activeNotebookId : null,
-          location,
-        }),
-      });
+      let page;
+      try {
+        page = await apiFetch('/api/pages', {
+          method: 'POST',
+          body: JSON.stringify({
+            type,
+            title,
+            notebook_id: this.activeCollection === 'notebook' ? this.activeNotebookId : null,
+            location,
+          }),
+        });
+      } catch (error) {
+        // Etwa ein nur lesend geteiltes Notizbuch.
+        showToast(error.message || 'Die Seite konnte nicht angelegt werden.', 'error');
+        return;
+      }
       this.notifyPagesChanged();
       // Der Vorschlagstitel soll auf der neuen Seite gleich überschreibbar sein.
       markNewPageForTitleEdit(page.id);
@@ -906,6 +932,7 @@ export function pageList() {
       this.workspaceTab = tab;
       this.searchQuery = '';
       this.searchResults = [];
+      this.searchHasMore = false;
 
       if (tab === 'location') {
         // Der Standort wurde beim Laden der Seite meist schon im Hintergrund
@@ -962,7 +989,8 @@ export function pageList() {
 
     searchResultsLabel() {
       const total = this.searchResults.length;
-      return total === 1 ? '1 Ergebnis' : `${total} Ergebnisse`;
+      const label = total === 1 ? '1 Ergebnis' : `${total} Ergebnisse`;
+      return this.searchHasMore ? `${label}+` : label;
     },
 
     observeRecentSentinel() {
@@ -1062,6 +1090,7 @@ export function pageList() {
     clearSearch() {
       this.searchQuery = '';
       this.searchResults = [];
+      this.searchHasMore = false;
       if (this.workspaceTab !== 'location') {
         this.clearNearby();
       }
@@ -1074,6 +1103,7 @@ export function pageList() {
       const query = this.searchQuery.trim();
       if (!query) {
         this.searchResults = [];
+      this.searchHasMore = false;
         return;
       }
       this.searchLoading = true;
@@ -1083,21 +1113,50 @@ export function pageList() {
           const q = query.toLowerCase();
           this.searchResults = this.collectionPages()
             .filter((page) => String(page.title || '').toLowerCase().includes(q));
+          this.searchHasMore = false;
           return;
         }
-        const parameters = new URLSearchParams({ q: query });
-        // Die Seitenleiste sucht in ihrer Sammlung; „Alle Notizen" und die
-        // Übersicht durchsuchen den ganzen Workspace.
-        if (this.searchCollection()) {
-          parameters.set('collection', this.activeCollection);
-          if (this.activeCollection === 'notebook' && this.activeNotebookId) {
-            parameters.set('notebook_id', String(this.activeNotebookId));
-          }
-        }
-        const data = await apiFetch(`/api/search?${parameters.toString()}`);
+        const data = await apiFetch(this.searchUrl(query, 0));
         this.searchResults = data.pages;
+        this.searchHasMore = Boolean(data.has_more);
       } finally {
         this.searchLoading = false;
+      }
+    },
+
+    searchUrl(query, offset) {
+      const parameters = new URLSearchParams({ q: query });
+      // Die Seitenleiste sucht in ihrer Sammlung; „Alle Notizen" und die
+      // Übersicht durchsuchen den ganzen Workspace.
+      if (this.searchCollection()) {
+        parameters.set('collection', this.activeCollection);
+        if (this.activeCollection === 'notebook' && this.activeNotebookId) {
+          parameters.set('notebook_id', String(this.activeNotebookId));
+        }
+      }
+      if (offset > 0) {
+        parameters.set('offset', String(offset));
+      }
+
+      return `/api/search?${parameters.toString()}`;
+    },
+
+    async loadMoreSearchResults() {
+      const query = this.searchQuery.trim();
+      if (!query || !this.searchHasMore || this.searchLoadingMore || !navigator.onLine) {
+        return;
+      }
+      this.searchLoadingMore = true;
+      try {
+        const data = await apiFetch(this.searchUrl(query, this.searchResults.length));
+        const known = new Set(this.searchResults.map((page) => page.id));
+        this.searchResults = [
+          ...this.searchResults,
+          ...data.pages.filter((page) => !known.has(page.id)),
+        ];
+        this.searchHasMore = Boolean(data.has_more);
+      } finally {
+        this.searchLoadingMore = false;
       }
     },
 

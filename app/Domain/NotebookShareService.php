@@ -14,8 +14,9 @@ use App\Support\ValidationException;
 /**
  * Notizbücher mit registrierten Nutzern teilen (per E-Mail). Der Eigentümer
  * fügt Teilnehmer hinzu und entfernt sie, Teilnehmer können die Freigabe
- * selbst verlassen. Alle Beteiligten dürfen sämtliche Seiten des Notizbuchs
- * bearbeiten; das Notizbuch samt Seiten bleibt beim Eigentümer.
+ * selbst verlassen. Je Teilnehmer gilt `write` (alle Seiten bearbeiten, neue
+ * anlegen) oder `read` (nur ansehen); das Notizbuch samt Seiten bleibt beim
+ * Eigentümer.
  */
 final class NotebookShareService
 {
@@ -28,11 +29,12 @@ final class NotebookShareService
     }
 
     /**
-     * @return array{id: int, name: string, email: string, created_at: string}
+     * @return array{id: int, name: string, email: string, created_at: string, permission: string}
      */
-    public function share(User $owner, int $notebookId, string $email): array
+    public function share(User $owner, int $notebookId, string $email, string $permission = 'write'): array
     {
         $notebook = $this->requireOwned($owner, $notebookId);
+        $permission = self::validatedPermission($permission);
         $email = trim($email);
         if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             throw new ValidationException('Ungültige E-Mail-Adresse.');
@@ -55,14 +57,35 @@ final class NotebookShareService
             throw new ValidationException('Dieser Nutzer hat bereits Zugriff auf das Notizbuch.');
         }
 
-        $this->shares->add($participant->id, (int) $notebook['id']);
+        $this->shares->add($participant->id, (int) $notebook['id'], $permission);
 
         return [
             'id' => $participant->id,
             'name' => $participant->name,
             'email' => $participant->email,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'permission' => $permission,
         ];
+    }
+
+    public function setPermission(User $owner, int $notebookId, int $userId, string $permission): void
+    {
+        $notebook = $this->requireOwned($owner, $notebookId);
+        $permission = self::validatedPermission($permission);
+        if (!$this->shares->exists($userId, (int) $notebook['id'])) {
+            throw new NotFoundException('Teilnehmer nicht gefunden.');
+        }
+
+        $this->shares->setPermission($userId, (int) $notebook['id'], $permission);
+    }
+
+    private static function validatedPermission(string $permission): string
+    {
+        if (!in_array($permission, ['read', 'write'], true)) {
+            throw new ValidationException('Unbekannte Berechtigung.');
+        }
+
+        return $permission;
     }
 
     /** @return array<int, array<string, mixed>> */

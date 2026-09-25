@@ -91,6 +91,10 @@ export function offlineSettings() {
     // Session-Cookie.
     deviceTokens: [],
     deviceTokensLoading: false,
+    // Eigene Anmeldungen (Browser-Sitzungen): verlorenes Gerät abmelden.
+    sessions: [],
+    sessionsLoading: false,
+    sessionError: '',
     deviceTokenLabel: '',
     deviceTokenCreating: false,
     deviceTokenError: '',
@@ -200,7 +204,12 @@ export function offlineSettings() {
       this.error = '';
       this.locationMode = await loadLocationMode(true);
       await this.refreshStats();
-      await Promise.all([this.loadDeviceTokens(), this.loadAiUsage(), this.loadVoiceTemplates()]);
+      await Promise.all([
+        this.loadDeviceTokens(),
+        this.loadSessions(),
+        this.loadAiUsage(),
+        this.loadVoiceTemplates(),
+      ]);
     },
 
     selectSettingsSection(section) {
@@ -575,6 +584,111 @@ export function offlineSettings() {
       } catch (error) {
         this.deviceTokenError = error.message || 'Das Gerät konnte nicht getrennt werden.';
       }
+    },
+
+    async loadSessions() {
+      if (!navigator.onLine) {
+        return;
+      }
+      this.sessionsLoading = true;
+      this.sessionError = '';
+      try {
+        const data = await apiFetch('/api/profile/sessions');
+        this.sessions = data.sessions || [];
+      } catch (error) {
+        this.sessionError = error.message || 'Die Anmeldungen konnten nicht geladen werden.';
+      } finally {
+        this.sessionsLoading = false;
+      }
+    },
+
+    sessionSummary(session) {
+      return `Zuletzt aktiv: ${this.conflictTime(session.last_seen_at)} · `
+        + `angemeldet seit ${this.conflictTime(session.created_at)}`;
+    },
+
+    hasOtherSessions() {
+      return this.sessions.some((session) => !session.current);
+    },
+
+    async revokeSession(session) {
+      if (!window.confirm(`Anmeldung „${session.device}“ beenden? Das Gerät muss sich neu anmelden.`)) {
+        return;
+      }
+      this.sessionError = '';
+      try {
+        await apiFetch(`/api/profile/sessions/${session.id}`, { method: 'DELETE' });
+        await this.loadSessions();
+      } catch (error) {
+        this.sessionError = error.message || 'Die Anmeldung konnte nicht beendet werden.';
+      }
+    },
+
+    async revokeOtherSessions() {
+      if (!window.confirm('Alle anderen Geräte abmelden? Nur dieses Gerät bleibt angemeldet.')) {
+        return;
+      }
+      this.sessionError = '';
+      try {
+        const result = await apiFetch('/api/profile/sessions', { method: 'DELETE' });
+        this.message = result.revoked === 1
+          ? '1 andere Anmeldung beendet.'
+          : `${result.revoked} andere Anmeldungen beendet.`;
+        await this.loadSessions();
+      } catch (error) {
+        this.sessionError = error.message || 'Die Anmeldungen konnten nicht beendet werden.';
+      }
+    },
+
+    /**
+     * Konto samt aller Inhalte löschen (DSGVO Art. 17). Zweifache Bestätigung:
+     * erst die Rückfrage, dann die eigene E-Mail-Adresse. Geteilte Notizbücher
+     * meldet der Server gesondert.
+     */
+    async deleteOwnAccount() {
+      if (!navigator.onLine) {
+        this.error = 'Das Konto lässt sich nur mit Verbindung löschen.';
+        return;
+      }
+      if (!window.confirm(
+        'Konto endgültig löschen?\n\nAlle eigenen Notizbücher, Seiten, Aufgaben, Logbücher und Dateien '
+        + 'werden unwiderruflich entfernt. Lade vorher ein Export-Archiv herunter, wenn du etwas behalten willst.',
+      )) {
+        return;
+      }
+      const email = window.prompt('Zur Bestätigung bitte die E-Mail-Adresse deines Kontos eingeben:');
+      if (email === null) {
+        return;
+      }
+
+      const send = (acceptSharedLoss) => apiFetch('/api/profile', {
+        method: 'DELETE',
+        body: JSON.stringify({ confirm_email: email, accept_shared_loss: acceptSharedLoss }),
+      });
+      this.error = '';
+      try {
+        try {
+          await send(false);
+        } catch (error) {
+          if (error.payload?.error?.code !== 'SHARED_NOTEBOOKS') {
+            throw error;
+          }
+          if (!window.confirm(`${error.message}\n\nTrotzdem löschen?`)) {
+            return;
+          }
+          await send(true);
+        }
+      } catch (error) {
+        this.error = error.message || 'Das Konto konnte nicht gelöscht werden.';
+        return;
+      }
+
+      try {
+        await clearOfflineData({ unregisterWorker: true });
+      } catch {
+        /* Die Sitzung ist ohnehin beendet. */
+      }
+      window.location.href = '/';
     },
 
     deviceTokenSummary(token) {

@@ -9,6 +9,7 @@ use App\Domain\Notes\ImageCompressionService;
 use App\Domain\Notes\PageAttachmentService;
 use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageService;
+use App\Domain\SharedNotebooksException;
 use App\Domain\User;
 use App\Repositories\AdminRepository;
 use App\Repositories\AuditLogRepository;
@@ -110,6 +111,105 @@ final class AdminServiceTest extends TestCase
         self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM note_contents'));
         self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM note_attachments'));
         self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM workspaces WHERE user_id = ' . $this->member->id));
+    }
+
+    public function testDeactivatingRevokesSessionsAndDeviceTokensButKeepsContent(): void
+    {
+        $this->pages->create($this->member, 'note', 'Bleibt', null);
+        $this->pdo->exec(
+            "INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ({$this->member->id}, 'h1', '2099-01-01T00:00:00Z')"
+        );
+        $this->pdo->exec(
+            "INSERT INTO device_tokens (user_id, label, token_hash, created_at)
+             VALUES ({$this->member->id}, 'Handy', 't1', '2026-01-01T00:00:00Z')"
+        );
+
+        $result = $this->admin->setUserActive($this->adminUser, $this->member->id, false, 'ip');
+
+        self::assertFalse($result['is_active']);
+        self::assertSame(1, $result['sessions']);
+        self::assertSame(1, $result['device_tokens']);
+        self::assertSame(0, $this->scalar("SELECT is_active FROM users WHERE id = {$this->member->id}"));
+        self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM sessions WHERE revoked_at IS NULL'));
+        self::assertSame(1, $this->scalar('SELECT COUNT(*) FROM pages'));
+        self::assertSame(1, $this->scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user_deactivated'"));
+
+        $this->admin->setUserActive($this->adminUser, $this->member->id, true, 'ip');
+        self::assertSame(1, $this->scalar("SELECT is_active FROM users WHERE id = {$this->member->id}"));
+    }
+
+    public function testDeactivatingOwnAccountIsRejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->admin->setUserActive($this->adminUser, $this->adminUser->id, false, 'ip');
+    }
+
+    public function testTransferMovesNotebooksAndCollectsLoosePages(): void
+    {
+        $workspaces = new WorkspaceRepository($this->pdo);
+        $memberWorkspace = (int) $workspaces->findByUserId($this->member->id);
+        $adminWorkspace = (int) $workspaces->findByUserId($this->adminUser->id);
+        $this->pdo->exec(
+            "INSERT INTO notebooks (workspace_id, name, name_key) VALUES ({$memberWorkspace}, 'Baustelle', 'baustelle')"
+        );
+        $notebookId = (int) $this->pdo->lastInsertId();
+        $this->pdo->exec(
+            "INSERT INTO notebooks (workspace_id, name, name_key) VALUES ({$adminWorkspace}, 'Baustelle', 'baustelle')"
+        );
+        $this->pages->create($this->member, 'note', 'Im Buch', null, null);
+        $this->pdo->exec("UPDATE pages SET notebook_id = {$notebookId} WHERE title = 'Im Buch'");
+        $this->pages->create($this->member, 'task', 'Lose', null);
+        // Der Empfänger war bisher Teilnehmer - danach ist er Eigentümer.
+        $this->pdo->exec("INSERT INTO notebook_shares (user_id, notebook_id) VALUES ({$this->adminUser->id}, {$notebookId})");
+
+        $result = $this->admin->transferContent($this->adminUser, $this->member->id, $this->adminUser->id, 'ip');
+
+        self::assertSame(2, $result['notebooks']);
+        self::assertSame(2, $result['pages']);
+        self::assertSame(0, $this->scalar("SELECT COUNT(*) FROM pages WHERE workspace_id = {$memberWorkspace}"));
+        self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM notebook_shares'));
+        self::assertSame(0, $this->scalar("SELECT COUNT(*) FROM pages WHERE notebook_id IS NULL"));
+        $names = $this->pdo->query("SELECT name FROM notebooks WHERE workspace_id = {$adminWorkspace} ORDER BY name");
+        self::assertNotFalse($names);
+        self::assertSame(
+            ['Baustelle', 'Baustelle (von member@example.com)', 'Übernommen von member@example.com'],
+            $names->fetchAll(PDO::FETCH_COLUMN),
+        );
+    }
+
+    public function testUserCanDeleteOwnAccountAfterConfirmingTheEmail(): void
+    {
+        $this->pages->create($this->member, 'note', 'Privat', null);
+
+        try {
+            $this->admin->deleteOwnAccount($this->member, 'falsch@example.com', false, 'ip');
+            self::fail('Ohne passende E-Mail darf nichts gelöscht werden.');
+        } catch (ValidationException) {
+        }
+
+        $this->admin->deleteOwnAccount($this->member, 'MEMBER@example.com', false, 'ip');
+
+        self::assertSame(0, $this->scalar("SELECT COUNT(*) FROM users WHERE id = {$this->member->id}"));
+        self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM pages'));
+        self::assertSame(1, $this->scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'account_deleted' AND user_id IS NULL"));
+    }
+
+    public function testDeletingOwnAccountWithSharedNotebooksNeedsExplicitConsent(): void
+    {
+        $workspace = (int) (new WorkspaceRepository($this->pdo))->findByUserId($this->member->id);
+        $this->pdo->exec("INSERT INTO notebooks (workspace_id, name, name_key) VALUES ({$workspace}, 'Team', 'team')");
+        $notebookId = (int) $this->pdo->lastInsertId();
+        $this->pdo->exec("INSERT INTO notebook_shares (user_id, notebook_id) VALUES ({$this->adminUser->id}, {$notebookId})");
+
+        try {
+            $this->admin->deleteOwnAccount($this->member, 'member@example.com', false, 'ip');
+            self::fail('Geteilte Notizbücher hätten eine Bestätigung verlangen müssen.');
+        } catch (SharedNotebooksException $e) {
+            self::assertSame(1, $e->count);
+        }
+
+        $this->admin->deleteOwnAccount($this->member, 'member@example.com', true, 'ip');
+        self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM notebooks'));
     }
 
     public function testDeletingOwnAccountIsRejected(): void

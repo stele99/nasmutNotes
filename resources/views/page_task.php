@@ -196,6 +196,8 @@
                                 <input type="checkbox" :checked="task.is_done" @change="toggleDone(task)" :disabled="!canEditPage" class="h-5 w-5 sm:h-4 sm:w-4">
                             </label>
                             <button @click="openTask(task)" class="task-title min-w-0 flex-1 text-left" :class="task.is_done ? 'line-through' : ''" x-text="task.title"></button>
+                            <span x-show="task.due_date" class="shrink-0 text-xs sm:text-sm" :style="dueStyle(task)" :title="isOverdue(task) ? 'Überfällig' : 'Fälligkeit'" x-text="dueLabel(task)"></span>
+                            <span x-show="isPendingTask(task)" x-cloak class="shrink-0" style="color: var(--color-text-muted);" title="Noch nicht übertragen" aria-label="Noch nicht übertragen" x-icon="cloud-off"></span>
                             <span x-show="task.responsible" class="hidden text-sm sm:inline" style="color: var(--color-text-muted);" x-text="task.responsible"></span>
                             <a
                                 x-show="task.link"
@@ -336,6 +338,10 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
                     </select>
                     <input x-show="!hasCollaboratorChoices() || responsibleFreeText" x-model="activeTask.responsible" :readonly="!canEditPage" placeholder="Verantwortlich" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
                     <input x-model="activeTask.link" :readonly="!canEditPage" placeholder="https://…" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
+                    <label class="flex items-center gap-3 text-base">
+                        <span class="shrink-0" style="color: var(--color-text-muted);">Fällig am</span>
+                        <input type="date" x-model="activeTask.due_date" :readonly="!canEditPage" class="min-w-0 flex-1 rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
+                    </label>
                     <label class="flex cursor-pointer items-center gap-3 text-base">
                         <input type="checkbox" x-model="activeTask.is_done" :disabled="!canEditPage" class="h-6 w-6 shrink-0"> Erledigt
                     </label>

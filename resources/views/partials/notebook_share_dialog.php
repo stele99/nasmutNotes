@@ -25,6 +25,11 @@
             <input x-ref="notebookShareEmail" id="notebook-share-email" x-model="notebookShareEmail" :disabled="notebookShareSaving" maxlength="254" autocomplete="off" type="email" class="min-w-0 flex-1 rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg);" placeholder="name@example.de">
             <button type="submit" :disabled="notebookShareSaving" class="btn btn-primary shrink-0" x-text="notebookShareSaving ? 'Füge hinzu…' : 'Hinzufügen'"></button>
         </div>
+        <fieldset class="mt-3 flex gap-4 text-sm">
+            <legend class="sr-only">Berechtigung</legend>
+            <label class="flex items-center gap-1.5"><input type="radio" value="write" x-model="notebookSharePermission" :disabled="notebookShareSaving"> Bearbeiten</label>
+            <label class="flex items-center gap-1.5"><input type="radio" value="read" x-model="notebookSharePermission" :disabled="notebookShareSaving"> Nur lesen</label>
+        </fieldset>
         <p class="mt-2 text-xs" style="color: var(--color-text-muted);">Nur bereits registrierte Nasmut-Notes-Nutzer können hinzugefügt werden.</p>
         <p x-show="notebookShareError" x-cloak x-text="notebookShareError" class="mt-2 text-sm" style="color: var(--color-danger);" role="alert"></p>
         <p class="mt-5 text-sm font-medium">Teilnehmer</p>
@@ -37,6 +42,7 @@
                         <p class="truncate font-medium" x-text="participant.name"></p>
                         <p class="truncate text-xs" style="color: var(--color-text-muted);" x-text="participant.email"></p>
                     </div>
+                    <button type="button" @click="toggleParticipantPermission(participant)" :disabled="notebookShareRemovingId !== null" class="btn btn-quiet shrink-0 px-2 py-1 text-xs" :title="'Recht wechseln (derzeit ' + participantPermissionLabel(participant) + ')'" x-text="participantPermissionLabel(participant)"></button>
                     <button type="button" @click="removeNotebookParticipant(participant)" :disabled="notebookShareRemovingId !== null" class="icon-action icon-action-danger shrink-0" aria-label="Teilnehmer entfernen" x-icon="x"></button>
                 </li>
             </template>

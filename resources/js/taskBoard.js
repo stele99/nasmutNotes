@@ -1,12 +1,34 @@
 import { apiFetch } from './api.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
-import { cacheBoard, readCachedBoard } from './offline/runtime.js';
+import { cacheBoard, readCachedBoard, syncOutbox } from './offline/runtime.js';
+import {
+  applyTaskOps,
+  cancelQueuedDelete,
+  pendingRecordItems,
+  queueTaskCreate,
+  queueTaskDelete,
+  queueTaskUpdate,
+} from './offline/records.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { voiceFormData, voiceRecorderMixin } from './voice.js';
-import { showToast } from './toast.js';
+import { showToast, showUndoToast } from './toast.js';
 
 const POLL_INTERVAL_MS = 5000;
+const DUE_FORMAT = new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+
+/** Kein HTTP-Status heißt: Die Anfrage kam gar nicht an (offline, Funkloch). */
+function isNetworkError(error) {
+  return !error?.status;
+}
+
+/** Heutiges Datum als `YYYY-MM-DD` in Ortszeit. */
+function todayIso() {
+  const now = new Date();
+  const pad = (part) => String(part).padStart(2, '0');
+
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
 export function taskBoard() {
   return {
@@ -15,6 +37,10 @@ export function taskBoard() {
     ...voiceRecorderMixin(),
     pageId: null,
     categories: [],
+    // Letzter Serverstand ohne die ausstehenden Offline-Änderungen - Grundlage,
+    // über die applyTaskOps() die Outbox legt.
+    serverCategories: [],
+    recordsHandler: null,
     hiddenCompletedCategories: {},
     // Es ist immer nur ein Kapitel aktiv - mobil per Dropdown gewählt, auf dem
     // Desktop per Reiter. Als String gehalten, weil <select> nur Strings liefert.
@@ -51,18 +77,64 @@ export function taskBoard() {
     offlineNotice: '',
 
     /**
-     * Aufgaben werden - anders als Notizen - nicht in die Offline-Queue
-     * gestellt. Schreibzugriffe brauchen deshalb eine Verbindung; ohne diesen
-     * Guard liefen sie in eine unbehandelte Rejection ohne jede Rückmeldung.
+     * Aufgaben anlegen, abhaken, bearbeiten und löschen geht auch offline
+     * (records.js). Kapitel, Import, Diktat und der Seitentitel brauchen
+     * dagegen eine Verbindung.
      */
     requireOnline() {
       if (navigator.onLine) {
         this.offlineNotice = '';
         return true;
       }
-      this.offlineNotice = 'Aufgaben können offline nur gelesen werden.';
+      this.offlineNotice = 'Kapitel, Import und Diktat brauchen eine Verbindung. Aufgaben selbst lassen sich offline bearbeiten.';
 
       return false;
+    },
+
+    /** Offline oder eine noch nicht übertragene Aufgabe: über die Outbox gehen. */
+    shouldQueue(task = null) {
+      return !navigator.onLine || (task !== null && Number(task.id) < 0);
+    },
+
+    async applyPending() {
+      this.categories = applyTaskOps(this.pageId, this.serverCategories, await pendingRecordItems());
+      this.ensureSelectedCategory();
+    },
+
+    offlineSaved(message) {
+      showToast(`${message} Wird übertragen, sobald wieder Netz da ist.`);
+      void syncOutbox();
+    },
+
+    // --------------------------------------------------------------- Fälligkeit
+
+    dueLabel(task) {
+      if (!task.due_date) {
+        return '';
+      }
+      const date = new Date(`${task.due_date}T12:00:00`);
+
+      return Number.isNaN(date.getTime()) ? task.due_date : `fällig ${DUE_FORMAT.format(date)}`;
+    },
+
+    isOverdue(task) {
+      return Boolean(task.due_date) && !task.is_done && task.due_date < todayIso();
+    },
+
+    isDueToday(task) {
+      return Boolean(task.due_date) && !task.is_done && task.due_date === todayIso();
+    },
+
+    dueStyle(task) {
+      if (this.isOverdue(task)) {
+        return 'color: var(--color-danger);';
+      }
+
+      return this.isDueToday(task) ? 'color: var(--color-accent);' : 'color: var(--color-text-muted);';
+    },
+
+    isPendingTask(task) {
+      return task.pending === true;
     },
 
     async init() {
@@ -90,6 +162,20 @@ export function taskBoard() {
       await this.refresh();
       void this.loadCollaborators();
 
+      // Sync abgeschlossen oder Outbox anderweitig geändert: Überlagerung neu
+      // berechnen und - online - den Serverstand holen.
+      this.recordsHandler = (event) => {
+        if (Number(event.detail?.pageId) !== this.pageId) {
+          return;
+        }
+        if (navigator.onLine) {
+          void this.refresh().catch(() => this.applyPending());
+        } else {
+          void this.applyPending();
+        }
+      };
+      window.addEventListener('offline-records-changed', this.recordsHandler);
+
       this.pollTimer = setInterval(() => this.pollBoard(), POLL_INTERVAL_MS);
       this.visibilityHandler = () => {
         if (document.visibilityState === 'visible') {
@@ -110,8 +196,8 @@ export function taskBoard() {
         const boardJson = JSON.stringify(data.categories);
         if (boardJson !== this.lastBoardJson) {
           this.lastBoardJson = boardJson;
-          this.categories = data.categories;
-          this.ensureSelectedCategory();
+          this.serverCategories = data.categories;
+          await this.applyPending();
         }
       } catch (error) {
         // Offline oder Serverfehler: der nächste Tick versucht es erneut.
@@ -347,18 +433,18 @@ export function taskBoard() {
       try {
         const data = await apiFetch(`/api/pages/${this.pageId}/board`);
         this.lastBoardJson = JSON.stringify(data.categories);
-        this.categories = data.categories;
+        this.serverCategories = data.categories;
         await cacheBoard(this.pageId, data);
       } catch (error) {
         const cached = await readCachedBoard(this.pageId);
         if (cached) {
-          this.categories = cached.categories || [];
-          this.lastBoardJson = JSON.stringify(this.categories);
+          this.serverCategories = cached.categories || [];
+          this.lastBoardJson = JSON.stringify(this.serverCategories);
         } else {
           throw error;
         }
       } finally {
-        this.ensureSelectedCategory();
+        await this.applyPending();
         this.loading = false;
       }
     },
@@ -481,7 +567,7 @@ export function taskBoard() {
       }
       if (category.tasks.length > 0) {
         const cascade = confirm(
-          `"${category.name}" enthält ${category.tasks.length} Aufgabe(n). OK = alle mitlöschen, Abbrechen = nichts tun.`,
+          `"${category.name}" enthält ${category.tasks.length} Aufgabe(n). OK = Kapitel samt Aufgaben löschen, Abbrechen = nichts tun.`,
         );
         if (!cascade) {
           return;
@@ -491,11 +577,16 @@ export function taskBoard() {
         await apiFetch(`/api/categories/${category.id}`, { method: 'DELETE' });
       }
       await this.refresh();
-      showToast(`„${category.name}" gelöscht.`);
+      showUndoToast(`„${category.name}" gelöscht.`, async () => {
+        await apiFetch(`/api/categories/${category.id}/restore`, { method: 'POST' });
+        this.selectedCategoryId = String(category.id);
+        this.persistSelectedCategory();
+        await this.refresh();
+      });
     },
 
     async addTask(category, event) {
-      if (!this.canEditPage || !this.requireOnline()) {
+      if (!this.canEditPage) {
         return;
       }
       const form = event.currentTarget;
@@ -506,12 +597,31 @@ export function taskBoard() {
       }
       this.savingCategoryId = category.id;
       try {
-        const task = await this.createTask(category, title);
-        if (!task) {
-          return;
+        if (this.shouldQueue()) {
+          await queueTaskCreate(this.pageId, category, title);
+          this.newTaskTitles[category.id] = '';
+          await this.applyPending();
+          this.offlineSaved(`„${title}" angelegt.`);
+        } else {
+          const task = await this.createTask(category, title);
+          if (!task) {
+            return;
+          }
+          category.tasks.push(task);
+          this.serverCategories = this.serverCategories.map((known) => (
+            Number(known.id) === Number(category.id) ? { ...known, tasks: [...known.tasks, task] } : known
+          ));
+          this.newTaskTitles[category.id] = '';
         }
-        category.tasks.push(task);
+      } catch (error) {
+        if (!isNetworkError(error)) {
+          throw error;
+        }
+        // Verbindung mitten im Speichern verloren: offline merken statt verwerfen.
+        await queueTaskCreate(this.pageId, category, title);
         this.newTaskTitles[category.id] = '';
+        await this.applyPending();
+        this.offlineSaved(`„${title}" angelegt.`);
       } finally {
         this.savingCategoryId = null;
       }
@@ -706,29 +816,59 @@ export function taskBoard() {
       this.saveTask();
     },
 
+    taskFields(task) {
+      return {
+        title: task.title,
+        description: task.description,
+        responsible: task.responsible,
+        link: task.link,
+        is_done: task.is_done,
+        due_date: task.due_date || null,
+      };
+    },
+
+    /** Stand der Aufgabe, bevor der Dialog sie verändert hat. */
+    originalTask(taskId) {
+      for (const category of this.categories) {
+        const task = category.tasks.find((candidate) => Number(candidate.id) === Number(taskId));
+        if (task) {
+          return task;
+        }
+      }
+
+      return null;
+    },
+
+    async queueTaskEdit(task, fields) {
+      await queueTaskUpdate(this.pageId, this.originalTask(task.id) || task, fields);
+      this.taskConflict = null;
+      this.activeTask = null;
+      await this.applyPending();
+      this.offlineSaved(`„${fields.title ?? task.title}" gespeichert.`);
+    },
+
     async saveTask() {
-      if (!this.canEditPage || !this.activeTask || this.savingTask || !this.requireOnline()) {
+      if (!this.canEditPage || !this.activeTask || this.savingTask) {
         return;
       }
       const t = this.activeTask;
       this.savingTask = true;
       try {
+        if (this.shouldQueue(t)) {
+          await this.queueTaskEdit(t, this.taskFields(t));
+          return;
+        }
         await apiFetch(`/api/tasks/${t.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({
-            title: t.title,
-            description: t.description,
-            responsible: t.responsible,
-            link: t.link,
-            is_done: t.is_done,
-            version: t.version,
-          }),
+          body: JSON.stringify({ ...this.taskFields(t), version: t.version }),
         });
         this.taskConflict = null;
         this.activeTask = null;
         await this.refresh();
       } catch (error) {
-        if (error.status === 409 && error.payload?.current) {
+        if (isNetworkError(error)) {
+          await this.queueTaskEdit(t, this.taskFields(t));
+        } else if (error.status === 409 && error.payload?.current) {
           // Anderer Nutzer hat den Task geändert: Dialog offen lassen, Nutzer entscheidet.
           this.taskConflict = error.payload.current;
           this.activeTask.version = error.payload.current.version;
@@ -741,15 +881,27 @@ export function taskBoard() {
     },
 
     async toggleDone(task) {
-      if (!this.canEditPage || !this.requireOnline()) {
+      if (!this.canEditPage) {
+        return;
+      }
+      const fields = { is_done: !task.is_done };
+      if (this.shouldQueue(task)) {
+        await queueTaskUpdate(this.pageId, task, fields);
+        await this.applyPending();
+        void syncOutbox();
         return;
       }
       try {
         await apiFetch(`/api/tasks/${task.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ is_done: !task.is_done, version: task.version }),
+          body: JSON.stringify({ ...fields, version: task.version }),
         });
       } catch (error) {
+        if (isNetworkError(error)) {
+          await queueTaskUpdate(this.pageId, task, fields);
+          await this.applyPending();
+          return;
+        }
         if (error.status !== 409) {
           throw error;
         }
@@ -770,24 +922,60 @@ export function taskBoard() {
       }
     },
 
+    /**
+     * Ohne Rückfrage: Der Toast bietet „Rückgängig“ an, und gelöschte Aufgaben
+     * bleiben bis zum Ablauf der Papierkorb-Frist auf dem Server erhalten.
+     */
     async deleteTask(task) {
-      if (!this.canEditPage || !this.requireOnline()) {
+      if (!this.canEditPage) {
         return false;
       }
-      if (!confirm(`Task "${task.title}" löschen?`)) {
-        return false;
+      if (this.shouldQueue(task)) {
+        await this.queueTaskDeletion(task);
+        return true;
       }
-      await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+      try {
+        await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+      } catch (error) {
+        if (!isNetworkError(error)) {
+          throw error;
+        }
+        await this.queueTaskDeletion(task);
+        return true;
+      }
       await this.refresh();
-      showToast(`„${task.title}" gelöscht.`);
+      showUndoToast(`„${task.title}" gelöscht.`, async () => {
+        await apiFetch(`/api/tasks/${task.id}/restore`, { method: 'POST' });
+        await this.refresh();
+      });
 
       return true;
+    },
+
+    async queueTaskDeletion(task) {
+      await queueTaskDelete(this.pageId, task);
+      await this.applyPending();
+      if (Number(task.id) < 0) {
+        // Nie übertragen - es gibt nichts wiederherzustellen.
+        showToast(`„${task.title}" verworfen.`);
+        return;
+      }
+      showUndoToast(`„${task.title}" gelöscht.`, async () => {
+        if (!(await cancelQueuedDelete('task.delete', this.pageId, Number(task.id)))) {
+          await apiFetch(`/api/tasks/${task.id}/restore`, { method: 'POST' });
+        }
+        await this.refresh().catch(() => this.applyPending());
+      });
+      void syncOutbox();
     },
 
     destroy() {
       this.destroyPageLocation();
       this.cancelVoice();
       clearInterval(this.pollTimer);
+      if (this.recordsHandler) {
+        window.removeEventListener('offline-records-changed', this.recordsHandler);
+      }
       if (this.visibilityHandler) {
         document.removeEventListener('visibilitychange', this.visibilityHandler);
       }

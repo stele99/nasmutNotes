@@ -56,6 +56,27 @@ final class Migrator
         return $newlyApplied;
     }
 
+    /**
+     * Namen der noch ausstehenden Migrationen, ohne sie anzuwenden - der
+     * Deploy sichert nur dann vorher, wenn sich das Schema tatsächlich ändert.
+     *
+     * @return string[]
+     */
+    public function pending(): array
+    {
+        $this->ensureMigrationsTable();
+
+        return array_map('basename', $this->pendingFiles($this->appliedMigrations()));
+    }
+
+    /** Wie viele Migrationen bereits angewendet sind; 0 heißt frische Datenbank. */
+    public function appliedCount(): int
+    {
+        $this->ensureMigrationsTable();
+
+        return count($this->appliedMigrations());
+    }
+
     private function applyInTransaction(string $name, string $sql): void
     {
         $this->pdo->beginTransaction();

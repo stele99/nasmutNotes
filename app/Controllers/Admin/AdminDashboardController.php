@@ -16,6 +16,7 @@ use App\Support\JsonResponse;
 use App\Support\RateLimiter;
 use App\Support\Renderer;
 use App\Support\RequestIp;
+use App\Support\ValidationException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -202,6 +203,45 @@ final class AdminDashboardController
     {
         $admin = CurrentUser::require($request);
         $result = $this->admin->deleteUser($admin, (int) ($args['id'] ?? 0), RequestIp::hash($request));
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function updateUserActive(Request $request, Response $response, array $args): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        if (!is_bool($body['is_active'] ?? null)) {
+            throw new ValidationException('is_active muss true oder false sein.');
+        }
+
+        $result = $this->admin->setUserActive(
+            $admin,
+            (int) ($args['id'] ?? 0),
+            $body['is_active'],
+            RequestIp::hash($request),
+        );
+
+        return JsonResponse::json($response, $result);
+    }
+
+    /** @param array<string, string> $args */
+    public function transferUserContent(Request $request, Response $response, array $args): Response
+    {
+        $admin = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        $target = $body['to_user_id'] ?? null;
+        if (!is_int($target) && !(is_string($target) && ctype_digit($target))) {
+            throw new ValidationException('Bitte den empfangenden Nutzer wählen.');
+        }
+
+        $result = $this->admin->transferContent(
+            $admin,
+            (int) ($args['id'] ?? 0),
+            (int) $target,
+            RequestIp::hash($request),
+        );
 
         return JsonResponse::json($response, $result);
     }

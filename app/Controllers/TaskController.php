@@ -42,8 +42,10 @@ final class TaskController
                 isset($body['description']) ? (string) $body['description'] : null,
                 isset($body['responsible']) ? (string) $body['responsible'] : null,
                 isset($body['link']) ? (string) $body['link'] : null,
-                false,
+                (bool) ($body['is_done'] ?? false),
                 (bool) ($body['allow_duplicate'] ?? false),
+                isset($body['due_date']) ? (string) $body['due_date'] : null,
+                isset($body['client_uuid']) ? (string) $body['client_uuid'] : null,
             );
         } catch (TaskDuplicateTitleException $e) {
             // Der Client fragt beim Nutzer nach und schickt die Anfrage bei
@@ -187,6 +189,14 @@ final class TaskController
         $this->board->deleteTask(CurrentUser::require($request), (int) $args['id']);
 
         return $response->withStatus(204);
+    }
+
+    /** @param array<string, string> $args */
+    public function restore(Request $request, Response $response, array $args): Response
+    {
+        $task = $this->board->restoreTask(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, self::serialize($task));
     }
 
     /** @param array<string, string> $args */

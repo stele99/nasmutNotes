@@ -4,6 +4,16 @@ import { locationMapUrl, parseLocationInput, requestLocation } from './geo.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
+import { cacheLogBoard, readCachedLogBoard, syncOutbox } from './offline/runtime.js';
+import {
+  applyLogOps,
+  cancelQueuedDelete,
+  pendingRecordItems,
+  queueLogEntryCreate,
+  queueLogEntryDelete,
+  queueLogEntryUpdate,
+} from './offline/records.js';
+import { showToast, showUndoToast } from './toast.js';
 
 /**
  * Logbuch-Seite (FR-LOG-01..09): Einträge mit Zeitpunkt und frei definierten
@@ -27,6 +37,11 @@ function toLocalInput(value) {
 
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
     + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Kein HTTP-Status heißt: Die Anfrage kam gar nicht an (offline, Funkloch). */
+function isNetworkError(error) {
+  return !error?.status;
 }
 
 function fromLocalInput(value) {
@@ -54,9 +69,17 @@ export function logPage() {
     entryCount: 0,
     loading: true,
     error: '',
+    // Letzter Serverstand ohne ausstehende Offline-Einträge.
+    serverBoard: null,
+    offline: false,
+    recordsHandler: null,
 
     entryDialogOpen: false,
     editingEntryId: null,
+    // Stand des Eintrags beim Öffnen: Version für die Konfliktprüfung und
+    // Eingabewerte als Basis der Offline-Zusammenführung.
+    editingEntry: null,
+    editingBase: {},
     entryTime: '',
     entryValues: {},
     // Koordinaten der geladenen Ortsspalten: Im Feld steht die Anschrift, die
@@ -91,6 +114,37 @@ export function logPage() {
       }
 
       await this.load();
+
+      this.recordsHandler = (event) => {
+        if (Number(event.detail?.pageId) !== this.pageId) {
+          return;
+        }
+        if (navigator.onLine) {
+          void this.load();
+        } else {
+          void this.applyPending();
+        }
+      };
+      window.addEventListener('offline-records-changed', this.recordsHandler);
+    },
+
+    async applyPending() {
+      if (!this.serverBoard) {
+        return;
+      }
+      const board = applyLogOps(this.pageId, this.serverBoard, await pendingRecordItems());
+      this.entries = board.entries || [];
+      const pendingNew = this.entries.filter((entry) => Number(entry.id) < 0).length;
+      this.entryCount = Number(this.serverBoard.entry_count || 0) + pendingNew;
+    },
+
+    offlineSaved(message) {
+      showToast(`${message} Wird übertragen, sobald wieder Netz da ist.`);
+      void syncOutbox();
+    },
+
+    isPendingEntry(entry) {
+      return entry.pending === true;
     },
 
     // ----------------------------------------------------------------- Export
@@ -191,23 +245,41 @@ export function logPage() {
       try {
         const query = new URLSearchParams({ sort: this.sort, direction: this.direction });
         const data = await apiFetch(`/api/pages/${this.pageId}/log?${query.toString()}`);
-        this.columns = data.columns || [];
-        this.entries = data.entries || [];
-        this.types = data.types || [];
-        this.entryCount = Number(data.entry_count || 0);
-        this.sort = data.sort;
-        this.direction = data.direction;
+        this.useBoard(data);
+        this.offline = false;
+        // Nur die Vorgabesortierung wird für den Offline-Betrieb abgelegt.
+        if (data.sort === 'occurred_at' && data.direction === 'desc') {
+          await cacheLogBoard(this.pageId, data).catch(() => undefined);
+        }
       } catch (error) {
-        this.error = navigator.onLine
-          ? (error.message || 'Das Logbuch konnte nicht geladen werden.')
-          : 'Logbücher sind offline nicht verfügbar.';
+        const cached = isNetworkError(error) ? await readCachedLogBoard(this.pageId).catch(() => null) : null;
+        if (cached) {
+          this.useBoard(cached);
+          this.offline = true;
+        } else {
+          this.error = navigator.onLine
+            ? (error.message || 'Das Logbuch konnte nicht geladen werden.')
+            : 'Dieses Logbuch wurde noch nicht für die Offline-Nutzung geladen.';
+        }
       } finally {
+        await this.applyPending();
         this.loading = false;
       }
     },
 
+    useBoard(data) {
+      this.serverBoard = data;
+      this.columns = data.columns || [];
+      this.types = data.types || [];
+      this.sort = data.sort || 'occurred_at';
+      this.direction = data.direction || 'desc';
+    },
+
     /** Erneuter Klick auf dieselbe Spalte dreht die Richtung um. */
     async sortBy(key) {
+      if (this.offline) {
+        return;
+      }
       const next = String(key);
       this.direction = this.sort === next && this.direction === 'desc' ? 'asc' : 'desc';
       if (this.sort !== next) {
@@ -345,6 +417,8 @@ export function logPage() {
         return;
       }
       this.editingEntryId = null;
+      this.editingEntry = null;
+      this.editingBase = {};
       this.entryTime = toLocalInput(null);
       this.entryValues = {};
       this.entryCoordinates = {};
@@ -374,7 +448,21 @@ export function logPage() {
       });
       this.entryValues = values;
       this.entryCoordinates = coordinates;
+      this.editingEntry = { ...entry };
+      this.editingBase = this.collectPayloadValues();
       this.entryDialogOpen = true;
+    },
+
+    /** Eingabewerte aller Spalten in der Form, die die API erwartet. */
+    collectPayloadValues() {
+      const values = {};
+      this.columns.forEach((column) => {
+        if (column.type !== 'user') {
+          values[String(column.id)] = this.payloadValue(column);
+        }
+      });
+
+      return values;
     },
 
     /** Der Wert, wie er im Eingabefeld stehen soll. */
@@ -586,58 +674,129 @@ export function logPage() {
       return parsed ? { lat: parsed.lat, lon: parsed.lon, label: raw } : { label: raw };
     },
 
+    /**
+     * Speichern geht auch ohne Netz: Der Eintrag landet dann in der Outbox
+     * und erscheint sofort in der Liste (records.js). Online prüft die
+     * Version, ob jemand anderes den Eintrag inzwischen geändert hat.
+     */
     async saveEntry() {
       if (!this.canEditPage || this.entryBusy) {
         return;
       }
 
-      const values = {};
-      this.columns.forEach((column) => {
-        if (column.type !== 'user') {
-          values[String(column.id)] = this.payloadValue(column);
-        }
-      });
+      const values = this.collectPayloadValues();
+      const payload = { occurred_at: fromLocalInput(this.entryTime), values };
+      const entry = this.editingEntry;
+      const local = entry !== null && Number(entry.id) < 0;
 
       this.entryBusy = true;
       this.entryError = '';
       try {
-        const payload = { occurred_at: fromLocalInput(this.entryTime), values };
-        if (this.editingEntryId) {
-          await apiFetch(`/api/log-entries/${this.editingEntryId}`, {
+        if (!navigator.onLine || local) {
+          await this.queueEntry(entry, payload);
+          return;
+        }
+        if (entry) {
+          await apiFetch(`/api/log-entries/${entry.id}`, {
             method: 'PATCH',
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ ...payload, version: Number(entry.version || 1) }),
           });
         } else {
           await apiFetch(`/api/pages/${this.pageId}/log/entries`, {
             method: 'POST',
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ ...payload, client_uuid: crypto.randomUUID() }),
           });
         }
         this.closeEntryDialog();
         await this.load();
         this.$dispatch('pages-changed');
       } catch (error) {
-        this.entryError = error.message || 'Der Eintrag konnte nicht gespeichert werden.';
+        if (isNetworkError(error)) {
+          await this.queueEntry(entry, payload);
+        } else if (error.status === 409) {
+          this.handleEntryConflict(error.payload?.current || null);
+        } else {
+          this.entryError = error.message || 'Der Eintrag konnte nicht gespeichert werden.';
+        }
       } finally {
         this.entryBusy = false;
       }
     },
 
+    async queueEntry(entry, payload) {
+      if (entry) {
+        await queueLogEntryUpdate(this.pageId, entry, payload, this.editingBase);
+      } else {
+        await queueLogEntryCreate(this.pageId, payload);
+      }
+      this.closeEntryDialog();
+      await this.applyPending();
+      this.offlineSaved(entry ? 'Eintrag geändert.' : 'Eintrag erfasst.');
+    },
+
+    /**
+     * Jemand anderes hat den Eintrag seit dem Öffnen geändert. Die eigenen
+     * Eingaben bleiben im Dialog; ein erneutes Speichern überschreibt den
+     * neuen Stand bewusst.
+     */
+    handleEntryConflict(current) {
+      if (current === null) {
+        this.entryError = 'Der Eintrag wurde inzwischen gelöscht.';
+        void this.load();
+        return;
+      }
+      this.editingEntry = { ...this.editingEntry, version: current.version };
+      const who = current.created_by_name ? ` (${current.created_by_name})` : '';
+      this.entryError = `Der Eintrag wurde inzwischen von jemand anderem geändert${who}. `
+        + 'Deine Eingaben stehen noch hier - „Speichern“ überschreibt den neuen Stand, „Abbrechen“ behält ihn.';
+      void this.load();
+    },
+
     async deleteEntry() {
-      if (!this.editingEntryId || !window.confirm('Diesen Eintrag löschen?')) {
+      const entry = this.editingEntry;
+      if (!entry) {
         return;
       }
 
       this.entryBusy = true;
       try {
-        await apiFetch(`/api/log-entries/${this.editingEntryId}`, { method: 'DELETE' });
+        if (!navigator.onLine || Number(entry.id) < 0) {
+          await this.queueEntryDeletion(entry);
+          return;
+        }
+        await apiFetch(`/api/log-entries/${entry.id}`, { method: 'DELETE' });
         this.closeEntryDialog();
         await this.load();
+        showUndoToast('Eintrag gelöscht.', async () => {
+          await apiFetch(`/api/log-entries/${entry.id}/restore`, { method: 'POST' });
+          await this.load();
+        });
       } catch (error) {
-        this.entryError = error.message || 'Der Eintrag konnte nicht gelöscht werden.';
+        if (isNetworkError(error)) {
+          await this.queueEntryDeletion(entry);
+        } else {
+          this.entryError = error.message || 'Der Eintrag konnte nicht gelöscht werden.';
+        }
       } finally {
         this.entryBusy = false;
       }
+    },
+
+    async queueEntryDeletion(entry) {
+      await queueLogEntryDelete(this.pageId, entry);
+      this.closeEntryDialog();
+      await this.applyPending();
+      if (Number(entry.id) < 0) {
+        showToast('Eintrag verworfen.');
+        return;
+      }
+      showUndoToast('Eintrag gelöscht.', async () => {
+        if (!(await cancelQueuedDelete('log.deleteEntry', this.pageId, Number(entry.id)))) {
+          await apiFetch(`/api/log-entries/${entry.id}/restore`, { method: 'POST' });
+        }
+        await this.load();
+      });
+      void syncOutbox();
     },
 
     // -------------------------------------------------------------- Spalten
@@ -699,13 +858,20 @@ export function logPage() {
 
     async removeColumn(column) {
       if (!window.confirm(
-        `Spalte „${column.name}" löschen? Die darin erfassten Werte gehen verloren.`,
+        `Spalte „${column.name}" samt ihren Werten ausblenden? Das lässt sich rückgängig machen.`,
       )) {
         return;
       }
 
       await this.runColumnAction(async () => {
         await apiFetch(`/api/log-columns/${column.id}`, { method: 'DELETE' });
+      });
+      if (this.columnError) {
+        return;
+      }
+      showUndoToast(`Spalte „${column.name}" gelöscht.`, async () => {
+        await apiFetch(`/api/log-columns/${column.id}/restore`, { method: 'POST' });
+        await this.load();
       });
     },
 
@@ -759,6 +925,9 @@ export function logPage() {
     destroy() {
       this.destroyPageLocation();
       this.cancelVoice();
+      if (this.recordsHandler) {
+        window.removeEventListener('offline-records-changed', this.recordsHandler);
+      }
     },
   };
 }

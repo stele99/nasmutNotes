@@ -271,4 +271,90 @@ final class TaskBoardServiceTest extends TestCase
         self::assertSame('Anna', $duplicate['responsible']);
         self::assertFalse((bool) $duplicate['is_done']);
     }
+
+    public function testDeletedTaskCanBeRestoredAtTheEndOfItsCategory(): void
+    {
+        $categoryId = $this->firstCategoryId();
+        $first = $this->board->createTask($this->userA, $categoryId, 'Erste', null, null, null);
+        $this->board->createTask($this->userA, $categoryId, 'Zweite', null, null, null);
+
+        $this->board->deleteTask($this->userA, (int) $first['id']);
+        self::assertSame(['Zweite'], array_column($this->tasksIn($categoryId), 'title'));
+
+        $restored = $this->board->restoreTask($this->userA, (int) $first['id']);
+
+        self::assertNull($restored['deleted_at']);
+        self::assertSame(['Zweite', 'Erste'], array_column($this->tasksIn($categoryId), 'title'));
+    }
+
+    public function testDeletedTaskCannotBeEditedAndActiveTaskCannotBeRestored(): void
+    {
+        $task = $this->board->createTask($this->userA, $this->firstCategoryId(), 'T', null, null, null);
+
+        try {
+            $this->board->restoreTask($this->userA, (int) $task['id']);
+            self::fail('Eine aktive Aufgabe ist nicht wiederherstellbar.');
+        } catch (NotFoundException) {
+        }
+
+        $this->board->deleteTask($this->userA, (int) $task['id']);
+        $this->expectException(NotFoundException::class);
+        $this->board->updateTask($this->userA, (int) $task['id'], ['title' => 'X']);
+    }
+
+    public function testCascadeDeletedCategoryComesBackWithItsTasks(): void
+    {
+        $categoryId = $this->firstCategoryId();
+        $this->board->createTask($this->userA, $categoryId, 'T1', null, null, null);
+        $this->board->deleteCategory($this->userA, $categoryId, null, true);
+
+        $this->board->restoreCategory($this->userA, $categoryId);
+
+        $board = $this->board->board($this->userA, $this->taskPageId);
+        $restored = array_values(array_filter($board, static fn (array $c): bool => (int) $c['id'] === $categoryId))[0];
+        self::assertSame(['T1'], array_column($restored['tasks'], 'title'));
+    }
+
+    public function testRestoreIsNotPossibleForOtherUsers(): void
+    {
+        $task = $this->board->createTask($this->userA, $this->firstCategoryId(), 'T', null, null, null);
+        $this->board->deleteTask($this->userA, (int) $task['id']);
+
+        $this->expectException(NotFoundException::class);
+        $this->board->restoreTask($this->userB, (int) $task['id']);
+    }
+
+    public function testDueDateIsValidatedAndCanBeCleared(): void
+    {
+        $task = $this->board->createTask(
+            $this->userA,
+            $this->firstCategoryId(),
+            'Abnahme',
+            null,
+            null,
+            null,
+            false,
+            false,
+            '2026-10-01',
+        );
+        self::assertSame('2026-10-01', $task['due_date']);
+
+        $updated = $this->board->updateTask($this->userA, (int) $task['id'], ['due_date' => null]);
+        self::assertNull($updated['due_date']);
+
+        $this->expectException(ValidationException::class);
+        $this->board->updateTask($this->userA, (int) $task['id'], ['due_date' => '2026-02-30']);
+    }
+
+    public function testOfflineTaskWithTheSameClientUuidIsCreatedOnlyOnce(): void
+    {
+        $categoryId = $this->firstCategoryId();
+        $uuid = '7d3b6c1a-2e4f-4a5b-9c8d-0e1f2a3b4c5d';
+
+        $first = $this->board->createTask($this->userA, $categoryId, 'Offline', null, null, null, false, false, null, $uuid);
+        $second = $this->board->createTask($this->userA, $categoryId, 'Offline', null, null, null, false, false, null, $uuid);
+
+        self::assertSame((int) $first['id'], (int) $second['id']);
+        self::assertCount(1, $this->tasksIn($categoryId));
+    }
 }

@@ -12,17 +12,26 @@ final class NotebookShareRepository
     {
     }
 
-    public function add(int $userId, int $notebookId): void
+    public function add(int $userId, int $notebookId, string $permission = 'write'): void
     {
         $stmt = $this->pdo->prepare(
-            'INSERT OR IGNORE INTO notebook_shares (user_id, notebook_id, created_at)
-             VALUES (:user_id, :notebook_id, :created_at)'
+            'INSERT OR IGNORE INTO notebook_shares (user_id, notebook_id, permission, created_at)
+             VALUES (:user_id, :notebook_id, :permission, :created_at)'
         );
         $stmt->execute([
             'user_id' => $userId,
             'notebook_id' => $notebookId,
+            'permission' => $permission,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
         ]);
+    }
+
+    public function setPermission(int $userId, int $notebookId, string $permission): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE notebook_shares SET permission = :permission WHERE user_id = :user_id AND notebook_id = :notebook_id'
+        );
+        $stmt->execute(['permission' => $permission, 'user_id' => $userId, 'notebook_id' => $notebookId]);
     }
 
     public function remove(int $userId, int $notebookId): void
@@ -52,7 +61,7 @@ final class NotebookShareRepository
     public function findSharedNotebookForUser(int $userId, int $notebookId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT notebooks.*, owner.name AS owner_name
+            'SELECT notebooks.*, owner.name AS owner_name, notebook_shares.permission AS share_permission
              FROM notebook_shares
              JOIN notebooks ON notebooks.id = notebook_shares.notebook_id
              JOIN workspaces ON workspaces.id = notebooks.workspace_id
@@ -75,7 +84,7 @@ final class NotebookShareRepository
     public function findPageInSharedNotebook(int $userId, int $pageId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT pages.*, owner.name AS owner_name
+            'SELECT pages.*, owner.name AS owner_name, notebook_shares.permission AS share_permission
              FROM pages
              JOIN notebooks ON notebooks.id = pages.notebook_id
              JOIN workspaces ON workspaces.id = notebooks.workspace_id
@@ -101,7 +110,8 @@ final class NotebookShareRepository
     {
         $stmt = $this->pdo->prepare(
             'SELECT notebooks.*, COUNT(pages.id) AS page_count,
-                    owner.name AS owner_name, notebook_shares.created_at AS shared_at
+                    owner.name AS owner_name, notebook_shares.created_at AS shared_at,
+                    notebook_shares.permission AS share_permission
              FROM notebook_shares
              JOIN notebooks ON notebooks.id = notebook_shares.notebook_id
              JOIN workspaces ON workspaces.id = notebooks.workspace_id
@@ -124,7 +134,7 @@ final class NotebookShareRepository
     public function listParticipants(int $notebookId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT users.id, users.name, users.email, notebook_shares.created_at
+            'SELECT users.id, users.name, users.email, notebook_shares.created_at, notebook_shares.permission
              FROM notebook_shares
              JOIN users ON users.id = notebook_shares.user_id
              WHERE notebook_shares.notebook_id = :notebook_id

@@ -3,13 +3,19 @@
 
 declare(strict_types=1);
 
+use App\Controllers\HealthController;
+use App\Domain\Backup\BackupExtractor;
 use App\Domain\Backup\BackupLayout;
 use App\Domain\Backup\BackupRestorer;
 use App\Domain\Backup\BackupService;
 use App\Repositories\AuditLogRepository;
+use App\Repositories\CategoryRepository;
+use App\Repositories\LogRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\PageAttachmentRepository;
 use App\Repositories\PageRepository;
+use App\Repositories\SettingsRepository;
+use App\Repositories\TaskRepository;
 use App\Support\Database;
 use App\Support\Env;
 use App\Support\Migrator;
@@ -60,6 +66,30 @@ switch ($command) {
     case 'migrate':
         $pdo = Database::connect(resolveDbPath($rootPath));
         $migrator = new Migrator($pdo, $rootPath . '/database/migrations');
+
+        // --backup (Deploy): vor einer Schemaänderung einen vollständigen Stand
+        // sichern - der Migrator kennt kein Rollback, und Tabellen-Umbauten
+        // lassen sich nur über den Abzug zurückholen. Eine frische Datenbank
+        // hat nichts zu sichern.
+        if (in_array('--backup', array_slice($argv, 2), true)) {
+            $pending = $migrator->pending();
+            if ($pending !== [] && $migrator->appliedCount() > 0) {
+                $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+                $snapshot = new BackupService(
+                    $pdo,
+                    new AuditLogRepository($pdo),
+                    backupLayout($rootPath),
+                    $storage->basePath(),
+                    Env::int('BACKUP_KEEP', 14),
+                )->create();
+                echo sprintf(
+                    "Sicherung vor %d Migration(en): %s\n",
+                    count($pending),
+                    $snapshot['id'],
+                );
+            }
+        }
+
         $applied = $migrator->migrate();
 
         if ($applied === []) {
@@ -120,11 +150,40 @@ switch ($command) {
             $pages->purge($pageId);
         }
 
+        // Weich gelöschte Aufgaben, Kapitel, Logbuch-Einträge und -Spalten
+        // folgen derselben Frist wie Seiten im Papierkorb.
+        $cutoff = gmdate('Y-m-d\TH:i:s.v\Z', time() - ($retentionDays * 86400));
+        $purgedTasks = new TaskRepository($pdo)->purgeDeletedBefore($cutoff);
+        $purgedCategories = new CategoryRepository($pdo)->purgeDeletedBefore($cutoff);
+        $purgedLog = new LogRepository($pdo)->purgeDeletedBefore($cutoff);
+
+        // Protokoll und Rate-Limit-Zähler wachsen sonst unbegrenzt.
+        $auditRetentionDays = max(30, Env::int('AUDIT_RETENTION_DAYS', 365));
+        $purgedAudit = new AuditLogRepository($pdo)->purgeOlderThan($auditRetentionDays);
+        // window_start ist ein Unix-Zeitstempel; kein Fenster ist länger als ein Tag.
+        $staleLimits = $pdo->prepare('DELETE FROM rate_limits WHERE CAST(window_start AS INTEGER) < :cutoff');
+        $staleLimits->bindValue('cutoff', time() - (7 * 86400), \PDO::PARAM_INT);
+        $staleLimits->execute();
+
+        new SettingsRepository($pdo)->set(HealthController::TRASH_PURGE_KEY, gmdate('Y-m-d\TH:i:s\Z'));
+
         echo sprintf(
             "%d Seite(n) nach %d Tagen endgültig gelöscht, %d Datei(en) entfernt.\n",
             count($expired),
             $retentionDays,
             $removedFiles,
+        );
+        echo sprintf(
+            "Endgültig entfernt: %d Aufgabe(n), %d Kapitel, %d Logbuch-Eintrag/-Einträge, %d Spalte(n).\n",
+            $purgedTasks,
+            $purgedCategories,
+            $purgedLog['entries'],
+            $purgedLog['columns'],
+        );
+        echo sprintf(
+            "Protokoll: %d Eintrag/Einträge älter als %d Tage entfernt.\n",
+            $purgedAudit,
+            $auditRetentionDays,
         );
         break;
 
@@ -301,12 +360,46 @@ switch ($command) {
         echo "Bitte anschließend 'php bin/console.php migrate' ausführen.\n";
         break;
 
+    case 'backup:extract':
+        // Einzelnen Nutzer aus einer Sicherung als Import-ZIP herausholen -
+        // statt eines Voll-Restores, der die Arbeit aller anderen zurückdreht.
+        $id = $argv[2] ?? null;
+        $email = $argv[3] ?? null;
+        if ($id === null || $email === null) {
+            fwrite(STDERR, "Aufruf: backup:extract <id> <email> [--out=datei.zip] [--with-trash]\n");
+            exit(1);
+        }
+
+        $options = array_slice($argv, 4);
+        $target = null;
+        foreach ($options as $option) {
+            if (str_starts_with($option, '--out=')) {
+                $target = substr($option, strlen('--out='));
+            }
+        }
+        $target ??= getcwd() . '/wiederherstellung-' . preg_replace('/[^a-z0-9]+/i', '-', $email) . "-{$id}.zip";
+
+        $result = new BackupExtractor(backupLayout($rootPath), $rootPath . '/database/migrations')->extract(
+            $id,
+            $email,
+            $target,
+            in_array('--with-trash', $options, true),
+        );
+        echo sprintf(
+            "%d Seite(n), %d Datei(en) nach %s geschrieben.\n",
+            $result['pages'],
+            $result['files'],
+            $result['path'],
+        );
+        echo "Der Nutzer spielt das Archiv über Einstellungen → Import ein; es entstehen Kopien.\n";
+        break;
+
     default:
         fwrite(STDERR, "Unbekanntes Kommando" . ($command !== null ? ": {$command}" : '') . "\n");
         fwrite(
             STDERR,
             "Verfügbare Kommandos: migrate, user:list, trash:purge,"
-            . " backup:run, backup:list, backup:verify, backup:restore\n",
+            . " backup:run, backup:list, backup:verify, backup:restore, backup:extract\n",
         );
         exit(1);
 }

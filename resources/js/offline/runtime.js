@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import * as db from './db.js';
+import { isRecordType, syncRecordItem } from './records.js';
 
 export const CACHE_LIMITS = [100, 250, 500, 1000, 5000, 10000, 'all'];
 const ATTACHMENT_CACHE = 'shareinfo-attachments-v1';
@@ -451,6 +452,28 @@ export async function readCachedBoard(pageId) {
   return db.getBoard(Number(pageId));
 }
 
+/**
+ * Logbücher liegen im selben Speicher wie Aufgaben-Boards (Schlüssel ist die
+ * Seiten-ID), gekennzeichnet über `kind`.
+ *
+ * @param {number} pageId
+ * @param {Record<string, unknown>} board Antwort von /api/pages/{id}/log
+ */
+export async function cacheLogBoard(pageId, board) {
+  await db.putBoard({
+    page_id: Number(pageId),
+    kind: 'log',
+    board,
+    cached_at: new Date().toISOString(),
+  });
+}
+
+export async function readCachedLogBoard(pageId) {
+  const row = await db.getBoard(Number(pageId));
+
+  return row?.kind === 'log' ? row.board : null;
+}
+
 export async function cacheDocument(url, html) {
   await db.putDocument(url, html);
 }
@@ -760,6 +783,16 @@ async function runSyncOutbox() {
           }
           dispatchNoteSync('synced', Number(item.page_id), result, Number(item.id), sourceContent);
           synced += 1;
+        } else if (isRecordType(item.type)) {
+          // Aufgaben und Logbuch-Einträge (records.js). Wurde der Eintrag
+          // während der Übertragung erneut geändert, bleibt er stehen und geht
+          // im nächsten Durchgang mit dem neuen Stand hinaus.
+          await syncRecordItem(item);
+          const removed = await db.deleteOutboxIfRevision(Number(item.id), Number(item.revision || 0));
+          if (!removed) {
+            needsAnotherSync = true;
+          }
+          synced += 1;
         } else {
           await db.patchOutbox(Number(item.id), {
             status: 'blocked',
@@ -920,10 +953,11 @@ export async function listSyncConflicts() {
   const result = [];
   for (const item of conflicts) {
     const page = await db.getPage(Number(item.page_id));
+    const pageTitle = page?.title || item.payload?.title || `Notiz #${item.page_id}`;
     result.push({
       id: Number(item.id),
       page_id: Number(item.page_id),
-      title: page?.title || item.payload?.title || `Notiz #${item.page_id}`,
+      title: item.payload?.label ? `${pageTitle} · ${item.payload.label}` : pageTitle,
       local_content: item.payload?.content || null,
       server_content: item.conflict?.content || null,
       server_version: Number(item.conflict?.version || 0),
@@ -1055,10 +1089,11 @@ export async function listBlockedEntries() {
   const result = [];
   for (const item of unresolved.filter((entry) => entry.status === 'blocked')) {
     const page = await db.getPage(Number(item.page_id));
+    const pageTitle = page?.title || item.payload?.title || `Notiz #${item.page_id}`;
     result.push({
       id: Number(item.id),
       page_id: Number(item.page_id),
-      title: page?.title || item.payload?.title || `Notiz #${item.page_id}`,
+      title: item.payload?.label ? `${pageTitle} · ${item.payload.label}` : pageTitle,
       last_error: item.last_error || 'Sync fehlgeschlagen',
       retries: Number(item.retries || 0),
     });
@@ -1069,7 +1104,11 @@ export async function listBlockedEntries() {
 
 /** @param {number} outboxId */
 export async function retryBlockedEntry(outboxId) {
-  await db.patchOutbox(Number(outboxId), { status: 'pending', last_error: null });
+  const item = await db.getOutbox(Number(outboxId));
+  // Aufgaben und Logbuch-Einträge: Wiederholen heißt nach einem gemeldeten
+  // Konflikt, die eigene Fassung bewusst durchzusetzen.
+  const payload = item && isRecordType(item.type) ? { ...item.payload, force: true } : item?.payload;
+  await db.patchOutbox(Number(outboxId), { status: 'pending', last_error: null, payload });
   await refreshQueueState();
 
   return syncOutbox();
@@ -1089,6 +1128,9 @@ export async function discardBlockedEntry(outboxId) {
     // Eine offline angelegte Seite ohne Create-Eintrag existiert serverseitig
     // nicht - verwerfen heißt hier, sie lokal endgültig zu löschen.
     await db.deletePageData(Number(item.page_id));
+  } else if (isRecordType(item.type)) {
+    // Aufgabe/Eintrag: Die Ansicht fällt auf den Serverstand zurück.
+    window.dispatchEvent(new CustomEvent('offline-records-changed', { detail: { pageId: Number(item.page_id) } }));
   } else if (online) {
     try {
       const content = await apiFetch(`/api/pages/${item.page_id}/content`);
@@ -1163,7 +1205,7 @@ function needsPrefetch(page, known, cached, staleDocuments) {
     return true;
   }
 
-  return page.type === 'task' ? !cached.boards.has(pageId) : !cached.notes.has(pageId);
+  return page.type === 'task' || page.type === 'log' ? !cached.boards.has(pageId) : !cached.notes.has(pageId);
 }
 
 export async function prefetchSelected(options = {}) {
@@ -1245,6 +1287,9 @@ export async function prefetchSelected(options = {}) {
           } else if (page.type === 'task') {
             const board = await apiFetch(`/api/pages/${page.id}/board`);
             await cacheBoard(Number(page.id), board);
+          } else if (page.type === 'log') {
+            const board = await apiFetch(`/api/pages/${page.id}/log`);
+            await cacheLogBoard(Number(page.id), board);
           }
         }
         // Dateianhänge hängen an der Seite, nicht am Dokument: Sie werden auch

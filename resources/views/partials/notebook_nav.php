@@ -172,6 +172,30 @@
                                 </div>
 
                                 <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <div class="flex items-center gap-3">
+                                        <h4 class="flex-1 text-sm font-semibold">Angemeldete Browser</h4>
+                                        <button type="button" x-show="hasOtherSessions()" x-cloak @click="revokeOtherSessions" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);">Alle anderen abmelden</button>
+                                    </div>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Gerät verloren? Hier lässt sich die Anmeldung sofort beenden.</p>
+                                    <p x-show="sessionsLoading" class="mt-3 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
+                                    <p x-show="sessionError" x-cloak x-text="sessionError" class="mt-2 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                                    <ul class="mt-3 space-y-2">
+                                        <template x-for="session in sessions" :key="session.id">
+                                            <li class="flex items-center gap-3 rounded-lg border p-3" style="border-color: var(--color-border);">
+                                                <div class="min-w-0 flex-1">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="truncate text-sm font-medium" x-text="session.device"></p>
+                                                        <span x-show="session.current" class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" style="background: var(--color-bg-subtle); color: var(--color-text-muted);">Dieses Gerät</span>
+                                                    </div>
+                                                    <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted);" x-text="sessionSummary(session)"></p>
+                                                </div>
+                                                <button type="button" x-show="!session.current" @click="revokeSession(session)" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);">Abmelden</button>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
                                     <h4 class="text-sm font-semibold">Geräte</h4>
                                     <p x-show="deviceTokensLoading" class="mt-3 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
                                     <p x-show="!deviceTokensLoading && deviceTokens.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Noch keine verbundenen Geräte.</p>
@@ -402,6 +426,12 @@
                                 <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Notizen aus anderen Anwendungen übernehmen oder den Workspace sichern.</p>
                                 <?php include __DIR__ . '/import_panel.php'; ?>
                                 <?php include __DIR__ . '/export_panel.php'; ?>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <h4 class="text-sm font-semibold">Konto löschen</h4>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Entfernt dein Konto mit allen eigenen Inhalten endgültig. Lade vorher oben ein Export-Archiv herunter, wenn du etwas behalten möchtest.</p>
+                                    <button type="button" @click="deleteOwnAccount" :disabled="!statusOnline" class="btn btn-quiet mt-3" style="color: var(--color-danger);">Konto löschen…</button>
+                                </div>
                             </section>
 
                             <section x-show="isSettingsSection('storage')" x-cloak>

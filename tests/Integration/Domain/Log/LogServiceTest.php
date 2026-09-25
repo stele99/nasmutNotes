@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Domain\Log;
 
 use App\Domain\Geo\ReverseGeocoder;
+use App\Domain\Log\LogEntryVersionConflictException;
 use App\Domain\Log\LogService;
 use App\Domain\PageService;
 use App\Domain\ShareService;
@@ -196,7 +197,7 @@ final class LogServiceTest extends TestCase
         self::assertSame(gmdate('Y-m-d'), substr((string) $entry['occurred_at'], 0, 10));
     }
 
-    public function testDeletingAnEntryRemovesItsValues(): void
+    public function testDeletedEntryDisappearsAndCanBeRestored(): void
     {
         $text = $this->column('Notiz', 'text');
         $entry = $this->entry('2026-07-01T08:00:00+02:00', [$text => 'Weg damit']);
@@ -204,7 +205,71 @@ final class LogServiceTest extends TestCase
         $this->log->deleteEntry($this->user, (int) $entry['id']);
 
         self::assertSame([], $this->log->board($this->user, $this->pageId)['entries']);
+        self::assertSame(0, $this->log->board($this->user, $this->pageId)['entry_count']);
+
+        $restored = $this->log->restoreEntry($this->user, (int) $entry['id']);
+
+        self::assertSame('Weg damit', $restored['values'][$text]['value_text']);
+        self::assertCount(1, $this->log->board($this->user, $this->pageId)['entries']);
+    }
+
+    public function testPurgeRemovesEntriesDeletedBeforeTheCutoff(): void
+    {
+        $text = $this->column('Notiz', 'text');
+        $entry = $this->entry('2026-07-01T08:00:00+02:00', [$text => 'Weg damit']);
+        $this->log->deleteEntry($this->user, (int) $entry['id']);
+
+        $repository = new LogRepository($this->pdo);
+        self::assertSame(['entries' => 0, 'columns' => 0], $repository->purgeDeletedBefore('2000-01-01T00:00:00.000Z'));
+        self::assertSame(['entries' => 1, 'columns' => 0], $repository->purgeDeletedBefore('2999-01-01T00:00:00.000Z'));
         self::assertSame(0, $this->countValues());
+    }
+
+    public function testAStaleVersionIsRejected(): void
+    {
+        $text = $this->column('Notiz', 'text');
+        $entry = $this->entry('2026-07-01T08:00:00+02:00', [$text => 'A']);
+        $version = (int) $entry['version'];
+
+        $this->log->updateEntry($this->user, (int) $entry['id'], ['version' => $version, 'values' => [$text => 'B']]);
+
+        try {
+            $this->log->updateEntry($this->user, (int) $entry['id'], ['version' => $version, 'values' => [$text => 'C']]);
+            self::fail('Die veraltete Version hätte abgelehnt werden müssen.');
+        } catch (LogEntryVersionConflictException $e) {
+            self::assertNotNull($e->currentEntry);
+            self::assertSame('B', $e->currentEntry['values'][$text]['value_text']);
+        }
+    }
+
+    public function testOfflineEntryWithTheSameClientUuidIsCreatedOnlyOnce(): void
+    {
+        $text = $this->column('Notiz', 'text');
+        $uuid = '4f1c2b7e-9d3a-4c1e-8b5a-2f6d7e8a9b0c';
+
+        $first = $this->log->createEntry($this->user, $this->pageId, null, [$text => 'Einmal'], $uuid);
+        $second = $this->log->createEntry($this->user, $this->pageId, null, [$text => 'Einmal'], $uuid);
+
+        self::assertSame((int) $first['id'], (int) $second['id']);
+        self::assertSame(1, $this->log->board($this->user, $this->pageId)['entry_count']);
+    }
+
+    public function testOfflineEntryKeepsItsDataWhenAColumnWasDeletedMeanwhile(): void
+    {
+        $text = $this->column('Notiz', 'text');
+        $gone = $this->column('Kosten', 'money');
+        $this->log->deleteColumn($this->user, $gone);
+
+        $entry = $this->log->createEntry(
+            $this->user,
+            $this->pageId,
+            null,
+            [$text => 'Material', $gone => '12'],
+            '0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d',
+        );
+
+        self::assertSame('Material', $entry['values'][$text]['value_text']);
+        self::assertArrayNotHasKey($gone, $entry['values']);
     }
 
     public function testColumnsCanBeAddedRenamedMovedAndDeleted(): void
@@ -224,15 +289,21 @@ final class LogServiceTest extends TestCase
         self::assertCount(2, $this->log->columns($this->user, $this->pageId));
     }
 
-    public function testDeletingAColumnRemovesItsValuesButKeepsTheEntries(): void
+    public function testDeletingAColumnHidesItsValuesButKeepsTheEntries(): void
     {
         $column = $this->column('Kosten', 'money');
         $this->entry('2026-07-01T08:00:00+02:00', [$column => '10']);
 
         $this->log->deleteColumn($this->user, $column);
 
-        self::assertCount(1, $this->log->board($this->user, $this->pageId)['entries']);
-        self::assertSame(0, $this->countValues());
+        $board = $this->log->board($this->user, $this->pageId);
+        self::assertCount(1, $board['entries']);
+        self::assertSame([], $board['entries'][0]['values']);
+
+        // Wiederhergestellt kommen die Werte zurück.
+        $this->log->restoreColumn($this->user, $column);
+        $board = $this->log->board($this->user, $this->pageId);
+        self::assertSame(10.0, (float) $board['entries'][0]['values'][$column]['value_number']);
     }
 
     public function testRejectsValuesThatDoNotFitTheirColumn(): void

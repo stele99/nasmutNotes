@@ -87,4 +87,20 @@ final class SessionRepository
 
         return $stmt->fetchAll();
     }
+
+    /**
+     * Beendet alle aktiven Sitzungen des Nutzers außer der angegebenen.
+     *
+     * @return int Zahl der beendeten Sitzungen
+     */
+    public function revokeOthersForUser(int $userId, int $keepId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE sessions SET revoked_at = :now
+              WHERE user_id = :user_id AND id <> :keep_id AND revoked_at IS NULL'
+        );
+        $stmt->execute(['now' => gmdate('Y-m-d\TH:i:s.v\Z'), 'user_id' => $userId, 'keep_id' => $keepId]);
+
+        return $stmt->rowCount();
+    }
 }

@@ -142,6 +142,10 @@
                     </template>
                 </div>
 
+                <div x-cloak x-show="searchQuery.trim() !== '' && !searchLoading && searchHasMore" class="pt-4">
+                    <button type="button" @click="loadMoreSearchResults" :disabled="searchLoadingMore" class="btn btn-quiet w-full">Weitere Treffer laden</button>
+                </div>
+
                 <?php /* Nur die Liste „Zuletzt bearbeitet" wird schrittweise erweitert. */ ?>
                 <div x-ref="recentSentinel" x-cloak x-show="workspaceTab === 'recent' && searchQuery.trim() === '' && hasMoreRecentPages()" class="pt-4">
                     <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Seiten laden</button>

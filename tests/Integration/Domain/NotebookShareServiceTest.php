@@ -7,6 +7,7 @@ namespace Tests\Integration\Domain;
 use App\Domain\NotebookService;
 use App\Domain\NotebookShareService;
 use App\Domain\PageService;
+use App\Domain\PageTransferConfirmationRequiredException;
 use App\Domain\User;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NotebookShareRepository;
@@ -14,6 +15,7 @@ use App\Repositories\PageRepository;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\AdminEmails;
+use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
 use PDO;
@@ -241,7 +243,15 @@ final class NotebookShareServiceTest extends TestCase
         $this->shares->share($this->userA, (int) $notebook['id'], 'b@example.com');
         $own = $this->pages->create($this->userB, 'note', 'Meine Notiz', null);
 
-        $moved = $this->pages->moveMany($this->userB, [(int) $own['id']], (int) $notebook['id']);
+        // Ohne ausdrückliche Bestätigung wechselt keine Seite den Eigentümer.
+        try {
+            $this->pages->moveMany($this->userB, [(int) $own['id']], (int) $notebook['id']);
+            self::fail('Der Eigentümerwechsel hätte eine Bestätigung verlangen müssen.');
+        } catch (PageTransferConfirmationRequiredException $e) {
+            self::assertSame('Projekte', $e->notebookName);
+        }
+
+        $moved = $this->pages->moveMany($this->userB, [(int) $own['id']], (int) $notebook['id'], true);
 
         self::assertSame(1, $moved);
 
@@ -263,6 +273,55 @@ final class NotebookShareServiceTest extends TestCase
         $ownerList = $this->pages->list($this->userA, 'updated', null, false, (int) $notebook['id']);
         self::assertCount(1, $ownerList);
         self::assertFalse($ownerList[0]['is_shared']);
+    }
+
+    public function testReadOnlyParticipantSeesButCannotChangeOrAdd(): void
+    {
+        $notebook = $this->makeNotebook('Pläne');
+        $page = $this->pages->create($this->userA, 'note', 'Grundriss', null, (int) $notebook['id']);
+        $this->shares->share($this->userA, (int) $notebook['id'], 'b@example.com', 'read');
+
+        $seen = $this->pages->find($this->userB, (int) $page['id']);
+        self::assertFalse($seen['can_edit']);
+        self::assertSame('read', $seen['share_permission']);
+        self::assertCount(1, $this->pages->list($this->userB, 'updated', null, false, (int) $notebook['id']));
+
+        try {
+            $this->pages->update($this->userB, (int) $page['id'], ['title' => 'Geändert']);
+            self::fail('Leser hat den Titel geändert.');
+        } catch (ForbiddenException) {
+        }
+
+        try {
+            $this->pages->create($this->userB, 'note', 'Neu', null, (int) $notebook['id']);
+            self::fail('Leser hat eine Seite angelegt.');
+        } catch (ForbiddenException) {
+        }
+
+        $own = $this->pages->create($this->userB, 'note', 'Eigene', null);
+        $this->expectException(ForbiddenException::class);
+        $this->pages->moveMany($this->userB, [(int) $own['id']], (int) $notebook['id'], true);
+    }
+
+    public function testOwnerCanUpgradeAReaderToWriter(): void
+    {
+        $notebook = $this->makeNotebook('Pläne');
+        $page = $this->pages->create($this->userA, 'note', 'Grundriss', null, (int) $notebook['id']);
+        $this->shares->share($this->userA, (int) $notebook['id'], 'b@example.com', 'read');
+
+        $this->shares->setPermission($this->userA, (int) $notebook['id'], $this->userB->id, 'write');
+
+        self::assertTrue($this->pages->find($this->userB, (int) $page['id'])['can_edit']);
+        self::assertSame('write', $this->shares->listParticipants($this->userA, (int) $notebook['id'])[0]['permission']);
+    }
+
+    public function testParticipantCannotChangePermissions(): void
+    {
+        $notebook = $this->makeNotebook('Pläne');
+        $this->shares->share($this->userA, (int) $notebook['id'], 'b@example.com', 'read');
+
+        $this->expectException(NotFoundException::class);
+        $this->shares->setPermission($this->userB, (int) $notebook['id'], $this->userB->id, 'write');
     }
 
     public function testUnsharedForeignNotebookStaysInaccessible(): void

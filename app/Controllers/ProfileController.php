@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\AdminService;
 use App\Domain\Ai\AiUsageService;
+use App\Domain\SessionService;
+use App\Domain\SharedNotebooksException;
 use App\Repositories\UserRepository;
+use App\Support\Cookie;
 use App\Support\CurrentUser;
+use App\Support\Env;
 use App\Support\JsonResponse;
+use App\Support\RequestIp;
 use App\Support\ValidationException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -17,7 +23,38 @@ final class ProfileController
     public function __construct(
         private readonly UserRepository $users,
         private readonly AiUsageService $aiUsage,
+        private readonly AdminService $admin,
     ) {
+    }
+
+    /**
+     * Konto samt aller Inhalte löschen (DSGVO Art. 17). Die Sitzung endet
+     * mit der Antwort; der Client räumt seine Offline-Daten selbst ab.
+     */
+    public function destroy(Request $request, Response $response): Response
+    {
+        $user = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+
+        try {
+            $result = $this->admin->deleteOwnAccount(
+                $user,
+                (string) ($body['confirm_email'] ?? ''),
+                ($body['accept_shared_loss'] ?? false) === true,
+                RequestIp::hash($request),
+            );
+        } catch (SharedNotebooksException $e) {
+            return JsonResponse::json($response, [
+                'error' => ['code' => 'SHARED_NOTEBOOKS', 'message' => $e->getMessage()],
+                'shared_notebooks' => $e->count,
+            ], 409);
+        }
+
+        return JsonResponse::json($response, $result)
+            ->withAddedHeader(
+                'Set-Cookie',
+                Cookie::expire(SessionService::COOKIE_NAME, Env::get('APP_ENV') === 'production'),
+            );
     }
 
     public function update(Request $request, Response $response): Response

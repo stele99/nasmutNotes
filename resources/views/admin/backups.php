@@ -7,6 +7,7 @@
         <div class="flex flex-wrap gap-2">
             <a href="/admin" class="btn btn-secondary">Nutzer &amp; Speicher</a>
             <a href="/admin/invites" class="btn btn-secondary">Einladungen</a>
+            <a href="/admin/audit" class="btn btn-secondary">Protokoll</a>
             <a href="/app" class="btn btn-secondary">Zum Workspace</a>
         </div>
     </div>
@@ -104,6 +105,13 @@
         <pre class="mt-3 overflow-x-auto rounded-md p-3 text-xs" style="background: var(--color-bg-subtle);">php bin/console.php backup:list
 php bin/console.php backup:verify &lt;id&gt;
 php bin/console.php backup:restore &lt;id&gt;</pre>
+        <p class="mt-3 text-sm" style="color: var(--color-text-muted);">
+            <span class="font-medium" style="color: var(--color-text);">Nur einzelne Seiten zurückholen?</span>
+            Statt eines vollständigen Restores lässt sich der Stand eines Nutzers als Import-Archiv
+            herausziehen - die Arbeit aller anderen bleibt unberührt. Der Nutzer spielt es über
+            „Einstellungen → Import“ ein und behält, was er braucht.
+        </p>
+        <pre class="mt-3 overflow-x-auto rounded-md p-3 text-xs" style="background: var(--color-bg-subtle);">php bin/console.php backup:extract &lt;id&gt; &lt;email&gt; [--with-trash] [--out=datei.zip]</pre>
         <p class="mt-3 text-sm" style="color: var(--color-text-muted);">
             <span class="font-medium" style="color: var(--color-text);">Wichtig:</span>
             Die Zugangsdaten in der <span class="font-medium" style="color: var(--color-text);">.env</span>

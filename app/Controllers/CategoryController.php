@@ -52,4 +52,18 @@ final class CategoryController
 
         return $response->withStatus(204);
     }
+
+    /** @param array<string, string> $args */
+    public function restore(Request $request, Response $response, array $args): Response
+    {
+        $category = $this->board->restoreCategory(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, [
+            'id' => (int) $category['id'],
+            'name' => $category['name'],
+            'color' => $category['color'],
+            'position' => (int) $category['position'],
+            'wip_limit' => $category['wip_limit'] !== null ? (int) $category['wip_limit'] : null,
+        ]);
+    }
 }

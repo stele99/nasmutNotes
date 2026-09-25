@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\Log\LogColumnType;
+use App\Domain\Log\LogEntryVersionConflictException;
 use App\Domain\Log\LogExportService;
 use App\Domain\Log\LogService;
 use App\Domain\Voice\VoiceNoteService;
@@ -130,6 +131,7 @@ final class LogController
             (int) $args['id'],
             $body['occurred_at'] ?? null,
             is_array($body['values'] ?? null) ? $body['values'] : [],
+            is_string($body['client_uuid'] ?? null) ? $body['client_uuid'] : null,
         );
 
         return JsonResponse::json($response, self::serializeEntry($entry), 201);
@@ -139,9 +141,34 @@ final class LogController
     public function updateEntry(Request $request, Response $response, array $args): Response
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $entry = $this->log->updateEntry(CurrentUser::require($request), (int) $args['id'], $body);
+        try {
+            $entry = $this->log->updateEntry(CurrentUser::require($request), (int) $args['id'], $body);
+        } catch (LogEntryVersionConflictException $e) {
+            return JsonResponse::json($response, [
+                'error' => ['code' => 'VERSION_CONFLICT', 'message' => $e->getMessage()],
+                'current' => $e->currentEntry !== null && $e->currentEntry['deleted_at'] === null
+                    ? self::serializeEntry($e->currentEntry)
+                    : null,
+            ], 409);
+        }
 
         return JsonResponse::json($response, self::serializeEntry($entry));
+    }
+
+    /** @param array<string, string> $args */
+    public function restoreEntry(Request $request, Response $response, array $args): Response
+    {
+        $entry = $this->log->restoreEntry(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, self::serializeEntry($entry));
+    }
+
+    /** @param array<string, string> $args */
+    public function restoreColumn(Request $request, Response $response, array $args): Response
+    {
+        $column = $this->log->restoreColumn(CurrentUser::require($request), (int) $args['id']);
+
+        return JsonResponse::json($response, self::serializeColumn($column));
     }
 
     /** @param array<string, string> $args */
@@ -276,6 +303,8 @@ final class LogController
 
         return [
             'id' => (int) $entry['id'],
+            'version' => (int) ($entry['version'] ?? 1),
+            'client_uuid' => isset($entry['client_uuid']) ? (string) $entry['client_uuid'] : null,
             'occurred_at' => (string) $entry['occurred_at'],
             'created_at' => (string) $entry['created_at'],
             'updated_at' => (string) $entry['updated_at'],

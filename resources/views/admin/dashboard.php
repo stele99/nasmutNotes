@@ -8,6 +8,7 @@
             <a href="/admin/ai" class="btn btn-secondary">KI-Einstellungen</a>
             <a href="/admin/invites" class="btn btn-secondary">Einladungen</a>
             <a href="/admin/backups" class="btn btn-secondary">Sicherungen</a>
+            <a href="/admin/audit" class="btn btn-secondary">Protokoll</a>
             <a href="/app" class="btn btn-secondary">Zum Workspace</a>
         </div>
     </div>
@@ -108,6 +109,8 @@
                     <td class="px-5 py-4">
                         <p class="font-medium" x-text="user.name || '—'"></p>
                         <p class="mt-0.5 text-xs" style="color: var(--color-text-muted);" x-text="user.email"></p>
+                        <p x-show="!user.is_active" x-cloak class="mt-1 text-xs font-medium" style="color: var(--color-danger);">Deaktiviert</p>
+                        <p x-show="user.notebook_count > 0" class="mt-0.5 text-xs" style="color: var(--color-text-muted);" x-text="notebookLabel(user)"></p>
                     </td>
                     <td class="py-4">
                         <span x-text="user.page_count"></span>
@@ -128,8 +131,10 @@
                     </td>
                     <td class="py-4" x-text="quotaLabel(user)"></td>
                     <td class="px-5 py-4">
-                        <div class="flex justify-end gap-2">
+                        <div class="flex flex-wrap justify-end gap-2">
                             <button type="button" class="btn btn-quiet" :disabled="busy" @click="editQuota(user)">Kontingent</button>
+                            <button type="button" class="btn btn-quiet" :disabled="busy" @click="toggleUserActive(user)" x-text="user.is_active ? 'Deaktivieren' : 'Aktivieren'"></button>
+                            <button type="button" class="btn btn-quiet" :disabled="busy || !hasContent(user)" @click="transferUser(user)">Übergeben</button>
                             <button type="button" class="btn btn-quiet" style="color: var(--color-danger);" :disabled="busy" @click="deleteUser(user)">Löschen</button>
                         </div>
                     </td>

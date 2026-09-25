@@ -150,6 +150,8 @@ final class AdminService
                     'email' => (string) $row['email'],
                     'name' => (string) $row['name'],
                     'is_active' => ((int) $row['is_active']) === 1,
+                    'notebook_count' => (int) $row['notebook_count'],
+                    'shared_notebook_count' => (int) $row['shared_notebook_count'],
                     'created_at' => $row['created_at'],
                     'last_login_at' => $row['last_login_at'],
                     'page_count' => (int) $row['page_count'],
@@ -213,6 +215,95 @@ final class AdminService
     }
 
     /**
+     * Sperrt einen Nutzer, ohne Inhalte anzutasten - der übliche Weg, wenn ein
+     * Mitarbeiter ausscheidet. Sitzungen und Geräte-Tokens enden sofort; seine
+     * Notizbücher bleiben für die übrigen Teilnehmer erreichbar.
+     *
+     * @return array{is_active: bool, sessions: int, device_tokens: int}
+     */
+    public function setUserActive(User $admin, int $userId, bool $active, string $ipHash): array
+    {
+        if ($userId === $admin->id) {
+            throw new ValidationException('Das eigene Konto kann nicht deaktiviert werden.');
+        }
+        if ($this->admin->findUser($userId) === null) {
+            throw new NotFoundException('Nutzer nicht gefunden.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->admin->setUserActive($userId, $active);
+            $revoked = $active ? ['sessions' => 0, 'device_tokens' => 0] : $this->admin->revokeAllAccess($userId);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+
+            throw $e;
+        }
+
+        $this->auditLog->log(
+            $admin->id,
+            $active ? 'user_activated' : 'user_deactivated',
+            'user',
+            $userId,
+            $ipHash,
+            $revoked,
+        );
+
+        return ['is_active' => $active] + $revoked;
+    }
+
+    /**
+     * Übergibt sämtliche Notizbücher und Seiten eines Nutzers an einen anderen
+     * (Ausscheiden eines Mitarbeiters). Danach lässt sich der abgebende Nutzer
+     * gefahrlos löschen.
+     *
+     * @return array{notebooks: int, pages: int}
+     */
+    public function transferContent(User $admin, int $fromUserId, int $toUserId, string $ipHash): array
+    {
+        if ($fromUserId === $toUserId) {
+            throw new ValidationException('Abgebender und empfangender Nutzer müssen verschieden sein.');
+        }
+        $from = $this->admin->findUser($fromUserId);
+        $to = $this->admin->findUser($toUserId);
+        if ($from === null || $to === null) {
+            throw new NotFoundException('Nutzer nicht gefunden.');
+        }
+        if (((int) $to['is_active']) !== 1) {
+            throw new ValidationException('Der empfangende Nutzer ist deaktiviert.');
+        }
+        $fromWorkspace = $this->admin->workspaceIdForUser($fromUserId);
+        $toWorkspace = $this->admin->workspaceIdForUser($toUserId);
+        if ($fromWorkspace === null || $toWorkspace === null) {
+            throw new NotFoundException('Workspace nicht gefunden.');
+        }
+
+        $label = trim((string) $from['name']) !== '' ? (string) $from['name'] : (string) $from['email'];
+
+        $this->pdo->beginTransaction();
+        try {
+            $result = $this->admin->transferContent(
+                $fromWorkspace,
+                $toWorkspace,
+                'Übernommen von ' . mb_substr($label, 0, 80),
+                'von ' . mb_substr($label, 0, 40),
+            );
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+
+            throw $e;
+        }
+
+        $this->auditLog->log($admin->id, 'user_content_transferred', 'user', $fromUserId, $ipHash, [
+            'to_user_id' => $toUserId,
+        ] + $result);
+
+        return $result;
+    }
+
+    /**
      * Löscht einen Nutzer mit allen Inhalten. Die Datenbank räumt über
      * ON DELETE CASCADE auf (Workspace, Seiten, Notizen, Aufgaben, Freigaben,
      * Sessions, Einladungen); die Bilddateien auf dem Datenträger müssen
@@ -231,6 +322,48 @@ final class AdminService
             throw new NotFoundException('Nutzer nicht gefunden.');
         }
 
+        $deleted = $this->removeUserWithFiles($userId);
+
+        $this->auditLog->log($admin->id, 'user_deleted', 'user', $userId, $ipHash, [
+            'email' => (string) $user['email'],
+            'deleted_files' => $deleted,
+        ]);
+
+        return ['deleted_files' => $deleted];
+    }
+
+    /**
+     * Löschung auf eigenen Wunsch (DSGVO Art. 17). Geteilte Notizbücher
+     * verschwinden dabei auch für ihre Teilnehmer - das muss der Nutzer
+     * ausdrücklich bestätigen (`$acceptSharedLoss`).
+     *
+     * @return array{deleted_files: int}
+     */
+    public function deleteOwnAccount(User $user, string $confirmEmail, bool $acceptSharedLoss, string $ipHash): array
+    {
+        if (mb_strtolower(trim($confirmEmail)) !== mb_strtolower($user->email)) {
+            throw new ValidationException('Zur Bestätigung bitte die eigene E-Mail-Adresse eingeben.');
+        }
+
+        $sharedNotebooks = $this->admin->sharedNotebookCountForUser($user->id);
+        if ($sharedNotebooks > 0 && !$acceptSharedLoss) {
+            throw new SharedNotebooksException($sharedNotebooks);
+        }
+
+        $deleted = $this->removeUserWithFiles($user->id);
+
+        // Ohne Nutzerbezug: Der Eintrag darf nicht auf die gelöschte Zeile zeigen.
+        $this->auditLog->log(null, 'account_deleted', 'user', null, $ipHash, [
+            'user_id' => $user->id,
+            'deleted_files' => $deleted,
+            'shared_notebooks' => $sharedNotebooks,
+        ]);
+
+        return ['deleted_files' => $deleted];
+    }
+
+    private function removeUserWithFiles(int $userId): int
+    {
         $storageNames = $this->admin->attachmentStorageNamesForUser($userId);
 
         $this->pdo->beginTransaction();
@@ -246,14 +379,7 @@ final class AdminService
 
         // Erst nach dem Commit: Ein Rollback könnte gelöschte Dateien nicht
         // zurückholen, verwaiste Dateien wären dagegen später aufräumbar.
-        $deleted = $this->deleteFiles($storageNames);
-
-        $this->auditLog->log($admin->id, 'user_deleted', 'user', $userId, $ipHash, [
-            'email' => (string) $user['email'],
-            'deleted_files' => $deleted,
-        ]);
-
-        return ['deleted_files' => $deleted];
+        return $this->deleteFiles($storageNames);
     }
 
     /**

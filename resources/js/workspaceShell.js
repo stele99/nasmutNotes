@@ -144,6 +144,7 @@ export function workspaceShell() {
     notebookShareParticipants: [],
     notebookShareParticipantsLoading: false,
     notebookShareEmail: '',
+    notebookSharePermission: 'write',
     notebookShareError: '',
     notebookShareSaving: false,
     notebookShareRemovingId: null,
@@ -466,7 +467,12 @@ export function workspaceShell() {
       const notebook = notebookId !== null
         ? this.notebooks.find((item) => Number(item.id) === Number(notebookId))
         : null;
-      if (notebook && notebook.is_shared && !notebook.is_owner) {
+      const transfers = Boolean(notebook && notebook.is_shared && !notebook.is_owner);
+      if (transfers) {
+        if (notebook.share_permission === 'read') {
+          showToast(`In „${notebook.name}" darfst du nur lesen.`, 'error');
+          return;
+        }
         const owner = notebook.owner_name || 'den Eigentümer';
         const subject = pageIds.length === 1 ? 'Diese Seite' : 'Diese Seiten';
         if (!window.confirm(`${subject} nach „${notebook.name}" verschieben? Die Eigentümerschaft geht auf ${owner} über.`)) {
@@ -474,7 +480,7 @@ export function workspaceShell() {
         }
       }
       window.dispatchEvent(new CustomEvent('page-drop-move', {
-        detail: { pageIds, notebookId },
+        detail: { pageIds, notebookId, confirmed: transfers },
       }));
     },
 
@@ -794,6 +800,7 @@ export function workspaceShell() {
       this.closeNotebookMenu();
       this.notebookShareNotebook = notebook;
       this.notebookShareEmail = '';
+      this.notebookSharePermission = 'write';
       this.notebookShareError = '';
       this.notebookShareDialogOpen = true;
       this.loadNotebookParticipants();
@@ -814,7 +821,25 @@ export function workspaceShell() {
       const owner = this.notebookShareNotebook?.owner_name;
       const source = owner ? `von ${owner} geteilt. ` : '';
 
-      return `${source}Alle Beteiligten dürfen sämtliche Seiten dieses Notizbuchs bearbeiten.`;
+      return `${source}„Bearbeiten“ erlaubt alle Seiten zu ändern und neue anzulegen, „Lesen“ nur das Ansehen.`;
+    },
+
+    participantPermissionLabel(participant) {
+      return participant.permission === 'read' ? 'Lesen' : 'Bearbeiten';
+    },
+
+    async toggleParticipantPermission(participant) {
+      const next = participant.permission === 'read' ? 'write' : 'read';
+      this.notebookShareError = '';
+      try {
+        await apiFetch(`/api/notebooks/${this.notebookShareNotebook.id}/shares/${participant.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ permission: next }),
+        });
+        await this.loadNotebookParticipants();
+      } catch (error) {
+        this.notebookShareError = error.message || 'Das Recht konnte nicht geändert werden.';
+      }
     },
 
     participantInitials(participant) {
@@ -856,7 +881,7 @@ export function workspaceShell() {
       try {
         await apiFetch(`/api/notebooks/${this.notebookShareNotebook.id}/shares`, {
           method: 'POST',
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, permission: this.notebookSharePermission }),
         });
         this.notebookShareEmail = '';
         await this.loadNotebookParticipants();

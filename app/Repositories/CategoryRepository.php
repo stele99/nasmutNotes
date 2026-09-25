@@ -15,7 +15,9 @@ final class CategoryRepository
     /** @return array<int, array<string, mixed>> */
     public function listForPage(int $pageId): array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM categories WHERE page_id = :page_id ORDER BY position ASC');
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM categories WHERE page_id = :page_id AND deleted_at IS NULL ORDER BY position ASC'
+        );
         $stmt->execute(['page_id' => $pageId]);
 
         return $stmt->fetchAll();
@@ -34,7 +36,9 @@ final class CategoryRepository
     /** @return array<string, mixed>|null */
     public function findByIdForPage(int $id, int $pageId): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM categories WHERE id = :id AND page_id = :page_id');
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM categories WHERE id = :id AND page_id = :page_id AND deleted_at IS NULL'
+        );
         $stmt->execute(['id' => $id, 'page_id' => $pageId]);
         $row = $stmt->fetch();
 
@@ -117,7 +121,30 @@ final class CategoryRepository
 
     public function delete(int $id): void
     {
-        $this->pdo->prepare('DELETE FROM categories WHERE id = :id')->execute(['id' => $id]);
+        // Weich: Die Aufgaben bleiben am Kapitel und kommen mit ihm zurück.
+        $stmt = $this->pdo->prepare('UPDATE categories SET deleted_at = :now WHERE id = :id AND deleted_at IS NULL');
+        $stmt->execute(['now' => gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
+    }
+
+    public function restore(int $id): void
+    {
+        $category = $this->findById($id);
+        if ($category === null) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            'UPDATE categories SET deleted_at = NULL, position = :position WHERE id = :id AND deleted_at IS NOT NULL'
+        );
+        $stmt->execute(['position' => $this->nextPosition((int) $category['page_id']), 'id' => $id]);
+    }
+
+    /** Endgültig entfernen; die Aufgaben folgen über ON DELETE CASCADE. */
+    public function purgeDeletedBefore(string $cutoff): int
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM categories WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff');
+        $stmt->execute(['cutoff' => $cutoff]);
+
+        return $stmt->rowCount();
     }
 
     public function nextPosition(int $pageId): int

@@ -9,6 +9,7 @@
     <template x-for="item in items" :key="item.id">
         <div class="toast-item" :class="item.variant === 'error' ? 'is-error' : ''">
             <span x-text="item.message"></span>
+            <button type="button" x-show="hasAction(item)" @click="runAction(item.id)" class="toast-action" x-text="item.actionLabel"></button>
             <button type="button" @click="dismiss(item.id)" class="toast-dismiss" aria-label="Meldung schließen" x-icon="x"></button>
         </div>
     </template>

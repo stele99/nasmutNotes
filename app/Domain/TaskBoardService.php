@@ -39,9 +39,10 @@ final class TaskBoardService
     /** @return array<int, array<string, mixed>> */
     public function board(User $user, int $pageId): array
     {
+        // Lesen genügt: Leser eines geteilten Notizbuchs sehen die Aufgaben,
+        // jede Änderung prüft das Schreibrecht selbst.
         $page = $this->pages->find($user, $pageId);
         $this->assertIsTaskPage($page);
-        $this->pages->assertCanWrite($user, $pageId);
 
         $categories = $this->categories->listForPage((int) $page['id']);
         $allTasks = $this->tasks->listForPage((int) $page['id']);
@@ -64,6 +65,7 @@ final class TaskBoardService
     {
         $page = $this->pages->find($user, $pageId);
         $this->assertIsTaskPage($page);
+        $this->pages->assertCanWrite($user, $pageId);
 
         $category = $this->categories->create(
             (int) $page['id'],
@@ -133,10 +135,10 @@ final class TaskBoardService
                     throw new ValidationException('Zielkategorie gehört zu einer anderen Seite.');
                 }
                 $this->tasks->moveAllToCategory((int) $category['id'], (int) $target['id']);
-            } elseif ($hasTasks && $cascade) {
-                $this->tasks->deleteAllInCategory((int) $category['id']);
             }
 
+            // Weich gelöscht: Bei cascade bleiben die Aufgaben am Kapitel hängen
+            // und kommen mit restoreCategory() vollständig zurück.
             $this->categories->delete((int) $category['id']);
 
             $this->commitTransaction();
@@ -169,12 +171,30 @@ final class TaskBoardService
         ?string $link,
         bool $isDone = false,
         bool $allowDuplicate = false,
+        ?string $dueDate = null,
+        ?string $clientUuid = null,
     ): array {
         $category = $this->resolveOwnedCategory($user, $categoryId);
         $title = $this->validateTitle($title);
         $description = $this->validateDescription($description);
         $responsible = $this->validateResponsible($responsible);
         $link = $this->validateLink($link);
+        $dueDate = $this->validateDueDate($dueDate);
+        $clientUuid = self::validatedClientUuid($clientUuid);
+
+        // Offline angelegt und nach einem Abbruch erneut gesendet: den schon
+        // vorhandenen Datensatz liefern statt ihn zu verdoppeln.
+        if ($clientUuid !== null) {
+            $existing = $this->tasks->findByClientUuid($clientUuid);
+            if ($existing !== null) {
+                // Gleiche Kennung, aber fremde Seite: nicht preisgeben.
+                if ($this->categoryPageId((int) $existing['category_id']) !== (int) $category['page_id']) {
+                    throw new ValidationException('Ungültige Client-Kennung.');
+                }
+
+                return $existing;
+            }
+        }
 
         // Duplikatsprüfung und Anlage laufen unter demselben BEGIN IMMEDIATE, damit
         // zwei nahezu gleichzeitige Requests (z. B. Owner + Write-Share-Nutzer)
@@ -199,6 +219,8 @@ final class TaskBoardService
                 $responsible,
                 $link,
                 $isDone,
+                $dueDate,
+                $clientUuid,
             );
 
             $this->commitTransaction();
@@ -325,6 +347,11 @@ final class TaskBoardService
         if (array_key_exists('is_done', $input)) {
             $fields['is_done'] = ((bool) $input['is_done']) ? 1 : 0;
         }
+        if (array_key_exists('due_date', $input)) {
+            $fields['due_date'] = $this->validateDueDate(
+                $input['due_date'] !== null ? (string) $input['due_date'] : null
+            );
+        }
 
         if (!$this->tasks->update((int) $task['id'], $fields, $expectedVersion)) {
             $current = $this->tasks->find((int) $task['id']);
@@ -348,6 +375,32 @@ final class TaskBoardService
         $this->touchPage($this->categoryPageId((int) $task['category_id']));
     }
 
+    /** @return array<string, mixed> die wiederhergestellte Aufgabe */
+    public function restoreTask(User $user, int $taskId): array
+    {
+        $task = $this->resolveOwnedTask($user, $taskId, true);
+        $this->tasks->restore((int) $task['id']);
+        $this->touchPage($this->categoryPageId((int) $task['category_id']));
+
+        $restored = $this->tasks->find((int) $task['id']);
+        assert($restored !== null);
+
+        return $restored;
+    }
+
+    /** @return array<string, mixed> das wiederhergestellte Kapitel */
+    public function restoreCategory(User $user, int $categoryId): array
+    {
+        $category = $this->resolveOwnedCategory($user, $categoryId, true);
+        $this->categories->restore((int) $category['id']);
+        $this->touchPage((int) $category['page_id']);
+
+        $restored = $this->categories->findById((int) $category['id']);
+        assert($restored !== null);
+
+        return $restored;
+    }
+
     /** @return array<string, mixed> */
     public function duplicateTask(User $user, int $taskId): array
     {
@@ -360,6 +413,7 @@ final class TaskBoardService
             $task['responsible'],
             $task['link'],
             false,
+            $task['due_date'] !== null ? (string) $task['due_date'] : null,
         );
         $this->touchPage($this->categoryPageId((int) $task['category_id']));
 
@@ -464,11 +518,14 @@ final class TaskBoardService
         }
     }
 
-    /** @return array<string, mixed> */
-    private function resolveOwnedCategory(User $user, int $categoryId): array
+    /**
+     * @param bool $deleted true: nur ein gelöschtes Kapitel passt (Wiederherstellen)
+     * @return array<string, mixed>
+     */
+    private function resolveOwnedCategory(User $user, int $categoryId, bool $deleted = false): array
     {
         $category = $this->categories->findById($categoryId);
-        if ($category === null) {
+        if ($category === null || ($category['deleted_at'] !== null) !== $deleted) {
             throw new NotFoundException("Kategorie #{$categoryId} nicht gefunden.");
         }
 
@@ -479,11 +536,14 @@ final class TaskBoardService
         return $category;
     }
 
-    /** @return array<string, mixed> */
-    private function resolveOwnedTask(User $user, int $taskId): array
+    /**
+     * @param bool $deleted true: nur eine gelöschte Aufgabe passt (Wiederherstellen)
+     * @return array<string, mixed>
+     */
+    private function resolveOwnedTask(User $user, int $taskId, bool $deleted = false): array
     {
         $task = $this->tasks->find($taskId);
-        if ($task === null) {
+        if ($task === null || ($task['deleted_at'] !== null) !== $deleted) {
             throw new NotFoundException("Task #{$taskId} nicht gefunden.");
         }
 
@@ -544,6 +604,33 @@ final class TaskBoardService
         }
 
         return $responsible;
+    }
+
+    /** Fälligkeit als Kalendertag `YYYY-MM-DD`; leer entfernt sie. */
+    private function validateDueDate(?string $dueDate): ?string
+    {
+        if ($dueDate === null || trim($dueDate) === '') {
+            return null;
+        }
+        $dueDate = trim($dueDate);
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $dueDate);
+        if ($parsed === false || $parsed->format('Y-m-d') !== $dueDate) {
+            throw new ValidationException('Die Fälligkeit muss ein Datum im Format JJJJ-MM-TT sein.');
+        }
+
+        return $dueDate;
+    }
+
+    public static function validatedClientUuid(?string $clientUuid): ?string
+    {
+        if ($clientUuid === null || $clientUuid === '') {
+            return null;
+        }
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $clientUuid) !== 1) {
+            throw new ValidationException('Ungültige Client-Kennung.');
+        }
+
+        return strtolower($clientUuid);
     }
 
     private function validateLink(?string $link): ?string

@@ -139,6 +139,7 @@ jobs:
             exit 1
           fi
 
-          "$php_bin" bin/console.php migrate
+          # Vor einer Schemaänderung automatisch sichern (kein Rollback im Migrator).
+          "$php_bin" bin/console.php migrate --backup
           rm -f "$archive"
           REMOTE

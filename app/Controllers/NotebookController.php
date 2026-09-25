@@ -59,6 +59,8 @@ final class NotebookController
             'is_owner' => (bool) ($notebook['is_owner'] ?? true),
             'is_shared' => (bool) ($notebook['is_shared'] ?? false),
             'owner_name' => isset($notebook['owner_name']) ? (string) $notebook['owner_name'] : null,
+            // Eigene Notizbücher: null. Geteilte: `read` oder `write`.
+            'share_permission' => isset($notebook['share_permission']) ? (string) $notebook['share_permission'] : null,
             'created_at' => $notebook['created_at'],
             'updated_at' => $notebook['updated_at'],
         ];

@@ -15,7 +15,9 @@ final class TaskRepository
     /** @return array<int, array<string, mixed>> */
     public function listForCategory(int $categoryId): array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE category_id = :category_id ORDER BY position ASC');
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM tasks WHERE category_id = :category_id AND deleted_at IS NULL ORDER BY position ASC'
+        );
         $stmt->execute(['category_id' => $categoryId]);
 
         return $stmt->fetchAll();
@@ -32,6 +34,8 @@ final class TaskRepository
             'SELECT tasks.* FROM tasks
              JOIN categories ON categories.id = tasks.category_id
              WHERE categories.page_id = :page_id
+               AND categories.deleted_at IS NULL
+               AND tasks.deleted_at IS NULL
              ORDER BY tasks.category_id ASC, tasks.position ASC'
         );
         $stmt->execute(['page_id' => $pageId]);
@@ -45,7 +49,7 @@ final class TaskRepository
         $stmt = $this->pdo->prepare(
             'SELECT tasks.* FROM tasks
              JOIN categories ON categories.id = tasks.category_id
-             WHERE tasks.id = :id AND categories.page_id = :page_id'
+             WHERE tasks.id = :id AND categories.page_id = :page_id AND tasks.deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id, 'page_id' => $pageId]);
         $row = $stmt->fetch();
@@ -70,13 +74,20 @@ final class TaskRepository
         ?string $responsible,
         ?string $link,
         bool $isDone = false,
+        ?string $dueDate = null,
+        ?string $clientUuid = null,
     ): array {
         $position = $this->nextPosition($categoryId);
         $now = gmdate('Y-m-d\TH:i:s.v\Z');
 
         $stmt = $this->pdo->prepare(
-            'INSERT INTO tasks (category_id, title, description, responsible, link, position, is_done, created_at, updated_at)
-             VALUES (:category_id, :title, :description, :responsible, :link, :position, :is_done, :now, :now)'
+            'INSERT INTO tasks (
+                category_id, title, description, responsible, link, position, is_done, due_date,
+                client_uuid, created_at, updated_at
+             ) VALUES (
+                :category_id, :title, :description, :responsible, :link, :position, :is_done, :due_date,
+                :client_uuid, :now, :now
+             )'
         );
         $stmt->execute([
             'category_id' => $categoryId,
@@ -86,6 +97,8 @@ final class TaskRepository
             'link' => $link,
             'position' => $position,
             'is_done' => $isDone ? 1 : 0,
+            'due_date' => $dueDate,
+            'client_uuid' => $clientUuid,
             'now' => $now,
         ]);
 
@@ -173,16 +186,59 @@ final class TaskRepository
         return $stmt->rowCount() === 1;
     }
 
+    /** @return array<string, mixed>|null */
+    public function findByClientUuid(string $clientUuid): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE client_uuid = :client_uuid');
+        $stmt->execute(['client_uuid' => $clientUuid]);
+        $row = $stmt->fetch();
+
+        return $row !== false ? $row : null;
+    }
+
+    /** Weiches Löschen: Die Aufgabe verschwindet aus der Ansicht, bleibt aber wiederherstellbar. */
     public function delete(int $id): void
     {
-        $this->pdo->prepare('DELETE FROM tasks WHERE id = :id')->execute(['id' => $id]);
+        $stmt = $this->pdo->prepare(
+            'UPDATE tasks SET deleted_at = :now, version = version + 1 WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['now' => gmdate('Y-m-d\TH:i:s.v\Z'), 'id' => $id]);
+    }
+
+    /** Holt eine gelöschte Aufgabe zurück - ans Ende ihres Kapitels. */
+    public function restore(int $id): void
+    {
+        $categoryId = $this->categoryIdOf($id);
+        if ($categoryId === null) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            'UPDATE tasks SET deleted_at = NULL, position = :position, version = version + 1, updated_at = :now
+              WHERE id = :id AND deleted_at IS NOT NULL'
+        );
+        $stmt->execute([
+            'position' => $this->nextPosition($categoryId),
+            'now' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'id' => $id,
+        ]);
+    }
+
+    /** Endgültig entfernen, was länger als die Aufbewahrungsfrist gelöscht ist. */
+    public function purgeDeletedBefore(string $cutoff): int
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff');
+        $stmt->execute(['cutoff' => $cutoff]);
+
+        return $stmt->rowCount();
     }
 
     public function moveAllToCategory(int $fromCategoryId, int $toCategoryId): void
     {
         $position = $this->nextPosition($toCategoryId);
 
-        $stmt = $this->pdo->prepare('SELECT id FROM tasks WHERE category_id = :from ORDER BY position ASC');
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM tasks WHERE category_id = :from AND deleted_at IS NULL ORDER BY position ASC'
+        );
         $stmt->execute(['from' => $fromCategoryId]);
         $ids = array_column($stmt->fetchAll(), 'id');
 
@@ -195,14 +251,11 @@ final class TaskRepository
         }
     }
 
-    public function deleteAllInCategory(int $categoryId): void
-    {
-        $this->pdo->prepare('DELETE FROM tasks WHERE category_id = :category_id')->execute(['category_id' => $categoryId]);
-    }
-
     public function countForCategory(int $categoryId): int
     {
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) AS c FROM tasks WHERE category_id = :category_id');
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) AS c FROM tasks WHERE category_id = :category_id AND deleted_at IS NULL'
+        );
         $stmt->execute(['category_id' => $categoryId]);
 
         return (int) $stmt->fetch()['c'];

@@ -544,16 +544,91 @@ export function adminDashboard() {
       });
     },
 
+    hasContent(user) {
+      return (user.page_count + user.trashed_page_count + user.notebook_count) > 0;
+    },
+
+    notebookLabel(user) {
+      const owned = user.notebook_count === 1 ? '1 Notizbuch' : `${user.notebook_count} Notizbücher`;
+
+      return user.shared_notebook_count > 0 ? `${owned}, ${user.shared_notebook_count} davon geteilt` : owned;
+    },
+
+    /**
+     * Deaktivieren ist der reguläre Weg beim Ausscheiden: Anmeldung und
+     * Geräte-Tokens enden sofort, die Inhalte bleiben unangetastet.
+     */
+    async toggleUserActive(user) {
+      const label = user.name || user.email;
+      const activate = !user.is_active;
+      if (!activate && !window.confirm(
+        `„${label}" deaktivieren?\n\n`
+        + 'Alle Sitzungen und verbundenen Geräte werden sofort abgemeldet. '
+        + 'Inhalte bleiben erhalten, geteilte Notizbücher bleiben für die anderen erreichbar.',
+      )) {
+        return;
+      }
+
+      await this.run(async () => {
+        const result = await apiFetch(`/api/admin/users/${user.id}/active`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_active: activate }),
+        });
+        this.message = activate
+          ? `„${label}" ist wieder aktiv.`
+          : `„${label}" wurde deaktiviert (${result.sessions} Sitzung(en), `
+            + `${result.device_tokens} Gerät(e) abgemeldet).`;
+      });
+    },
+
+    /**
+     * Übergibt alle Notizbücher und Seiten an einen anderen Nutzer - etwa vor
+     * dem Löschen eines ausgeschiedenen Mitarbeiters.
+     */
+    async transferUser(user) {
+      const label = user.name || user.email;
+      const candidates = this.users.filter((other) => other.id !== user.id && other.is_active);
+      if (candidates.length === 0) {
+        this.error = 'Es gibt keinen anderen aktiven Nutzer, der die Inhalte übernehmen könnte.';
+        return;
+      }
+      const input = window.prompt(
+        `Alle Notizbücher und Seiten von „${label}" übergeben an (E-Mail-Adresse):\n\n`
+        + candidates.map((other) => `• ${other.email}`).join('\n'),
+      );
+      if (input === null) {
+        return;
+      }
+      const target = candidates.find((other) => other.email.toLowerCase() === input.trim().toLowerCase());
+      if (!target) {
+        this.error = 'Unter dieser E-Mail-Adresse gibt es keinen aktiven Nutzer.';
+        return;
+      }
+
+      await this.run(async () => {
+        const result = await apiFetch(`/api/admin/users/${user.id}/transfer`, {
+          method: 'POST',
+          body: JSON.stringify({ to_user_id: target.id }),
+        });
+        this.message = `${result.notebooks} Notizbuch/-bücher und ${result.pages} Seite(n) `
+          + `an „${target.name || target.email}" übergeben.`;
+      });
+    },
+
     /**
      * Zwei Rückfragen: Das Löschen entfernt sämtliche Inhalte des Nutzers und
      * ist nicht rückgängig zu machen.
      */
     async deleteUser(user) {
       const label = user.name || user.email;
+      const sharedHint = user.shared_notebook_count > 0
+        ? `\n\nAchtung: ${user.shared_notebook_count} geteilte(s) Notizbuch/-bücher verschwinden auch für `
+          + 'die anderen Teilnehmer. Vorher „Übergeben" oder stattdessen „Deaktivieren" wählen.'
+        : '';
       if (!window.confirm(
         `„${label}" endgültig löschen?\n\n`
         + `Dabei verschwinden ${user.page_count} Seite(n), ${user.task_count} Aufgabe(n) `
-        + `und ${user.attachment_count} Bild(er) unwiderruflich.`,
+        + `und ${user.attachment_count} Bild(er) unwiderruflich.${sharedHint}`,
       )) {
         return;
       }
