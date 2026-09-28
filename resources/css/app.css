@@ -118,6 +118,21 @@ textarea::placeholder {
   top: 0.75rem;
 }
 
+/* Unsichtbares Hilfsfeld, das beim Anlegen einer Seite die Tastatur auf iOS
+   öffnet (newPageTitle.js). 16 px, sonst zoomt Safari beim Fokussieren. */
+.keyboard-proxy {
+  border: 0;
+  font-size: 16px;
+  height: 1px;
+  left: 0;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  width: 1px;
+}
+
 /* Globale Toast-Benachrichtigungen (NFR-UI-07, NFR-A11Y-03). */
 .toast-host {
   pointer-events: none;

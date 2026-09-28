@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { markNewPageForTitleEdit } from './newPageTitle.js';
+import { holdKeyboardForTitleEdit, markNewPageForTitleEdit, releaseKeyboardHold } from './newPageTitle.js';
 import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.js';
 import { captureLocationOnCreate } from './geo.js';
 import { nearbySearchMixin } from './nearbySearch.js';
@@ -565,6 +565,7 @@ export function pageList() {
         if (this.activeCollection === 'shared' || this.activeCollection === 'favorites' || this.activeCollection === 'trash') {
           return;
         }
+        holdKeyboardForTitleEdit();
         const location = await captureLocationOnCreate();
         let page;
         try {
@@ -575,6 +576,7 @@ export function pageList() {
             location,
           });
         } catch (error) {
+          releaseKeyboardHold();
           window.alert(error.message || 'Die Notiz konnte offline nicht angelegt werden.');
           return;
         }
@@ -592,6 +594,9 @@ export function pageList() {
       // Jede Seite kann festhalten, wo sie entstanden ist (FR-NOTE-25). In der
       // Vorgabe „manuell" bleibt der Ort hier leer und wird erst auf der Seite
       // per Klick gesetzt.
+      // Vor dem ersten await: Nur noch im Antippen öffnet iOS die Tastatur für
+      // den Titel der neuen Seite (siehe newPageTitle.js).
+      holdKeyboardForTitleEdit();
       const location = await captureLocationOnCreate();
       let page;
       try {
@@ -606,6 +611,7 @@ export function pageList() {
         });
       } catch (error) {
         // Etwa ein nur lesend geteiltes Notizbuch.
+        releaseKeyboardHold();
         showToast(error.message || 'Die Seite konnte nicht angelegt werden.', 'error');
         return;
       }
