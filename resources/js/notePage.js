@@ -200,6 +200,15 @@ export function noteEditorPage() {
       const declaredEncrypted = pageRoot?.dataset.pageEncrypted !== undefined
         ? pageRoot.dataset.pageEncrypted === '1'
         : Boolean(window.__CURRENT_PAGE_IS_ENCRYPTED__);
+      // Wie die übrigen Seitenwerte aus dem Element der Seite, nicht aus dem
+      // globalen Wert: Beim Wechsel innerhalb der App tauscht pageList.js nur
+      // <main> aus, das Skript mit den Globalen läuft dann nicht erneut. Die
+      // Notiz fragte sonst nach jedem solchen Wechsel wieder nach der Vorlage
+      // - oder erbte die Vorlage der zuvor direkt geladenen Notiz (FR-VOICE-12).
+      const declaredTemplate = pageRoot?.dataset.pageVoiceTemplate;
+      if (declaredTemplate !== undefined) {
+        this.noteVoiceTemplateId = declaredTemplate === '' ? null : Number(declaredTemplate);
+      }
       this.encryptionState = declaredEncrypted ? 'encrypted' : 'plain';
       this.cryptoStatus = declaredEncrypted ? 'locked' : 'loading';
       this.canRestoreVersions = this.canEditPage && !isShared;

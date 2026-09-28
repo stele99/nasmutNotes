@@ -911,6 +911,7 @@ export function pageList() {
       window.__CURRENT_PAGE_PERMISSION__ = page?.share_permission || null;
       window.__CURRENT_PAGE_CAN_EDIT__ = canEdit;
       window.__CURRENT_PAGE_IS_ENCRYPTED__ = Boolean(page?.is_encrypted);
+      window.__CURRENT_PAGE_VOICE_TEMPLATE__ = typeof page?.voice_template_id === 'number' ? page.voice_template_id : null;
     },
 
     /** Der Ausschnitt wächst beim Scrollen, damit große Workspaces klein starten. */
