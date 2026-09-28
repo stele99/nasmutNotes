@@ -4,6 +4,7 @@ import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.j
 import { captureLocationOnCreate } from './geo.js';
 import { nearbySearchMixin } from './nearbySearch.js';
 import { showToast } from './toast.js';
+import { setLoading } from './loadingIndicator.js';
 import {
   SessionRedirectError,
   coolFragment,
@@ -37,28 +38,11 @@ import {
 const SLOW_NAVIGATION_MS = 2500;
 /** Ohne gespeicherte Fassung: danach Rückfall auf die Offline-Darstellung. */
 const HARD_NAVIGATION_MS = 15_000;
-/** Kurze Wechsel sollen nicht flackern - der Balken erscheint erst danach. */
-const NAVIGATION_INDICATOR_DELAY_MS = 150;
-
 // Modulweit statt je Komponente: Übersicht und Seitenleiste sind zwei
 // pageList-Instanzen, navigieren aber dieselbe Hauptfläche.
 let navigationSeq = 0;
 let navigationAbort = null;
-let navigationIndicatorTimer = 0;
 let slowNavigationNoticeShown = false;
-
-/** Ladebalken am oberen Rand (app.css, `html[data-navigating]`). */
-function showNavigationIndicator() {
-  window.clearTimeout(navigationIndicatorTimer);
-  navigationIndicatorTimer = window.setTimeout(() => {
-    document.documentElement.dataset.navigating = 'true';
-  }, NAVIGATION_INDICATOR_DELAY_MS);
-}
-
-function hideNavigationIndicator() {
-  window.clearTimeout(navigationIndicatorTimer);
-  delete document.documentElement.dataset.navigating;
-}
 
 function noteSlowNavigation() {
   if (slowNavigationNoticeShown) {
@@ -953,7 +937,7 @@ export function pageList() {
       this.navigationSeq = seq;
       this.navigating = true;
       this.pendingPageId = page ? Number(page.id) : null;
-      showNavigationIndicator();
+      setLoading('navigation', true);
       try {
         if (typeof window.__prepareWorkspaceNavigation === 'function') {
           await window.__prepareWorkspaceNavigation();
@@ -1040,7 +1024,7 @@ export function pageList() {
       } finally {
         if (isCurrent()) {
           navigationAbort = null;
-          hideNavigationIndicator();
+          setLoading('navigation', false);
         }
         // Nur der letzte eigene Wechsel setzt zurück; ein abgelöster darf die
         // Markierung des neueren nicht löschen.

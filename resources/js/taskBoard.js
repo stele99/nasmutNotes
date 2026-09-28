@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
+import { setLoading } from './loadingIndicator.js';
 import { cacheBoard, readCachedBoard, syncOutbox } from './offline/runtime.js';
 import {
   applyTaskOps,
@@ -139,6 +140,16 @@ export function taskBoard() {
 
     async init() {
       const pageRoot = this.$root;
+
+      // Nur das erste Laden hält den Ladebalken (loadingIndicator.js), nicht
+      // jede spätere Aktualisierung im Hintergrund.
+      setLoading('content', this.loading);
+      const stopLoadingWatch = this.$watch('loading', (value) => {
+        if (!value) {
+          setLoading('content', false);
+          stopLoadingWatch?.();
+        }
+      });
       this.pageId = Number(pageRoot?.dataset.pageId || window.__CURRENT_PAGE_ID__ || 0);
       this.pageTitle = pageRoot?.dataset.pageTitle || window.__CURRENT_PAGE_TITLE__ || '';
       this.canEditPage = pageRoot?.dataset.pageCanEdit
@@ -971,6 +982,7 @@ export function taskBoard() {
 
     destroy() {
       this.destroyPageLocation();
+      setLoading('content', false);
       this.cancelVoice();
       clearInterval(this.pollTimer);
       if (this.recordsHandler) {

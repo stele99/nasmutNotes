@@ -141,6 +141,11 @@
     <?php /* Leerzustand: großer Plus-Kreis statt eines kleinen Textlinks, gut
              sichtbar mittig - eine neue Task-Seite hat bewusst keine
              vorbelegten Kapitel mehr. */ ?>
+    <?php /* Bis die Aufgaben da sind - vorher blieb die Fläche ganz leer. */ ?>
+    <div x-show="loading && categories.length === 0" class="content-skeleton max-w-4xl" role="status">
+        <span class="sr-only">Aufgaben werden geladen…</span>
+        <span class="content-skeleton-line" aria-hidden="true"></span><span class="content-skeleton-line" aria-hidden="true"></span><span class="content-skeleton-line" aria-hidden="true"></span><span class="content-skeleton-line" aria-hidden="true"></span>
+    </div>
     <div x-show="!loading && categories.length === 0" class="flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-20 text-center" style="border-color: var(--color-border);">
         <button
             type="button"

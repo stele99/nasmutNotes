@@ -31,13 +31,17 @@
             <button type="button" @click="openNearbyDialog" class="icon-action shrink-0 border p-2" :style="nearbyActive ? 'color: var(--color-accent); border-color: var(--color-accent);' : 'border-color: var(--color-border);'" title="In der Nähe suchen" aria-label="In der Nähe suchen" x-icon="map-pin"></button>
         </div>
         <div x-show="activeCollection !== 'trash'" class="flex gap-2">
-            <button type="button" @click="createPage('note')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" aria-label="Neue Notiz"><span x-icon="plus"></span>Notiz</button>
-            <button type="button" @click="createPage('task')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" aria-label="Neue Aufgabenliste"><span x-icon="plus"></span>Aufgaben</button>
-            <button type="button" @click="createPage('log')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" aria-label="Neues Logbuch"><span x-icon="plus"></span>Logbuch</button>
+            <?php /* Mobil nur Plus und Typ-Symbol wie in der Übersicht (Notiz,
+                     Aufgabenliste, Logbuch) - mit Beschriftung passten die Knöpfe
+                     samt Mikrofon nicht in die Zeile. Ein Plus allein wäre bei
+                     allen dreien gleich. Titel und aria-label tragen den Namen. */ ?>
+            <button type="button" @click="createPage('note')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" title="Neue Notiz" aria-label="Neue Notiz"><span x-icon="plus"></span><span class="md:hidden" x-icon="file-text"></span><span class="hidden md:inline">Notiz</span></button>
+            <button type="button" @click="createPage('task')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" title="Neue Aufgabenliste" aria-label="Neue Aufgabenliste"><span x-icon="plus"></span><span class="md:hidden" x-icon="list-todo"></span><span class="hidden md:inline">Aufgaben</span></button>
+            <button type="button" @click="createPage('log')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" title="Neues Logbuch" aria-label="Neues Logbuch"><span x-icon="plus"></span><span class="md:hidden" x-icon="scroll-text"></span><span class="hidden md:inline">Logbuch</span></button>
             <?php /* Das Notizbuch der Sprachnotiz leitet der Dienst aus dem Inhalt ab -
                      der Knopf hängt deshalb nicht an der gewählten Sammlung. */ ?>
             <?php if (!empty($voiceEnabled)): ?>
-                <button type="button" x-show="voiceSupported" x-cloak @click="startOrOpenPicker" :disabled="isVoiceBusy()" class="btn btn-quiet shrink-0" title="Sprachnotiz aufnehmen" aria-label="Sprachnotiz aufnehmen"><span x-icon="mic"></span></button>
+                <button type="button" x-show="voiceSupported" x-cloak @click="startOrOpenPicker" :disabled="isVoiceBusy()" class="btn btn-quiet flex-1 md:flex-none md:shrink-0" title="Sprachnotiz aufnehmen" aria-label="Sprachnotiz aufnehmen"><span x-icon="mic"></span></button>
             <?php endif; ?>
         </div>
         <?php if (!empty($voiceEnabled)): ?>

@@ -238,6 +238,12 @@
         </section>
         <div class="note-document-shell">
             <div class="note-document-layout" :class="tableOfContents.length > 0 ? 'has-table-of-contents' : ''">
+                <?php /* Bis der Inhalt da ist - bei schlechtem Netz Sekunden, und eine
+                         leere Fläche sah aus wie eine leere Notiz. */ ?>
+                <div x-show="status === 'loading' && !isEncrypted()" class="content-skeleton" role="status">
+                    <span class="sr-only">Inhalt wird geladen…</span>
+                    <span class="content-skeleton-line" aria-hidden="true"></span><span class="content-skeleton-line" aria-hidden="true"></span><span class="content-skeleton-line" aria-hidden="true"></span><span class="content-skeleton-line" aria-hidden="true"></span>
+                </div>
                 <div x-show="!isEncrypted() || isCryptoUnlocked()" class="prose-editor" x-ref="editor"></div>
                 <aside x-show="tableOfContents.length > 0" x-cloak class="note-table-of-contents note-print-hide">
                     <nav aria-label="Inhaltsverzeichnis">

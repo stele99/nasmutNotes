@@ -17,6 +17,7 @@ import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { pageCopyMixin } from './pageCopy.js';
 import { pageMoveMixin } from './pageMove.js';
+import { setLoading } from './loadingIndicator.js';
 import { imageAnnotatorMixin } from './editor/annotations/annotator.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
 import { noteTableOfContents } from './noteToc.js';
@@ -192,6 +193,15 @@ export function noteEditorPage() {
 
     async init() {
       const pageRoot = this.$root;
+
+      // Der Inhalt kommt erst nach dem Seitenwechsel - bis dahin hält die
+      // Seite den Ladebalken (loadingIndicator.js) und zeigt Platzhalter.
+      setLoading('content', true);
+      this.$watch('status', (value) => {
+        if (value !== 'loading') {
+          setLoading('content', false);
+        }
+      });
       this.pageId = Number(pageRoot?.dataset.pageId || window.__CURRENT_PAGE_ID__ || 0);
       this.pageTitle = pageRoot?.dataset.pageTitle || window.__CURRENT_PAGE_TITLE__ || '';
       this.canEditPage = pageRoot?.dataset.pageCanEdit
@@ -2614,6 +2624,7 @@ export function noteEditorPage() {
 
     destroy() {
       this.destroyPageLocation();
+      setLoading('content', false);
       // Blob-Adressen der Offline-Bilder freigeben - die Seite ist verlassen,
       // der Offline-Speicher bleibt die Quelle für den nächsten Besuch.
       for (const url of offlineImageUrls.values()) {

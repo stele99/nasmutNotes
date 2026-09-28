@@ -2,6 +2,7 @@ import { apiFetch } from './api.js';
 import { voiceRecorderMixin, voiceFormData } from './voice.js';
 import { locationMapUrl, parseLocationInput, requestLocation } from './geo.js';
 import { consumeNewPageTitleEdit } from './newPageTitle.js';
+import { setLoading } from './loadingIndicator.js';
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { cacheLogBoard, readCachedLogBoard, syncOutbox } from './offline/runtime.js';
@@ -99,6 +100,16 @@ export function logPage() {
 
     async init() {
       const root = this.$root;
+
+      // Nur das erste Laden hält den Ladebalken (loadingIndicator.js), nicht
+      // jede spätere Aktualisierung im Hintergrund.
+      setLoading('content', this.loading);
+      const stopLoadingWatch = this.$watch('loading', (value) => {
+        if (!value) {
+          setLoading('content', false);
+          stopLoadingWatch?.();
+        }
+      });
       this.pageId = Number(root?.dataset.pageId || window.__CURRENT_PAGE_ID__ || 0);
       this.pageTitle = root?.dataset.pageTitle || window.__CURRENT_PAGE_TITLE__ || '';
       this.canEditPage = root?.dataset.pageCanEdit
@@ -973,6 +984,7 @@ export function logPage() {
 
     destroy() {
       this.destroyPageLocation();
+      setLoading('content', false);
       this.cancelVoice();
       if (this.recordsHandler) {
         window.removeEventListener('offline-records-changed', this.recordsHandler);

@@ -118,11 +118,11 @@ textarea::placeholder {
   top: 0.75rem;
 }
 
-/* Ladebalken bei Seitenwechseln (pageList.js setzt `data-navigating` nach
-   kurzer Verzögerung). Ohne ihn geschah bei schlechtem Netz nach dem Tippen
-   sekundenlang nichts Sichtbares. `body::before`, weil die Seitenleisten per
+/* Ladebalken bei Seitenwechsel und Nachladen des Inhalts (loadingIndicator.js
+   setzt `data-loading` nach kurzer Verzögerung). Ohne ihn geschah bei
+   schlechtem Netz nach dem Tippen sekundenlang nichts Sichtbares. `body::before`, weil die Seitenleisten per
    `transform` verschoben werden und darin kein `fixed` am Fenster hängt. */
-html[data-navigating] body::before {
+html[data-loading] body::before {
   animation: navigation-progress 1.1s ease-in-out infinite;
   background: var(--color-accent);
   content: "";
@@ -144,10 +144,44 @@ html[data-navigating] body::before {
 /* Die allgemeine Regel verkürzt Animationen auf 0,01 ms - der Balken stünde
    dann rechts außerhalb. Stattdessen ruhend und halb durchsichtig. */
 @media (prefers-reduced-motion: reduce) {
-  html[data-navigating] body::before {
+  html[data-loading] body::before {
     animation: none;
     opacity: 0.6;
     transform: none;
+  }
+}
+
+/* Platzhalter-Zeilen, solange der Inhalt einer Seite nachlädt (Notiz,
+   Aufgabenliste): Eine leere Fläche sah aus wie eine leere Notiz. */
+.content-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.5rem 0 1rem;
+}
+
+.content-skeleton-line {
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  background: linear-gradient(90deg, var(--color-bg-subtle) 25%, var(--color-border) 50%, var(--color-bg-subtle) 75%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  display: block;
+  height: 1rem;
+}
+
+.content-skeleton-line:nth-of-type(2) { width: 92%; }
+.content-skeleton-line:nth-of-type(3) { width: 78%; }
+.content-skeleton-line:nth-of-type(4) { width: 85%; }
+.content-skeleton-line:nth-of-type(5) { width: 55%; }
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content-skeleton-line {
+    animation: none;
   }
 }
 
@@ -2347,6 +2381,7 @@ button:disabled,
 
   .page-sidebar .btn {
     font-size: 1rem;
+    min-height: 2.75rem;
     padding: 0.75rem 1rem;
   }
 
