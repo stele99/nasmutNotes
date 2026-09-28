@@ -189,6 +189,7 @@ Priorisierung: **M** = Muss, **S** = Soll, **K** = Kann.
 | FR-WS-13 | Seitenleiste und Übersicht stellen jede Seite als **Karte** dar: Titel, darunter eine Kurzinfo (Notiz: erste nicht leere Textzeile, max. 140 Zeichen; Task-Seite: „N Aufgaben · M offen“), darunter kleiner der letzte Bearbeiter und das Änderungsdatum. In der Seitenleiste erscheinen Kurzinfo und Metazeile erst ab 768 px; mobil bleibt es beim reinen Titel. | S |
 | FR-WS-14 | Die Kurzinfos werden serverseitig in **zwei Sammelabfragen** je Seitenliste ermittelt (Notizanriss samt letztem Bearbeiter, Aufgabenzahlen), nicht mit einer Abfrage je Seite. Die Parameterlisten werden gestückelt, damit auch große Workspaces die SQLite-Parametergrenze nicht überschreiten. | M |
 | FR-WS-15 | Als Favorit markierte Seiten zeigen den Stern dauerhaft und hellrot gefüllt; ein erneuter Klick entfernt die Markierung. Nicht markierte Seiten blenden den Stern auf dem Desktop erst beim Überfahren ein. | S |
+| FR-WS-16 | Eine geöffnete eigene Notiz lässt sich über das „…"-Menü ihres Kopfes (schmaler Kopf, also vor allem mobil) in ein anderes Notizbuch **verschieben**: Ein Dialog listet „Nicht zugewiesen", die eigenen Notizbücher und geteilte mit Schreibrecht (mit Eigentümer im Namen), das aktuelle ist markiert. Verschoben wird über `POST /api/pages/move` wie beim Ziehen in der Seitenleiste, samt Rückfrage, wenn die Notiz damit den Eigentümer wechselt; danach baut sich die Seite ohne neuen Verlaufseintrag neu auf. Grund: Mobil gibt es kein Ziehen auf ein Notizbuch. | M |
 
 ### 5.4 Notizseiten (WYSIWYG)
 

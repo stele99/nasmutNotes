@@ -1,4 +1,4 @@
-<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-voice-template="<?= isset($page['voice_template_id']) ? (int) $page['voice_template_id'] : '' ?>" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>" data-page-encrypted="<?= !empty($page['is_encrypted']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>">
+<div class="note-page page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="noteEditorPage" data-page-notebook-id="<?= isset($page['notebook_id']) && empty($page['is_shared']) ? (int) $page['notebook_id'] : '' ?>" data-page-voice-template="<?= isset($page['voice_template_id']) ? (int) $page['voice_template_id'] : '' ?>" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>" data-page-encrypted="<?= !empty($page['is_encrypted']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>">
     <div class="note-sticky-header page-toolbar page-toolbar-note flex items-center gap-2">
         <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
@@ -86,6 +86,8 @@
                 <button type="button" @click="togglePageMenu" class="icon-action flex items-center border p-2" style="border-color: var(--color-border);" :aria-expanded="pageMenuOpen" title="Weitere Aktionen" aria-label="Weitere Aktionen" x-icon="more-horizontal"></button>
                 <div x-show="pageMenuOpen" x-cloak class="popup-menu" role="menu" aria-label="Weitere Aktionen">
                     <button x-show="!isEncrypted()" type="button" @click="copyPageFromMenu" :disabled="copyingPage" class="popup-menu-button"><span x-icon="copy"></span>Kopie</button>
+                    <?php /* Mobil gibt es kein Ziehen auf ein Notizbuch - hier der Weg dorthin. */ ?>
+                    <button x-show="!isShared && canEditPage" type="button" @click="moveNoteFromMenu" :disabled="movingPage" class="popup-menu-button"><span x-icon="folder"></span>Verschieben</button>
                     <button x-show="!isEncrypted()" type="button" @click="openHistoryFromMenu" class="popup-menu-button"><span x-icon="history"></span>Verlauf</button>
                     <button x-show="!isEncrypted() || isCryptoUnlocked()" type="button" @click="printNoteFromMenu" class="popup-menu-button"><span x-icon="printer"></span>Drucken</button>
                     <button x-show="!isShared && canEditPage && !isEncrypted()" type="button" @click="openCompressionDialogFromMenu" class="popup-menu-button"><span x-icon="image"></span>Bilder komprimieren</button>
@@ -434,6 +436,39 @@
             <div class="mt-6 flex justify-end gap-2">
                 <button type="button" @click="closeCopyDialog" :disabled="copyingPage" class="btn btn-quiet">Abbrechen</button>
                 <button type="submit" :disabled="copyingPage" class="btn btn-primary" x-text="copyingPage ? 'Kopiere…' : 'Kopie erstellen'"></button>
+            </div>
+        </form>
+    </div>
+
+    <?php /* Zielnotizbuch beim Verschieben (pageMove.js): eigene Notizbücher und
+             geteilte mit Schreibrecht. Große Zeilen statt einer Auswahlliste,
+             damit sich das Ziel auf dem Handy ohne Umweg antippen lässt. */ ?>
+    <div x-show="moveDialogOpen" x-cloak class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeMoveDialog" @keydown.escape.window="closeMoveDialog" role="dialog" aria-modal="true" aria-labelledby="move-dialog-title">
+        <form @submit.prevent="confirmMove" class="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
+            <div class="flex items-center justify-between gap-4 border-b px-6 py-4" style="border-color: var(--color-border);">
+                <h2 id="move-dialog-title" class="text-xl font-semibold">Verschieben nach</h2>
+                <button type="button" @click="closeMoveDialog" :disabled="movingPage" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button>
+            </div>
+            <fieldset class="min-h-0 flex-1 overflow-y-auto p-3">
+                <legend class="sr-only">Zielnotizbuch</legend>
+                <p x-show="moveLoading" class="px-3 py-2 text-sm" style="color: var(--color-text-muted);">Notizbücher werden geladen…</p>
+                <label class="move-target" :class="isSelectedMoveTarget('') ? 'is-selected' : ''">
+                    <input type="radio" name="move-target" value="" :checked="isSelectedMoveTarget('')" @change="selectMoveTarget('')" :disabled="movingPage">
+                    <span class="min-w-0 flex-1 truncate">Nicht zugewiesen</span>
+                    <span x-show="isCurrentMoveTarget('')" class="shrink-0 text-xs" style="color: var(--color-text-muted);">aktuell</span>
+                </label>
+                <template x-for="notebook in moveNotebooks" :key="notebook.id">
+                    <label class="move-target" :class="isSelectedMoveTarget(notebook.id) ? 'is-selected' : ''">
+                        <input type="radio" name="move-target" :value="notebook.id" :checked="isSelectedMoveTarget(notebook.id)" @change="selectMoveTarget(notebook.id)" :disabled="movingPage">
+                        <span class="min-w-0 flex-1 truncate" x-text="moveNotebookLabel(notebook)"></span>
+                        <span x-show="isCurrentMoveTarget(notebook.id)" class="shrink-0 text-xs" style="color: var(--color-text-muted);">aktuell</span>
+                    </label>
+                </template>
+            </fieldset>
+            <p x-show="moveError" x-cloak x-text="moveError" class="px-6 pb-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
+            <div class="flex justify-end gap-2 border-t px-6 py-4" style="border-color: var(--color-border);">
+                <button type="button" @click="closeMoveDialog" :disabled="movingPage" class="btn btn-quiet">Abbrechen</button>
+                <button type="submit" :disabled="movingPage || moveLoading || isMoveUnchanged()" class="btn btn-primary" x-text="movingPage ? 'Verschiebe…' : 'Verschieben'"></button>
             </div>
         </form>
     </div>

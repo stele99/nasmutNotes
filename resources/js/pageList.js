@@ -818,6 +818,20 @@ export function pageList() {
       await this.navigate(page);
     },
 
+    /**
+     * Baut die offene Seite neu auf, ohne Verlaufseintrag - etwa nach dem
+     * Verschieben in ein anderes Notizbuch (pageMove.js), wenn sich
+     * Breadcrumb, Eigentümer und Freigabe-Status geändert haben. Ein normaler
+     * Wechsel legte einen zweiten Eintrag derselben Adresse an, und „Zurück"
+     * bliebe einmal wirkungslos.
+     */
+    async reloadPage(page) {
+      if (!page || !page.id) {
+        return;
+      }
+      await this.navigateTo(this.pageUrl(page), page, false);
+    },
+
     async navigateTo(url, page = null, pushHistory = true) {
       if (this.navigating) {
         return;

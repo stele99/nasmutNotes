@@ -810,6 +810,34 @@ body.is-resizing-sidebar {
   color: var(--color-danger);
 }
 
+/* Zeile im Dialog „Verschieben nach" (pageMove.js): 44 px hoch, das
+   gewählte Ziel eingefärbt wie das aktive Notizbuch der Leiste. */
+.move-target {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.move-target:hover,
+.move-target:focus-within {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.move-target.is-selected {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.move-target input {
+  accent-color: var(--color-accent);
+  flex-shrink: 0;
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
 .note-lock-screen {
   align-items: center;
   background:
@@ -924,6 +952,13 @@ button:disabled,
 
 .btn:active:not(:disabled) {
   transform: translateY(1px);
+}
+
+/* Gesperrt sah bisher aus wie bedienbar - etwa „Verschieben" ohne neues Ziel
+   oder „+ Notiz" in den Favoriten. `.btn` setzte zudem den Zeiger zurück. */
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .btn-primary {

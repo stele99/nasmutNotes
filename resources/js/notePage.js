@@ -16,6 +16,7 @@ import { voiceFormData, voiceRecorderMixin, voiceTemplateMixin } from './voice.j
 import { pageLocationMixin } from './pageLocation.js';
 import { pageTrashMixin } from './pageTrash.js';
 import { pageCopyMixin } from './pageCopy.js';
+import { pageMoveMixin } from './pageMove.js';
 import { imageAnnotatorMixin } from './editor/annotations/annotator.js';
 import { diffNoteDocuments, documentToDiffBlocks } from './noteHistoryDiff.js';
 import { noteTableOfContents } from './noteToc.js';
@@ -80,6 +81,7 @@ export function noteEditorPage() {
     ...pageLocationMixin(),
     ...pageTrashMixin(),
     ...pageCopyMixin(),
+    ...pageMoveMixin(),
     ...imageAnnotatorMixin(),
     status: 'loading', // loading | saved | saving | unsaved | offline | invalid | conflict
     version: 0,
@@ -215,6 +217,7 @@ export function noteEditorPage() {
       this.savedPageTitle = this.pageTitle;
       this.initPageLocation(pageRoot);
       this.initPageCopy(pageRoot);
+      this.initPageMove(pageRoot);
 
       if (!this.pageId) {
         this.status = 'offline';
@@ -778,6 +781,11 @@ export function noteEditorPage() {
     copyPageFromMenu() {
       this.pageMenuOpen = false;
       return this.copyPage();
+    },
+
+    moveNoteFromMenu() {
+      this.pageMenuOpen = false;
+      return this.openMoveDialog();
     },
 
     openHistoryFromMenu() {
