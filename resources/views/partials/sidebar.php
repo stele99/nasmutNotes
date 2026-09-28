@@ -24,15 +24,15 @@
     </div>
     <div class="space-y-3 p-3">
         <div x-show="activeCollection !== 'trash'" class="flex items-center gap-2">
-            <form @submit.prevent="search" class="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-2" style="border-color: var(--color-border); background: var(--color-bg);"><span x-icon="search"></span><input x-model="searchQuery" @input="nearbyActive = false; if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none"><button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button></form>
+            <form @submit.prevent="search" class="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-2" style="border-color: var(--color-border); background: var(--color-bg);"><span x-icon="search"></span><input x-model="searchQuery" @input="nearbyActive = false; if (!searchQuery) searchResults = []" type="search" enterkeyhint="search" placeholder="Suchen…" aria-label="Seiten durchsuchen" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none"><button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button></form>
             <?php /* Umkreissuche (FR-NOTE-27): Seiten und Logbuch-Einträge mit
                      Standort im gewählten Umkreis um einen Punkt auf der Karte. */ ?>
             <button type="button" @click="openNearbyDialog" class="icon-action shrink-0 border p-2" :style="nearbyActive ? 'color: var(--color-accent); border-color: var(--color-accent);' : 'border-color: var(--color-border);'" title="In der Nähe suchen" aria-label="In der Nähe suchen" x-icon="map-pin"></button>
         </div>
         <div x-show="activeCollection !== 'trash'" class="flex gap-2">
-            <button type="button" @click="createPage('note')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1"><span x-icon="plus"></span>Notiz</button>
-            <button type="button" @click="createPage('task')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1"><span x-icon="plus"></span>Aufgaben</button>
-            <button type="button" @click="createPage('log')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1"><span x-icon="plus"></span>Log</button>
+            <button type="button" @click="createPage('note')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" aria-label="Neue Notiz"><span x-icon="plus"></span>Notiz</button>
+            <button type="button" @click="createPage('task')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" aria-label="Neue Aufgabenliste"><span x-icon="plus"></span>Aufgaben</button>
+            <button type="button" @click="createPage('log')" :disabled="activeCollection === 'shared' || activeCollection === 'favorites'" class="btn btn-quiet flex-1" aria-label="Neues Logbuch"><span x-icon="plus"></span>Logbuch</button>
             <?php /* Das Notizbuch der Sprachnotiz leitet der Dienst aus dem Inhalt ab -
                      der Knopf hängt deshalb nicht an der gewählten Sammlung. */ ?>
             <?php if (!empty($voiceEnabled)): ?>
@@ -79,7 +79,7 @@
                     </div>
                 </div>
             </template>
-            <?php /* Nur „Alle Notizen" wächst schrittweise nach - die anderen Sammlungen
+            <?php /* Nur „Alle Seiten" wächst schrittweise nach - die anderen Sammlungen
                      laden ohnehin vollständig (siehe filteredPages). */ ?>
             <div x-ref="recentSentinel" x-cloak x-show="activeCollection === 'all' && searchQuery.trim() === '' && hasMoreRecentPages()" class="px-4 pt-2">
                 <button type="button" @click="loadMoreRecentPages" class="btn btn-quiet w-full">Weitere Notizen laden</button>

@@ -128,7 +128,7 @@ final class NotebookService
             $fields['icon'] = $this->validatedIcon($input['icon']);
         }
         // Ausblenden betrifft allein die Notizbuchliste - die Seiten des
-        // Notizbuchs bleiben auffindbar und unter „Alle Notizen" sichtbar.
+        // Notizbuchs bleiben auffindbar und unter „Alle Seiten" sichtbar.
         if (array_key_exists('is_hidden', $input)) {
             $fields['is_hidden'] = $this->toFlag($input['is_hidden']);
         }

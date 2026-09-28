@@ -2,7 +2,7 @@
 <html lang="de" x-data="theme" x-init="init" :data-theme="mode === 'system' ? null : mode">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/icon/favicon-32.png" sizes="32x32" type="image/png">
     <link rel="icon" href="/icon/favicon-16.png" sizes="16x16" type="image/png">

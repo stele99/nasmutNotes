@@ -94,6 +94,20 @@ test('mergeFields übernimmt eigene Änderungen, solange der Server dasselbe Fel
   );
 });
 
+test('Zahlen werden offline so gelesen wie vom Server (deutsche Schreibweise)', () => {
+  assert.equal(records.parseLocalizedNumber('12,50'), 12.5);
+  assert.equal(records.parseLocalizedNumber('1.234,50'), 1234.5);
+  assert.equal(records.parseLocalizedNumber('3.5'), 3.5);
+  assert.equal(records.parseLocalizedNumber('1 234 €'), 1234);
+  assert.equal(records.parseLocalizedNumber(7), 7);
+  assert.ok(Number.isNaN(records.parseLocalizedNumber('')));
+  assert.ok(Number.isNaN(records.parseLocalizedNumber('abc')));
+
+  const money = { id: 5, type: 'money', is_numeric: true };
+  assert.deepEqual(records.displayValue(money, '1.234,50'), { text: null, number: 1234.5, lat: null, lon: null });
+  assert.equal(records.displayValue(money, 'zwölf'), null);
+});
+
 test('mehrere Offline-Änderungen an einer Aufgabe bilden einen Eintrag mit der ursprünglichen Basis', async () => {
   const task = serverTask();
   await records.queueTaskUpdate(PAGE_ID, task, { is_done: true });

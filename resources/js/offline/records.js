@@ -318,11 +318,34 @@ export function displayValue(column, raw) {
     };
   }
   if (column.is_numeric || column.type === 'rating') {
-    const number = Number(String(raw).replace(',', '.'));
+    const number = parseLocalizedNumber(raw);
     return Number.isFinite(number) ? { text: null, number, lat: null, lon: null } : null;
   }
 
   return { text: String(raw), number: null, lat: null, lon: null };
+}
+
+/**
+ * Zahl in derselben Lesart wie der Server (LogService::numberValue): Kommt ein
+ * Komma vor, ist es das Dezimalzeichen und Punkte trennen Tausender
+ * („1.234,50"); sonst ist der Punkt das Dezimalzeichen („3.5"), Leerzeichen
+ * und „€" fallen weg. Weicht die Lesart ab, zeigt die Offline-Überlagerung
+ * einen anderen Wert als nach dem Sync, und der Drei-Wege-Vergleich meldet
+ * Scheinkonflikte.
+ *
+ * @param {unknown} raw
+ * @returns {number} NaN, wenn keine Zahl erkennbar ist
+ */
+export function parseLocalizedNumber(raw) {
+  if (typeof raw === 'number') {
+    return raw;
+  }
+  let text = String(raw ?? '').trim();
+  text = text.includes(',')
+    ? text.replaceAll('.', '').replaceAll(',', '.')
+    : text.replace(/[\s €]/g, '');
+
+  return text === '' ? Number.NaN : Number(text);
 }
 
 function displayValues(columns, rawValues) {

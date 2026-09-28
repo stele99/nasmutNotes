@@ -20,7 +20,7 @@
             role="dialog"
             aria-modal="true"
             aria-labelledby="export-dialog-title"
-            class="fixed inset-0 z-[100] flex items-center justify-center p-5"
+            class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5"
             style="background-color: rgb(0 0 0 / 0.4);"
             @click.self="closeDialog"
             @keydown.escape.window="closeDialog"

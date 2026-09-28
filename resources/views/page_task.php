@@ -1,4 +1,4 @@
-<div class="page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
+<div class="task-board page-canvas page-content-canvas mx-auto px-4 pb-16 pt-2 sm:px-10 md:px-6 md:pt-5" x-data="taskBoard" data-page-id="<?= (int) $page['id'] ?>" data-page-title="<?= e((string) $page['title']) ?>" data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>" data-page-lat="<?= e((string) ($page['location_lat'] ?? '')) ?>" data-page-lon="<?= e((string) ($page['location_lon'] ?? '')) ?>" data-page-accuracy="<?= e((string) ($page['location_accuracy'] ?? '')) ?>" data-page-address="<?= e((string) ($page['location_label'] ?? '')) ?>" data-page-is-shared="<?= !empty($page['is_shared']) ? '1' : '0' ?>">
     <div class="page-toolbar flex items-center gap-2">
         <?php /* Rückweg zur Seitenauswahl - dieselbe Ebene, die mobil auch das
                  Wischen von links nach rechts erreicht (siehe workspaceShell). */ ?>
@@ -34,7 +34,7 @@
     </div>
     <div class="pt-4 md:pt-10">
     <div class="mb-8 min-w-0 sm:mb-14">
-        <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+        <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="page-heading cursor-text text-4xl font-semibold tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
         <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-72 text-4xl font-semibold tracking-tight sm:text-5xl">
         <?php include __DIR__ . '/partials/page_location.php'; ?>
         <?php include __DIR__ . '/partials/shared_page_meta.php'; ?>
@@ -192,14 +192,18 @@
                 <ul class="task-list mt-4 border-y" style="border-color: var(--color-border);">
                     <template x-for="task in visibleTasks(category)" :key="task.id">
                         <li class="group flex items-center gap-2 border-t px-2 py-2 text-base sm:px-3" style="border-color: color-mix(in srgb, var(--color-border) 70%, transparent);" :class="task.is_done ? 'opacity-60' : ''">
-                            <?php /* Trefferfläche 44x44px mobil (NFR-UI-16): Zoom ist gesperrt
-                                     (NFR-UI-14), das Kästchen selbst bleibt aber optisch klein -
-                                     das Label vergrößert nur die klick-/tippbare Fläche. */ ?>
+                            <?php /* Trefferfläche 44x44px mobil (NFR-UI-16): Das Kästchen selbst
+                                     bleibt optisch klein - das Label vergrößert nur die
+                                     klick-/tippbare Fläche. */ ?>
                             <label class="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center sm:h-4 sm:w-4">
                                 <input type="checkbox" :checked="task.is_done" @change="toggleDone(task)" :disabled="!canEditPage" class="h-5 w-5 sm:h-4 sm:w-4">
                             </label>
-                            <button @click="openTask(task)" class="task-title min-w-0 flex-1 text-left" :class="task.is_done ? 'line-through' : ''" x-text="task.title"></button>
-                            <span x-show="task.due_date" class="shrink-0 text-xs sm:text-sm" :style="dueStyle(task)" :title="isOverdue(task) ? 'Überfällig' : 'Fälligkeit'" x-text="dueLabel(task)"></span>
+                            <?php /* Mobil steht die Fälligkeit unter dem Titel: Neben Kästchen und
+                                     zwei 44-px-Schaltern bliebe dem Titel sonst kaum Breite. */ ?>
+                            <div class="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-2">
+                                <button @click="openTask(task)" class="task-title min-w-0 text-left sm:flex-1" :class="task.is_done ? 'line-through' : ''" x-text="task.title"></button>
+                                <span x-show="task.due_date" class="text-xs sm:shrink-0 sm:text-sm" :style="dueStyle(task)" :title="isOverdue(task) ? 'Überfällig' : 'Fälligkeit'" x-text="dueLabel(task)"></span>
+                            </div>
                             <span x-show="isPendingTask(task)" x-cloak class="shrink-0" style="color: var(--color-text-muted);" title="Noch nicht übertragen" aria-label="Noch nicht übertragen" x-icon="cloud-off"></span>
                             <span x-show="task.responsible" class="hidden text-sm sm:inline" style="color: var(--color-text-muted);" x-text="task.responsible"></span>
                             <a
@@ -213,19 +217,22 @@
                             ><span x-icon="chevron-right"></span></a>
                             <?php /* Ohne Hover gäbe es auf Touchgeräten keinen Weg zu Bearbeiten
                                      und Löschen - dort stehen die Schalter deshalb dauerhaft. */ ?>
-                            <button x-show="canEditPage" @click="openTask(task)" class="icon-action shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100" title="Task bearbeiten" aria-label="Task bearbeiten" x-icon="pencil"></button>
-                            <button x-show="canEditPage" @click="deleteTask(task)" class="icon-action icon-action-danger shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100" title="Task löschen" aria-label="Task löschen" x-icon="trash"></button>
+                            <button x-show="canEditPage" @click="openTask(task)" class="icon-action shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100" title="Aufgabe bearbeiten" aria-label="Aufgabe bearbeiten" x-icon="pencil"></button>
+                            <button x-show="canEditPage" @click="deleteTask(task)" class="icon-action icon-action-danger shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100" title="Aufgabe löschen" aria-label="Aufgabe löschen" x-icon="trash"></button>
                         </li>
                     </template>
                 </ul>
 
-                <form x-show="canEditPage" @submit.prevent="addTask(category, $event)" class="mt-4 flex items-center gap-3 rounded-lg border px-4 py-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
+                <form x-show="canEditPage" @submit.prevent="addTask(category, $event)" class="mt-4 flex items-center gap-3 rounded-lg border py-1 pl-4 pr-1 sm:px-4 sm:py-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
                     <span aria-hidden="true" style="color: var(--color-text-muted);" x-icon="plus"></span>
+                    <?php /* Die Eingabe bleibt nach dem Absenden fokussiert (NFR-UI-08) -
+                             „Fertig" als Eingabetaste wäre deshalb irreführend, sie bleibt
+                             die Zeilenschalt-Taste. */ ?>
                     <input
                         x-model="newTaskTitles[category.id]"
                         type="text"
                         :disabled="savingCategoryId === category.id"
-                        placeholder="Aufgabe eingeben und Enter drücken…"
+                        placeholder="Neue Aufgabe…"
                         aria-label="Neue Aufgabe in diesem Kapitel"
                         class="min-w-0 flex-1 bg-transparent text-base outline-none"
                     >
@@ -264,7 +271,7 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="category-dialog-title"
-        class="fixed inset-0 z-50 flex items-center justify-center p-5"
+        class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeCategoryDialog"
         @keydown.escape.window="closeCategoryDialog"
@@ -286,7 +293,7 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-dialog-title"
-        class="fixed inset-0 z-50 flex items-center justify-center p-5"
+        class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeImportDialog"
         @keydown.escape.window="closeImportDialog"
@@ -313,15 +320,15 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
         role="dialog"
         aria-modal="true"
         aria-label="Aufgabe bearbeiten"
-        class="fixed inset-0 flex items-center justify-center z-50"
+        class="modal-backdrop fixed inset-0 flex items-center justify-center z-50"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeTask()"
     >
         <form x-show="activeTask" @submit.prevent="saveTask" @keydown.escape.window="closeTask()" @keydown.enter="handleTaskEditorEnter($event)" class="w-full max-w-xl rounded-2xl border p-6 space-y-4 sm:p-8" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <template x-if="activeTask">
                 <div class="space-y-3">
-                    <input x-model="activeTask.title" :readonly="!canEditPage" class="w-full rounded-lg border px-4 py-3 text-base font-medium" style="border-color: var(--color-border);">
-                    <textarea x-model="activeTask.description" :readonly="!canEditPage" rows="5" placeholder="Beschreibung" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);"></textarea>
+                    <input x-model="activeTask.title" :readonly="!canEditPage" aria-label="Titel" class="w-full rounded-lg border px-4 py-3 text-base font-medium" style="border-color: var(--color-border);">
+                    <textarea x-model="activeTask.description" :readonly="!canEditPage" rows="5" placeholder="Beschreibung" aria-label="Beschreibung" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);"></textarea>
                     <?php /* Ist die Seite geteilt, stehen die Personen mit Zugriff zur Auswahl;
                              Freitext bleibt über „Andere Person…“ möglich (FR-TASK-21). */ ?>
                     <select
@@ -339,8 +346,11 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
                         </template>
                         <option value="__free__">Andere Person…</option>
                     </select>
-                    <input x-show="!hasCollaboratorChoices() || responsibleFreeText" x-model="activeTask.responsible" :readonly="!canEditPage" placeholder="Verantwortlich" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
-                    <input x-model="activeTask.link" :readonly="!canEditPage" placeholder="https://…" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
+                    <input x-show="!hasCollaboratorChoices() || responsibleFreeText" x-model="activeTask.responsible" :readonly="!canEditPage" placeholder="Verantwortlich" aria-label="Verantwortlich" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
+                    <?php /* inputmode statt type="url": Die URL-Tastatur ohne die
+                             Formularprüfung des Browsers, die sonst das Speichern
+                             bisher gültiger Eingaben blockieren könnte. */ ?>
+                    <input x-model="activeTask.link" :readonly="!canEditPage" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://…" aria-label="Link" class="w-full rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
                     <label class="flex items-center gap-3 text-base">
                         <span class="shrink-0" style="color: var(--color-text-muted);">Fällig am</span>
                         <input type="date" x-model="activeTask.due_date" :readonly="!canEditPage" class="min-w-0 flex-1 rounded-lg border px-4 py-3 text-base" style="border-color: var(--color-border);">
@@ -349,7 +359,7 @@ Aufgabe 3" class="mt-5 w-full resize-y rounded-md border px-3 py-2.5 text-base" 
                         <input type="checkbox" x-model="activeTask.is_done" :disabled="!canEditPage" class="h-6 w-6 shrink-0"> Erledigt
                     </label>
                     <div x-show="taskConflict" x-cloak class="rounded-lg p-4 text-sm" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);" role="alert">
-                        <p>Dieser Task wurde zwischenzeitlich von jemand anderem geändert.</p>
+                        <p>Diese Aufgabe wurde zwischenzeitlich von jemand anderem geändert.</p>
                         <p class="mt-2">
                             <button type="button" @click="useTheirVersion" class="font-medium underline">Fremde Änderungen laden</button>
                             <span style="color: var(--color-text-muted);"> oder erneut „Speichern“, um deine Version zu übernehmen.</span>

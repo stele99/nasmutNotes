@@ -11,7 +11,7 @@
         <button type="button" x-show="notebook.is_owner" @click="openNotebookShareDialog(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="share-2"></span>Teilen</button>
         <button type="button" x-show="notebook.is_owner" @click="openRenameNotebookDialog(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="pencil"></span>Umbenennen</button>
         <?php /* Ausblenden betrifft nur diese Liste - die Seiten bleiben
-                 auffindbar und stehen weiter unter „Alle Notizen". */ ?>
+                 auffindbar und stehen weiter unter „Alle Seiten". */ ?>
         <button type="button" x-show="notebook.is_owner && !notebook.is_hidden" @click="setNotebookHidden(notebook, true)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="eye-off"></span>Ausblenden</button>
         <button type="button" x-show="notebook.is_owner && notebook.is_hidden" x-cloak @click="setNotebookHidden(notebook, false)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="eye"></span>Einblenden</button>
         <button type="button" x-show="notebook.is_owner" @click="deleteNotebook(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-danger);"><span x-icon="trash"></span>Löschen</button>

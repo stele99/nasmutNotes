@@ -399,6 +399,44 @@ export function logPage() {
       return this.columns.some((column) => column.is_numeric);
     },
 
+    // --------------------------------------- Mobile Liste (NFR-UI-27)
+
+    /** Nur belegte Spalten - leere Zeilen kosteten auf dem Handy nur Höhe. */
+    filledColumns(entry) {
+      return this.columns.filter((column) => this.cellLabel(entry, column) !== '');
+    },
+
+    /** Zahlenspalten mit Summe, für die Zeile unter der Liste. */
+    totalColumns() {
+      return this.columns.filter((column) => this.columnTotal(column) !== '');
+    },
+
+    /** Auswahl statt Spaltenköpfen: Wechsel der Spalte mit deren Vorgaberichtung. */
+    async onSortSelect(event) {
+      const key = String(event.target.value);
+      if (key !== this.sort) {
+        await this.sortBy(key);
+      }
+    },
+
+    async toggleSortDirection() {
+      if (this.offline) {
+        return;
+      }
+      this.direction = this.direction === 'asc' ? 'desc' : 'asc';
+      await this.load();
+    },
+
+    sortDirectionSymbol() {
+      return this.direction === 'asc' ? '▲' : '▼';
+    },
+
+    sortDirectionLabel() {
+      return this.direction === 'asc'
+        ? 'Aufsteigend sortiert - umkehren'
+        : 'Absteigend sortiert - umkehren';
+    },
+
     entryCountLabel() {
       if (this.loading) {
         return 'Lädt…';
@@ -469,8 +507,12 @@ export function logPage() {
     editableValue(column, value) {
       // Die Bewertung zählt nicht als Zahlenspalte (keine Summe), wird aber
       // wie eine bearbeitet: Im Feld steht die Sternzahl, nicht ihr Text.
-      if (column.is_numeric || column.type === 'rating') {
+      if (column.type === 'rating') {
         return value.number === null ? '' : String(value.number);
+      }
+      // Deutsche Schreibweise, wie sie auch getippt wird („12,5").
+      if (column.is_numeric) {
+        return value.number === null ? '' : String(value.number).replace('.', ',');
       }
       if (column.type === 'location') {
         return value.text || this.coordinateLabel(value);
@@ -500,20 +542,27 @@ export function logPage() {
       this.setValueInput(column, event.target.value);
     },
 
+    /**
+     * Zahlen stehen in einem Textfeld mit Dezimaltastatur statt in
+     * `type="number"`: Dort lieferte der Browser für „12,50" je nach Gerät und
+     * Sprache einen leeren Wert, und die Eingabe ginge still verloren. Die
+     * deutsche Schreibweise liest der Server selbst (LogService::numberValue).
+     */
     inputType(column) {
-      if (column.type === 'time') {
-        return 'time';
-      }
-
-      return column.is_numeric ? 'number' : 'text';
+      return column.type === 'time' ? 'time' : 'text';
     },
 
-    inputStep(column) {
-      if (column.type === 'money') {
-        return '0.01';
-      }
+    /**
+     * Passende Bildschirmtastatur (FR-LOG-03). Die Dezimaltastatur von iOS hat
+     * kein Minuszeichen - negative Zahlen gehen dort nur über ein Einfügen.
+     */
+    inputMode(column) {
+      return column.is_numeric ? 'decimal' : 'text';
+    },
 
-      return column.type === 'hours' ? '0.25' : 'any';
+    /** Feld-ID je Spalte, damit das Label das Feld benennt und fokussiert. */
+    columnInputId(column) {
+      return `log-entry-column-${column.id}`;
     },
 
     inputPlaceholder(column) {

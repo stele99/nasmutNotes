@@ -98,7 +98,7 @@
             <div class="min-w-0 md:flex-1">
                 <?php /* leading-tight: siehe page_log.php - `truncate` schnitte
                          sonst die Unterlängen ab. */ ?>
-                <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+                <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="page-heading cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
                 <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
                  <div class="note-print-hide">
                      <?php include __DIR__ . '/partials/page_location.php'; ?>
@@ -172,14 +172,14 @@
             <button type="button" data-editor-command="heading1" @click.prevent="toggleHeading1" class="toolbar-button toolbar-more" title="Überschrift 1" aria-label="Überschrift 1" x-icon="heading-1"></button>
             <button type="button" data-editor-command="heading2" @click.prevent="toggleHeading2" class="toolbar-button" title="Überschrift 2" aria-label="Überschrift 2" x-icon="heading-2"></button>
             <button type="button" data-editor-command="bulletList" @click.prevent="toggleBulletList" class="toolbar-button" title="Aufzählung" aria-label="Aufzählung" x-icon="list"></button>
-            <button type="button" data-editor-command="orderedList" @click.prevent="toggleOrderedList" class="toolbar-button" title="Nummerierte Liste" aria-label="Nummerierte Liste" x-icon="list-ordered"></button>
+            <button type="button" data-editor-command="orderedList" @click.prevent="toggleOrderedList" class="toolbar-button toolbar-more" title="Nummerierte Liste" aria-label="Nummerierte Liste" x-icon="list-ordered"></button>
             <button type="button" data-editor-command="taskList" @click.prevent="toggleTaskList" class="toolbar-button" title="Checkliste" aria-label="Checkliste" x-icon="list-checks"></button>
             <button type="button" data-editor-command="blockquote" @click.prevent="toggleBlockquote" class="toolbar-button toolbar-more" title="Zitat" aria-label="Zitat" x-icon="quote"></button>
             <button type="button" data-editor-command="link" @click.prevent="editLink" class="toolbar-button toolbar-more" title="Link" aria-label="Link" x-icon="link"></button>
             <button type="button" data-editor-command="table" @click.prevent="insertTable" class="toolbar-button toolbar-more" title="Tabelle einfügen" aria-label="Tabelle einfügen" x-icon="table"></button>
             <?php /* Auf dem Handy gibt es weder Drag & Drop noch bequemes Einfügen aus der
                      Zwischenablage - Bilder kommen dort über Dateiauswahl und Kamera. */ ?>
-            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
+            <button x-show="!isEncrypted()" type="button" @click.prevent="pickImage" class="toolbar-button toolbar-more" title="Bild einfügen" aria-label="Bild einfügen" x-icon="image"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickCameraImage" class="toolbar-button md:hidden" title="Foto aufnehmen" aria-label="Foto aufnehmen" x-icon="camera"></button>
             <button x-show="!isEncrypted()" type="button" @click.prevent="pickAttachment" class="toolbar-button toolbar-more" title="Anhang hochladen" aria-label="Anhang hochladen" x-icon="paperclip"></button>
             <button x-show="!isEncrypted() && imageSelected" x-cloak type="button"
@@ -263,7 +263,7 @@
 
     <?php include __DIR__ . '/partials/page_location_dialog.php'; ?>
 
-    <div x-show="cryptoDialogOpen" x-cloak class="fixed inset-0 z-[130] flex items-center justify-center p-4" style="background-color: rgb(0 0 0 / 0.5);" @click.self="closeCryptoDialog" @keydown.escape.window="closeCryptoDialog" @keydown.tab="trapCryptoDialogFocus" role="dialog" aria-modal="true" aria-labelledby="note-crypto-dialog-title">
+    <div x-show="cryptoDialogOpen" x-cloak class="modal-backdrop fixed inset-0 z-[130] flex items-center justify-center p-4" style="background-color: rgb(0 0 0 / 0.5);" @click.self="closeCryptoDialog" @keydown.escape.window="closeCryptoDialog" @keydown.tab="trapCryptoDialogFocus" role="dialog" aria-modal="true" aria-labelledby="note-crypto-dialog-title">
         <form x-ref="cryptoDialog" @submit.prevent="submitCryptoDialog" class="w-full max-w-lg rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4">
                 <div>
@@ -322,7 +322,7 @@
     </div>
 
     <?php if (!empty($aiEnabled)): ?>
-        <div x-show="aiOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeAiRewriteDialog" @keydown.escape.window="closeAiRewriteDialog" role="dialog" aria-modal="true" aria-labelledby="ai-rewrite-title">
+        <div x-show="aiOpen" x-cloak class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeAiRewriteDialog" @keydown.escape.window="closeAiRewriteDialog" role="dialog" aria-modal="true" aria-labelledby="ai-rewrite-title">
             <div class="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                 <div class="flex items-start justify-between gap-4 border-b px-5 py-4 sm:px-6" style="border-color: var(--color-border);">
                     <div><h2 id="ai-rewrite-title" class="text-xl font-semibold">Text mit KI überarbeiten</h2><p class="mt-1 text-sm" style="color: var(--color-text-muted);">Korrigiert Sprache und gliedert die gesamte Notiz mit Absätzen und Überschriften.</p></div>
@@ -386,7 +386,7 @@
     <div
         x-show="imageViewerSrc"
         x-cloak
-        class="fixed inset-0 z-[120] flex items-center justify-center p-3"
+        class="modal-backdrop fixed inset-0 z-[120] flex items-center justify-center p-3"
         style="background-color: rgb(0 0 0 / 0.92);"
         @click.self="closeImageViewer"
         @keydown.escape.window="closeImageViewer"
@@ -413,7 +413,7 @@
              Das Notizbuch der Vorlage gehört dem Eigentümer und steht dem
              Empfänger nicht zur Verfügung, deshalb wird hier gefragt. Bei
              eigenen Notizen bleibt der Dialog geschlossen. */ ?>
-    <div x-show="copyDialogOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCopyDialog" @keydown.escape.window="closeCopyDialog" role="dialog" aria-modal="true" aria-labelledby="copy-dialog-title">
+    <div x-show="copyDialogOpen" x-cloak class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCopyDialog" @keydown.escape.window="closeCopyDialog" role="dialog" aria-modal="true" aria-labelledby="copy-dialog-title">
         <form @submit.prevent="copyPageToSelectedNotebook" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4">
                 <div>
@@ -438,7 +438,7 @@
         </form>
     </div>
 
-    <div x-show="compressionOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCompressionDialog" @keydown.escape.window="closeCompressionDialog" role="dialog" aria-modal="true" aria-labelledby="compression-dialog-title">
+    <div x-show="compressionOpen" x-cloak class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeCompressionDialog" @keydown.escape.window="closeCompressionDialog" role="dialog" aria-modal="true" aria-labelledby="compression-dialog-title">
         <form @submit.prevent="compressImages" class="w-full max-w-md rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4"><div><h2 id="compression-dialog-title" class="text-xl font-semibold">Bilder komprimieren</h2><p class="mt-1 text-sm" style="color: var(--color-text-muted);">Alle eingebetteten Bilder dieser Notiz serverseitig optimieren.</p></div><button type="button" @click="closeCompressionDialog" :disabled="compressionBusy" class="icon-action" aria-label="Dialog schließen" x-icon="x"></button></div>
             <div x-show="!compressionResult" x-cloak>
@@ -463,7 +463,7 @@
     <div
         x-show="historyOpen"
         x-cloak
-        class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5"
+        class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5"
         style="background-color: rgb(0 0 0 / 0.4);"
         @click.self="closeHistory"
         @keydown.escape.window="closeHistory"
@@ -546,7 +546,7 @@
     <div
         x-show="conflictDialogOpen"
         x-cloak
-        class="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5"
+        class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5"
         style="background-color: rgb(0 0 0 / 0.45);"
         @click.self="closeConflictDialog"
         @keydown.escape.window="closeConflictDialog"

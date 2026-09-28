@@ -15,7 +15,7 @@
     </div>
     <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3" aria-label="Notizbücher">
         <button type="button" @click="selectCollection('favorites')" class="notebook-item" :class="activeCollection === 'favorites' ? 'is-active' : ''" :aria-current="activeCollection === 'favorites' ? 'page' : null"><span x-icon="star"></span>Favoriten</button>
-        <button type="button" @click="selectCollection('all')" class="notebook-item" :class="activeCollection === 'all' ? 'is-active' : ''" :aria-current="activeCollection === 'all' ? 'page' : null"><span x-icon="layers"></span>Alle Notizen</button>
+        <button type="button" @click="selectCollection('all')" class="notebook-item" :class="activeCollection === 'all' ? 'is-active' : ''" :aria-current="activeCollection === 'all' ? 'page' : null"><span x-icon="layers"></span>Alle Seiten</button>
         <button type="button" @click="selectCollection('unassigned')" @dragenter.prevent="setDropTargetNotebook(null)" @dragover.prevent="setDropTargetNotebook(null)" @drop.prevent="dropPageOnNotebook(null, $event)" class="notebook-item" :class="{ 'is-active': activeCollection === 'unassigned', 'is-drop-target': isUnassignedDropTarget() }" :aria-current="activeCollection === 'unassigned' ? 'page' : null"><span x-icon="inbox"></span><span>Nicht zugewiesen</span><span x-show="isUnassignedDropTarget()" x-cloak class="ml-auto text-xs font-semibold">Hier ablegen</span></button>
         <button type="button" @click="selectCollection('shared')" class="notebook-item" :class="activeCollection === 'shared' ? 'is-active' : ''" :aria-current="activeCollection === 'shared' ? 'page' : null"><span x-icon="share-2"></span>Geteilt</button>
         <div class="mt-5 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-wide" style="color: var(--color-text-muted);">
@@ -59,15 +59,15 @@
             <div class="mt-2 flex items-center gap-2">
                 <button type="button" @click="openDialog" class="icon-action" aria-label="Offline und Einstellungen" title="Offline und Einstellungen" x-icon="settings"></button>
                 <button type="button" @click="openInfoDialog" class="icon-action" aria-label="Datenschutz und Hinweise" title="Datenschutz und Hinweise" x-icon="info"></button>
-                <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" x-icon="shield"></a><?php endif; ?>
-                <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" x-icon="log-out"></button>
+                <?php if (!empty($isAdmin)): ?><a href="/admin" class="icon-action" aria-label="Administration" title="Administration" x-icon="shield"></a><?php endif; ?>
+                <button type="button" @click="logout" class="icon-action ml-auto" aria-label="Abmelden" title="Abmelden" x-icon="log-out"></button>
             </div>
             <?php /* x-teleport: Diese Schublade fährt per CSS `translate` ein/aus,
                      was sie zum Containing Block für `position: fixed` macht -
                      ohne Teleport nach <body> säße der Dialog links in ihrer
                      Breite fest statt zentriert über dem ganzen Bildschirm. */ ?>
             <template x-teleport="body">
-            <div x-show="open" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeDialog" @keydown.escape.window="closeDialog">
+            <div x-show="open" x-cloak class="modal-backdrop fixed inset-0 z-[70] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeDialog" @keydown.escape.window="closeDialog">
                 <div class="settings-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
                     <header class="flex items-center justify-between gap-3 border-b px-6 py-4" style="border-color: var(--color-border);">
                         <div><h2 id="settings-dialog-title" class="font-semibold">Einstellungen</h2><p class="text-sm" style="color: var(--color-text-muted);" x-text="statusOnline ? 'Online' : 'Offline'"></p></div>

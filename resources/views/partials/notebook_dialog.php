@@ -1,7 +1,7 @@
 <div
     x-show="notebookDialogOpen"
     x-cloak
-    class="fixed inset-0 z-[80] flex items-center justify-center p-5"
+    class="modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-5"
     style="background-color: rgb(0 0 0 / 0.4);"
     role="dialog"
     aria-modal="true"

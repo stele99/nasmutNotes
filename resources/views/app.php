@@ -39,6 +39,8 @@
             <?php /* Abstand bleibt so groß, dass der fixierte Schalter die
                      Überschrift nicht überlagert. */ ?>
             <div class="pt-10 sm:pt-2">
+                <?php /* Unter dem fixierten Menü-Schalter, nicht darüber. */ ?>
+                <?php $syncStatusClass = 'mb-4 mt-4 rounded-md border px-3 py-2 sm:mt-0'; include __DIR__ . '/partials/sync_status.php'; ?>
                 <div class="flex items-center gap-3 sm:gap-4">
                     <img src="/icon/logo-mark.svg" alt="" width="56" height="56" class="size-10 shrink-0 sm:size-14">
                     <?php /* Ohne brauchbaren Vornamen (kein Name hinterlegt oder nur
@@ -74,7 +76,7 @@
                 <div class="mt-4 flex max-w-md items-center gap-2">
                     <form @submit.prevent="search" class="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 py-2.5" style="border-color: var(--color-border); background: var(--color-bg);">
                         <span style="color: var(--color-text-muted);" x-icon="search"></span>
-                        <input x-model="searchQuery" @input="nearbyActive = false; if (!searchQuery) searchResults = []" type="search" placeholder="Suchen und Enter drücken…" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none">
+                        <input x-model="searchQuery" @input="nearbyActive = false; if (!searchQuery) searchResults = []" type="search" enterkeyhint="search" placeholder="Suchen…" aria-label="Seiten durchsuchen" class="sidebar-search min-w-0 flex-1 bg-transparent outline-none">
                         <button type="button" x-show="searchQuery" x-cloak @click="clearSearch" class="icon-action" aria-label="Suche zurücksetzen" x-icon="x"></button>
                     </form>
                     <?php /* Umkreissuche (FR-NOTE-27): Seiten und Logbuch-Einträge mit

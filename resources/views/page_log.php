@@ -47,7 +47,7 @@
         <div class="mb-6">
             <?php /* leading-tight: `truncate` blendet aus, was über die Zeilenhöhe
                      hinausragt - bei 1.0 fiele die Unterlänge von „g" weg. */ ?>
-            <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
+            <h1 x-show="!editingPageTitle" @click="startEditingPageTitle" class="page-heading cursor-text truncate text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" title="Titel bearbeiten" x-text="pageTitle"></h1>
             <input x-show="editingPageTitle" x-cloak x-ref="titleInput" x-model="pageTitle" @blur="savePageTitle" @keydown.enter.prevent="savePageTitle" @keydown.escape.prevent="cancelPageTitleEdit" class="page-title-input w-full min-w-0 text-4xl font-semibold tracking-tight sm:text-5xl">
             <p class="mt-2 text-sm" style="color: var(--color-text-muted);" x-text="entryCountLabel()"></p>
             <?php /* Die Knöpfe stehen in der Standortzeile statt in einer eigenen
@@ -82,9 +82,66 @@
         <p x-show="error" x-cloak x-text="error" class="mb-4 rounded-lg p-4 text-sm" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent); color: var(--color-danger);" role="alert"></p>
         <p x-show="offline" x-cloak class="mb-4 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); color: var(--color-text-muted);">Offline: Einträge lassen sich erfassen und ändern, sie werden übertragen, sobald wieder Netz da ist. Spalten und Sortierung brauchen eine Verbindung.</p>
 
+        <?php /* Mobil (< 640 px) eine Liste statt der Tabelle (NFR-UI-27): Bei
+                 360 px Breite zeigte die Tabelle nur drei Spalten, der Rest lag
+                 ohne sichtbare Scrollleiste rechts außerhalb. Je Eintrag steht
+                 der Zeitpunkt oben, darunter nur die belegten Spalten. */ ?>
+        <div class="sm:hidden">
+            <div x-show="entries.length > 1 && !offline" x-cloak class="mb-3 flex items-center gap-2">
+                <label for="log-mobile-sort" class="shrink-0 text-sm" style="color: var(--color-text-muted);">Sortieren nach</label>
+                <select id="log-mobile-sort" @change="onSortSelect($event)" class="min-w-0 flex-1 rounded-md border px-3 py-2" style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-text);">
+                    <option value="occurred_at" :selected="isSortedBy('occurred_at')">Zeitpunkt</option>
+                    <template x-for="column in columns" :key="column.id">
+                        <option :value="column.id" :selected="isSortedBy(column.id)" x-text="column.name"></option>
+                    </template>
+                </select>
+                <button type="button" @click="toggleSortDirection" class="log-sort-direction btn btn-quiet shrink-0" :aria-label="sortDirectionLabel()" :title="sortDirectionLabel()" x-text="sortDirectionSymbol()"></button>
+            </div>
+            <ul class="log-card-list rounded-lg border" style="border-color: var(--color-border);">
+                <template x-for="entry in entries" :key="entry.id">
+                    <?php /* Die ganze Karte öffnet den Eintrag wie die Tabellenzeile;
+                             für Tastatur und Screenreader trägt der Stift das. */ ?>
+                    <li class="log-card" :class="canEditPage ? 'is-editable' : ''" @click="openEntry(entry)">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="font-medium">
+                                <span x-text="entryTimeLabel(entry)"></span><span x-show="isPendingEntry(entry)" x-cloak class="ml-1 inline-flex align-middle" style="color: var(--color-text-muted);" title="Noch nicht übertragen" aria-label="Noch nicht übertragen" x-icon="cloud-off"></span>
+                            </p>
+                            <button x-show="canEditPage" type="button" @click.stop="openEntry(entry)" class="icon-action -my-2 -mr-2 shrink-0" aria-label="Eintrag bearbeiten" title="Eintrag bearbeiten" x-icon="pencil"></button>
+                        </div>
+                        <dl x-show="filledColumns(entry).length > 0" class="mt-1 space-y-1 text-sm">
+                            <template x-for="column in filledColumns(entry)" :key="column.id">
+                                <div class="flex gap-3">
+                                    <dt class="w-2/5 shrink-0" style="color: var(--color-text-muted);" x-text="column.name"></dt>
+                                    <dd class="min-w-0 flex-1" :class="column.is_numeric ? 'tabular-nums' : ''">
+                                        <a x-show="hasCellMapUrl(entry, column)" :href="cellMapUrl(entry, column)" :title="cellTitle(entry, column)" target="_blank" rel="noopener" @click.stop class="inline-flex items-center gap-1 underline">
+                                            <span x-icon="map-pin"></span><span x-text="cellLabel(entry, column)"></span>
+                                        </a>
+                                        <span x-show="!hasCellMapUrl(entry, column)" x-text="cellLabel(entry, column)"></span>
+                                    </dd>
+                                </div>
+                            </template>
+                        </dl>
+                    </li>
+                </template>
+                <li x-show="!loading && entries.length === 0" class="px-4 py-10 text-center text-sm" style="color: var(--color-text-muted);">Noch keine Einträge.</li>
+                <li x-show="loading" class="px-4 py-10 text-center text-sm" style="color: var(--color-text-muted);">Lädt…</li>
+            </ul>
+            <div x-show="totalColumns().length > 0 && entries.length > 0" x-cloak class="log-card mt-3 rounded-lg border text-sm" style="border-color: var(--color-border);">
+                <p class="font-medium">Summe</p>
+                <dl class="mt-1 space-y-1">
+                    <template x-for="column in totalColumns()" :key="column.id">
+                        <div class="flex gap-3">
+                            <dt class="w-2/5 shrink-0" style="color: var(--color-text-muted);" x-text="column.name"></dt>
+                            <dd class="min-w-0 flex-1 font-medium tabular-nums" x-text="columnTotal(column)"></dd>
+                        </div>
+                    </template>
+                </dl>
+            </div>
+        </div>
+
         <?php /* Die Tabelle scrollt für sich, damit die Seite selbst bei vielen
                  Spalten nicht seitlich wandert. */ ?>
-        <div class="log-table-wrap overflow-x-auto rounded-lg border" style="border-color: var(--color-border);">
+        <div class="log-table-wrap hidden overflow-x-auto rounded-lg border sm:block" style="border-color: var(--color-border);">
             <table class="log-table w-full text-sm">
                 <thead>
                     <tr style="color: var(--color-text-muted);">
@@ -149,7 +206,7 @@
              (FR-LOG-09). */ ?>
     <?php /* Escape gilt der obersten Ebene: Liegt die Standortauswahl darüber,
              schließt sie sich zuerst - sonst verschwänden beide auf einmal. */ ?>
-    <div x-show="entryDialogOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeEntryDialog" @keydown.escape.window="locationDialogOpen || closeEntryDialog()" role="dialog" aria-modal="true" aria-labelledby="log-entry-title">
+    <div x-show="entryDialogOpen" x-cloak class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeEntryDialog" @keydown.escape.window="locationDialogOpen || closeEntryDialog()" role="dialog" aria-modal="true" aria-labelledby="log-entry-title">
         <form @submit.prevent="saveEntry" class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4 border-b px-6 py-4" style="border-color: var(--color-border);">
                 <h2 id="log-entry-title" class="text-xl font-semibold" x-text="editingEntryId ? 'Eintrag bearbeiten' : 'Neuer Eintrag'"></h2>
@@ -162,7 +219,7 @@
 
                 <template x-for="column in columns" :key="column.id">
                     <div class="mt-5">
-                        <label class="block text-sm font-medium" x-text="column.name"></label>
+                        <label :for="columnInputId(column)" class="block text-sm font-medium" x-text="column.name"></label>
                         <p x-show="column.type === 'user'" class="mt-2 text-sm" style="color: var(--color-text-muted);">Wird beim Anlegen automatisch eingetragen.</p>
                         <?php /* Bewertung: anklickbare Sterne statt Eingabefeld. Ein
                                  erneuter Klick auf den gesetzten Stern zählt zurück. */ ?>
@@ -177,10 +234,11 @@
                         </div>
                         <div x-show="column.type !== 'user' && !isRatingColumn(column)" class="mt-2 flex gap-2">
                             <input
+                                :id="columnInputId(column)"
                                 :value="valueInput(column)"
                                 @input="onValueInput(column, $event)"
                                 :type="inputType(column)"
-                                :step="inputStep(column)"
+                                :inputmode="inputMode(column)"
                                 :placeholder="inputPlaceholder(column)"
                                 :disabled="entryBusy"
                                 class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm"
@@ -211,7 +269,7 @@
 
     <?php /* Spalten des Logbuchs: anlegen, umbenennen, verschieben, löschen
              (FR-LOG-03). Die Zeitspalte gehört fest dazu und fehlt hier. */ ?>
-    <div x-show="columnDialogOpen" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeColumnDialog" @keydown.escape.window="closeColumnDialog" role="dialog" aria-modal="true" aria-labelledby="log-columns-title">
+    <div x-show="columnDialogOpen" x-cloak class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5" style="background-color: rgb(0 0 0 / 0.45);" @click.self="closeColumnDialog" @keydown.escape.window="closeColumnDialog" role="dialog" aria-modal="true" aria-labelledby="log-columns-title">
         <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
             <div class="flex items-start justify-between gap-4 border-b px-6 py-4" style="border-color: var(--color-border);">
                 <div>

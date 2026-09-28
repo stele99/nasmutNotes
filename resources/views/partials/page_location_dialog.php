@@ -4,7 +4,7 @@
     x-cloak
     <?php /* Über den Eintragsdialog des Logbuchs (z-100), aus dem die
              Ortsspalte diese Auswahl heraus öffnet. */ ?>
-    class="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-5"
+    class="modal-backdrop fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-5"
     style="background-color: rgb(0 0 0 / 0.45);"
     @click.self="closeLocationDialog"
     @keydown.escape.window="closeLocationDialog"

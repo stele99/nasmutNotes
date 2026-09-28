@@ -60,8 +60,9 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
-  /* Unterbindet den Doppeltipp-Zoom auf Touchgeräten (NFR-UI-14); der
-     meta-viewport-Eintrag allein reicht auf iOS Safari nicht aus. */
+  /* Unterbindet nur den Doppeltipp-Zoom auf Touchgeräten (NFR-UI-14) - er
+     vergrößerte versehentlich beim schnellen Antippen. Das Aufziehen mit zwei
+     Fingern bleibt erlaubt (WCAG 1.4.4). */
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -225,6 +226,35 @@ textarea::placeholder {
 .notebook-drawer {
   height: 100vh;
   height: calc(100dvh - var(--keyboard-inset, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Querformat auf Telefonen mit Notch oder Kameraloch: `viewport-fit=cover`
+   lässt die Anwendung bis an den Rand reichen, also muss sie die Einschnitte
+   selbst aussparen. Links liegt ab `md` die Seitenliste bzw. die Schublade,
+   rechts die Inhaltsspalte; mobil füllt jede Ebene die ganze Breite und
+   braucht beide Seiten. Ohne Einschnitt sind die Werte 0. */
+.page-sidebar,
+.notebook-drawer {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.workspace-main {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+@media (max-width: 767px) {
+  .page-sidebar,
+  .notebook-drawer {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  .workspace-main {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+}
+
+.toast-host {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -614,6 +644,57 @@ body.is-resizing-sidebar {
   }
 }
 
+/* Mobil wachsen die Werkzeuge auf 44 px (NFR-UI-16), und die eingeklappte
+   Leiste bleibt einzeilig (NFR-UI-24): Reicht die Breite nicht - etwa mit
+   Diktat und Bild-Beschriftung -, scrollt sie seitlich, statt für ein
+   einzelnes Werkzeug eine zweite Zeile zu belegen. Von der Höhe bleibt bei
+   eingeblendeter Tastatur ohnehin nur ein Drittel. Der Mehr-Schalter klebt am
+   rechten Rand und bleibt so auch beim Scrollen erreichbar. Die Wischgeste der
+   Arbeitsfläche lässt seitlich scrollbare Bereiche aus (blocksSwipe). Eine
+   Container-Query greift hier nicht: Sie erreicht nur die Kinder der Leiste,
+   nicht die Leiste selbst. */
+@media (max-width: 767px) {
+  .editor-toolbar-collapsible .toolbar-button,
+  .editor-toolbar-collapsible .toolbar-divider {
+    flex-shrink: 0;
+  }
+
+  /* 40 px breit, ohne Abstand dazwischen: So passen die acht Werkzeuge der
+     eingeklappten Zeile auch bei 360 px Fensterbreite nebeneinander, ohne
+     dass der klebende Mehr-Schalter „Rückgängig" verdeckt. Die Flächen
+     stoßen aneinander, ein Tipp daneben trifft also immer ein Werkzeug statt
+     ins Leere oder in den Text. */
+  .editor-toolbar-collapsible .toolbar-button {
+    height: 2.75rem;
+    width: 2.5rem;
+  }
+
+  .editor-toolbar-collapsible:not(.is-expanded) .toolbar-divider {
+    display: none;
+  }
+
+  .editor-toolbar-collapsible:not(.is-expanded) {
+    column-gap: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .editor-toolbar-collapsible:not(.is-expanded)::-webkit-scrollbar {
+    display: none;
+  }
+
+  .editor-toolbar-collapsible:not(.is-expanded) .toolbar-more-toggle {
+    background: var(--color-bg);
+    box-shadow: -0.75rem 0 0.75rem -0.25rem var(--color-bg);
+    margin-left: auto;
+    position: sticky;
+    right: 0;
+  }
+}
+
 /* Der Versatz folgt der gemessenen Kopfhöhe (notePage.js), nicht der
    Mindesthöhe: Bricht der Kopf mobil auf zwei Zeilen um, klebte die
    Werkzeugleiste sonst unter dem Kopf und würde von ihm verdeckt. */
@@ -647,6 +728,24 @@ body.is-resizing-sidebar {
   padding-bottom: 0.5rem;
   padding-top: 0.5rem;
   top: var(--viewport-shift, 0px);
+}
+
+/* Zentrierte Dialoge bei eingeblendeter Tastatur: iOS rechnet die Tastatur
+   weder in `vh` noch in `dvh` ein (viewport.js). Mittig ausgerichtet und bis
+   85 % der Bildschirmhöhe hoch, lag der Fuß mit „Speichern" hinter der
+   Tastatur, und Safari schob den Ausschnitt, um das Eingabefeld freizulegen.
+   Der Dialog rückt deshalb nach oben und endet über der Tastatur; sein Inhalt
+   scrollt in ihm. Passt er so in den sichtbaren Streifen, hat Safari keinen
+   Grund mehr zu verschieben - dieselbe Überlegung wie bei .workspace-shell. */
+:root[data-keyboard="open"] .modal-backdrop {
+  align-items: flex-start;
+  padding-bottom: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+:root[data-keyboard="open"] .modal-backdrop > * {
+  max-height: calc(100dvh - var(--keyboard-inset, 0px) - 1.5rem);
+  overflow-y: auto;
 }
 
 /* Zeigt am Schalter selbst, dass die Seite geteilt ist - mobil steht daneben
@@ -759,13 +858,32 @@ select {
   cursor: pointer;
 }
 
-.offline-banner {
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  border-bottom: 1px solid var(--color-border);
+/* Sync-Hinweis über dem Inhalt (NFR-UI-26, partials/sync_status.php). Kein
+   `display` hier - siehe dort. Der Punkt trägt dieselben Farben wie die
+   Statuszeile der Notizbuchleiste, der Text sagt es zusätzlich in Worten. */
+.sync-status {
+  background: var(--color-bg-subtle);
+  border-color: var(--color-border);
   color: var(--color-text);
   font-size: 0.875rem;
-  padding: 0.5rem 1rem;
-  text-align: center;
+  line-height: 1.35;
+}
+
+.sync-status.is-warning {
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-bg));
+  color: var(--color-danger);
+}
+
+.sync-status-dot {
+  background: var(--color-text-muted);
+  border-radius: 9999px;
+  flex-shrink: 0;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.sync-status.is-warning .sync-status-dot {
+  background: var(--color-danger);
 }
 
 button:disabled,
@@ -833,8 +951,8 @@ button:disabled,
   color: var(--color-text);
 }
 
-/* Öffnet die Seitenleiste auf Touchgeräten. Da NFR-UI-14 das Zoomen sperrt,
-   braucht der Schalter eine sichere Trefferfläche von 48 px. */
+/* Öffnet die Seitenleiste auf Touchgeräten; mobil wächst die Trefferfläche
+   auf 44 px (NFR-UI-16, siehe unten). */
 /* Kein `display` hier: ungeschichtetes CSS gewinnt in Tailwind 4 gegen jede
    Utility-Klasse, `md:hidden` würde sonst wirkungslos bleiben. Die Anzeige
    steuern die Utilities `flex` / `md:hidden` an den Schaltern selbst. */
@@ -957,6 +1075,50 @@ button:disabled,
 
 .log-row:hover {
   background: color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+/* Mobile Liste des Logbuchs (NFR-UI-27, page_log.php). */
+.log-card {
+  padding: 0.75rem 1rem;
+}
+
+.log-card + .log-card {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.log-card.is-editable {
+  cursor: pointer;
+}
+
+.log-card.is-editable:active {
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+.log-card dt,
+.log-card dd {
+  overflow-wrap: anywhere;
+}
+
+.log-card .icon-action {
+  padding: 0.75rem;
+}
+
+.log-card .icon-action svg {
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
+.log-sort-direction {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+/* „Eintrag anlegen" und „Diktieren" neben dem Standort - mobil 44 px hoch. */
+@media (max-width: 767px) {
+  .log-page .btn {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
 }
 
 .log-sort {
@@ -2029,6 +2191,19 @@ button:disabled,
     line-height: 1.4;
   }
 
+  /* Zeilenaktionen (Bearbeiten, Löschen), Filter im Kapitelkopf und
+     „Aufgabe hinzufügen": 44 px statt 28 px (NFR-UI-16). Bearbeiten und
+     Löschen stehen direkt nebeneinander - zu kleine Flächen führten dort zum
+     Fehltipp auf den Papierkorb. */
+  .task-board .icon-action {
+    padding: 0.75rem;
+  }
+
+  .task-board .icon-action svg {
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+
   /* Sidebar-Schrift und die Bedienelemente ganz oben (Zurück/Schließen,
      "+Notiz"/"+Aufgaben") sind auf dem Handy sonst zu klein zum bequemen
      Lesen und Treffen. */
@@ -2055,6 +2230,27 @@ button:disabled,
   .page-sidebar .icon-action svg {
     height: 1.375rem;
     width: 1.375rem;
+  }
+
+  /* Notizbuch-Schublade: „Notizbuch anlegen", das Menü je Notizbuch und die
+     Statuszeile unten (Einstellungen, Hinweise, Administration, Abmelden) -
+     sonst 28 px, direkt über der Gestenleiste des Telefons (NFR-UI-16). */
+  .notebook-drawer .icon-action {
+    padding: 0.75rem;
+  }
+
+  .notebook-drawer .icon-action svg {
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+
+  .notebook-drawer .notebook-item,
+  .notebook-drawer .offline-status {
+    min-height: 2.75rem;
+  }
+
+  .notebook-drawer .offline-status {
+    font-size: 0.875rem;
   }
 
   .page-sidebar .btn {
@@ -2092,6 +2288,8 @@ button:disabled,
      .sidebar-toggle-Regel oben durch spätere Position im Stylesheet. */
   .home-menu-toggle {
     height: 2.5rem;
+    left: calc(1.5rem + env(safe-area-inset-left, 0px));
+    top: calc(1rem + env(safe-area-inset-top, 0px));
     width: 2.5rem;
   }
 
@@ -2130,11 +2328,30 @@ button:disabled,
 
 }
 
+/* Seitentitel mobil: Ohne Breadcrumb im Kopf ist die Überschrift die einzige
+   Stelle, an der der Titel steht - auf eine Zeile gekürzt fehlte gerade der
+   unterscheidende Teil („Baustelle Müller – Au…"). Bis zu drei Zeilen, erst
+   dann Auslassungspunkte. `screen`, weil ein A4-Druck ebenfalls unter 768 px
+   breit ist und dort nichts abgeschnitten werden darf. */
+@media screen and (max-width: 767px) {
+  .page-heading {
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    display: -webkit-box;
+    font-size: 2rem;
+    line-height: 1.15;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    white-space: normal;
+  }
+}
+
 /* Ab hier wächst der Öffnet-Notizbücher-Schalter auf der Workspace-Startseite
    im selben Schritt wie das Logo (sm:size-14). */
 @media (min-width: 640px) {
   .home-menu-toggle {
     height: 3.5rem;
+    left: calc(2.5rem + env(safe-area-inset-left, 0px));
     width: 3.5rem;
   }
 

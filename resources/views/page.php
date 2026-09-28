@@ -38,6 +38,7 @@
         data-page-can-edit="<?= !empty($page['can_edit']) ? '1' : '0' ?>"
         data-page-encrypted="<?= !empty($page['is_encrypted']) ? '1' : '0' ?>"
     >
+        <?php $syncStatusClass = 'border-b px-4 py-2'; include __DIR__ . '/partials/sync_status.php'; ?>
         <?php /* Der Rückweg aus dem Seiteninhalt liegt mobil im Kopf der Seite
                  selbst (siehe page_note.php / page_task.php) - dort steht er
                  neben den übrigen Aktionen, statt den Text zu überlagern. */ ?>
@@ -55,7 +56,7 @@
             role="dialog"
             aria-modal="true"
             aria-labelledby="share-dialog-title"
-            class="fixed inset-0 z-50 flex items-center justify-center p-5"
+            class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-5"
             style="background-color: rgb(0 0 0 / 0.4);"
             @click.self="closeShareDialog"
             @keydown.escape.window="closeShareDialog"

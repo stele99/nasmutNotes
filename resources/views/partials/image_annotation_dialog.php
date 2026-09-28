@@ -97,7 +97,7 @@
         </div>
     </div>
 
-    <div x-show="annoTextOpen" x-cloak class="fixed inset-0 z-[140] flex items-center justify-center p-5"
+    <div x-show="annoTextOpen" x-cloak class="modal-backdrop fixed inset-0 z-[140] flex items-center justify-center p-5"
          style="background-color: rgb(0 0 0 / 0.45);" @click.self="annoCancelText"
          role="dialog" aria-modal="true" aria-labelledby="anno-text-title">
         <div class="w-full max-w-md rounded-xl border p-5"
@@ -116,7 +116,7 @@
         </div>
     </div>
 
-    <div x-show="annoLengthOpen" x-cloak class="fixed inset-0 z-[140] flex items-center justify-center p-5"
+    <div x-show="annoLengthOpen" x-cloak class="modal-backdrop fixed inset-0 z-[140] flex items-center justify-center p-5"
          style="background-color: rgb(0 0 0 / 0.45);" @click.self="annoCancelLength"
          role="dialog" aria-modal="true" aria-labelledby="anno-length-title">
         <div class="w-full max-w-sm rounded-xl border p-5"

@@ -14,7 +14,7 @@
          der dynamische aria-label den Dialog statt einer ID - doppelte IDs
          wären ungültig. */ ?>
 <template x-teleport="body">
-<div x-show="isVoiceDialogOpen()" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeVoiceDialog" @keydown.escape.window="closeVoiceDialog">
+<div x-show="isVoiceDialogOpen()" x-cloak class="modal-backdrop fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5" style="background-color: rgb(0 0 0 / 0.4);" @click.self="closeVoiceDialog" @keydown.escape.window="closeVoiceDialog">
     <div class="relative flex w-full max-w-md flex-col overflow-hidden rounded-xl border" role="dialog" aria-modal="true" :aria-label="voiceDialogTitle()" style="border-color: var(--color-border); background: var(--color-bg); box-shadow: var(--shadow-md);">
         <?php /* Roter Saum, solange wirklich aufgenommen wird - das Overlay
                 liest sich damit sofort als "Recording". */ ?>

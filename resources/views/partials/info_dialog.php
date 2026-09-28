@@ -1,7 +1,7 @@
 <div
     x-show="infoDialogOpen"
     x-cloak
-    class="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5"
+    class="modal-backdrop fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5"
     style="background-color: rgb(0 0 0 / 0.5);"
     @click.self="dismissInfoDialog"
     @keydown.escape.window="dismissInfoDialog"

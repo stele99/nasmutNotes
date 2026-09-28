@@ -5,7 +5,7 @@
 <div
     x-show="nearbyDialogOpen"
     x-cloak
-    class="fixed inset-0 z-[100] flex items-center justify-center p-5"
+    class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-5"
     style="background-color: rgb(0 0 0 / 0.45);"
     @click.self="closeNearbyDialog"
     @keydown.escape.window="closeNearbyDialog"

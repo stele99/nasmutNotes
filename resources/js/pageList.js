@@ -559,7 +559,7 @@ export function pageList() {
         // lokal nicht entstehen können. Die Notiz selbst bekommt eine
         // negative Temporär-Kennung und wird beim nächsten Sync angelegt.
         if (type !== 'note') {
-          window.alert('Offline können nur Notizen angelegt werden. Task-Seiten und Logbücher brauchen eine Verbindung.');
+          window.alert('Offline können nur Notizen angelegt werden. Aufgabenlisten und Logbücher brauchen eine Verbindung.');
           return;
         }
         if (this.activeCollection === 'shared' || this.activeCollection === 'favorites' || this.activeCollection === 'trash') {
@@ -584,7 +584,8 @@ export function pageList() {
         await this.navigate(page);
         return;
       }
-      const title = type === 'note' ? 'Neue Notiz' : 'Neue Task-Seite';
+      const titles = { note: 'Neue Notiz', task: 'Neue Aufgabenliste', log: 'Neues Logbuch' };
+      const title = titles[type] || 'Neue Seite';
       if (this.activeCollection === 'shared' || this.activeCollection === 'favorites' || this.activeCollection === 'trash') {
         return;
       }
@@ -950,7 +951,7 @@ export function pageList() {
      * Rein datenseitig: Liegen mehr Seiten vor als gerade gezeigt werden?
      * Ob überhaupt schrittweise geladen wird, entscheidet die jeweilige
      * Ansicht - die Übersicht im Reiter „Zuletzt bearbeitet", die
-     * Seitenleiste in der Sammlung „Alle Notizen". Der Reiter gehört allein
+     * Seitenleiste in der Sammlung „Alle Seiten". Der Reiter gehört allein
      * der Übersicht; in der Seitenleiste stellt ihn die Umkreissuche auf
      * „location" (siehe nearbySearch.js), ohne ihn je zurückzusetzen - eine
      * Abfrage darauf ließe das Nachladen dort dauerhaft stehen bleiben.
@@ -1024,7 +1025,7 @@ export function pageList() {
       if (this.searchQuery.trim() !== '') {
         return this.searchResults;
       }
-      // „Alle Notizen" wächst wie die Übersicht schrittweise nach, sortiert
+      // „Alle Seiten" wächst wie die Übersicht schrittweise nach, sortiert
       // rein nach Änderungsdatum (siehe orderedPages/recentLimit).
       if (this.activeCollection === 'all') {
         return this.recentPages();
@@ -1079,9 +1080,9 @@ export function pageList() {
     },
 
     /**
-     * Sammlungen, die die Suche einschränken. „Alle Notizen" und die
+     * Sammlungen, die die Suche einschränken. „Alle Seiten" und die
      * Übersicht (`home`) suchen bewusst überall - wer den ganzen Workspace
-     * durchsuchen will, wählt vorne „Alle Notizen".
+     * durchsuchen will, wählt vorne „Alle Seiten".
      */
     searchCollection() {
       return ['notebook', 'unassigned', 'shared', 'favorites'].includes(this.activeCollection);
@@ -1126,7 +1127,7 @@ export function pageList() {
 
     searchUrl(query, offset) {
       const parameters = new URLSearchParams({ q: query });
-      // Die Seitenleiste sucht in ihrer Sammlung; „Alle Notizen" und die
+      // Die Seitenleiste sucht in ihrer Sammlung; „Alle Seiten" und die
       // Übersicht durchsuchen den ganzen Workspace.
       if (this.searchCollection()) {
         parameters.set('collection', this.activeCollection);
