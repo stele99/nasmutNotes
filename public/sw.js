@@ -76,6 +76,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Teilantworten (`?_partial=main`) für Seitenwechsel innerhalb der App
+  // enthalten nur <main>. Sie gehören nicht in den Navigations-Cache: Dort
+  // würde eine Offline-Navigation sonst eine Seite ohne Hülle bekommen. Die
+  // App legt sie selbst in der IndexedDB ab (pageList.js).
+  if (url.searchParams.has('_partial')) {
+    return;
+  }
+
   if (url.pathname.startsWith('/offline-attachments/')) {
     event.respondWith(offlineAttachmentStrategy(url.pathname));
     return;

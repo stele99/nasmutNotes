@@ -2,6 +2,7 @@ import { apiFetch } from '../api.js';
 import * as db from './db.js';
 import { isRecordType, syncRecordItem } from './records.js';
 import { kindLabel, resolvePageTitle } from './blockedDetails.js';
+import { SessionRedirectError, fetchFragment } from '../navigationFetch.js';
 
 export const CACHE_LIMITS = [100, 250, 500, 1000, 5000, 10000, 'all'];
 const ATTACHMENT_CACHE = 'shareinfo-attachments-v1';
@@ -1382,17 +1383,17 @@ export async function prefetchSelected(options = {}) {
         if (page.type === 'note' && !page.is_encrypted) {
           await prefetchPageAttachments(page);
         }
-        const htmlResponse = await fetch(`/app/page/${page.id}`, {
-          credentials: 'same-origin',
-          signal,
-          headers: {
-            Accept: 'text/html',
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-        });
-        // redirected = abgelaufene Sitzung -> es käme die Login-Seite in den Cache.
-        if (htmlResponse.ok && !htmlResponse.redirected) {
-          await cacheDocument(`/app/page/${page.id}`, await htmlResponse.text());
+        // Nur <main> - mehr braucht der Seitenwechsel nicht, und die ganze
+        // Seite kostete je Notiz ein Vielfaches (navigationFetch.js).
+        const documentUrl = `/app/page/${page.id}`;
+        try {
+          await cacheDocument(documentUrl, await fetchFragment(documentUrl, signal));
+        } catch (error) {
+          // Abgelaufene Sitzung (es käme die Login-Seite in den Cache) oder
+          // Fehlerstatus: nichts ablegen, wie bisher ohne Meldung.
+          if (!(error instanceof SessionRedirectError) && !error.status) {
+            throw error;
+          }
         }
       } catch (error) {
         if (error.name !== 'AbortError') {

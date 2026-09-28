@@ -5,6 +5,14 @@ import { captureLocationOnCreate } from './geo.js';
 import { nearbySearchMixin } from './nearbySearch.js';
 import { showToast } from './toast.js';
 import {
+  SessionRedirectError,
+  coolFragment,
+  fetchFragment,
+  takeWarmFragment,
+  warmFragment,
+  within,
+} from './navigationFetch.js';
+import {
   cacheDocument,
   cacheNotebooks,
   cachePageList,
@@ -19,6 +27,46 @@ import {
   syncOutbox,
   updateLocalPageTitle,
 } from './offline/runtime.js';
+
+/**
+ * Liegt eine gespeicherte Fassung vor, wartet der Seitenwechsel höchstens so
+ * lange aufs Netz und zeigt dann die gespeicherte; der Abruf läuft im
+ * Hintergrund weiter und frischt sie auf. Bei schlechtem Mobilfunk bleibt die
+ * App so bedienbar, statt bis zum Abbruch durch den Browser zu hängen.
+ */
+const SLOW_NAVIGATION_MS = 2500;
+/** Ohne gespeicherte Fassung: danach Rückfall auf die Offline-Darstellung. */
+const HARD_NAVIGATION_MS = 15_000;
+/** Kurze Wechsel sollen nicht flackern - der Balken erscheint erst danach. */
+const NAVIGATION_INDICATOR_DELAY_MS = 150;
+
+// Modulweit statt je Komponente: Übersicht und Seitenleiste sind zwei
+// pageList-Instanzen, navigieren aber dieselbe Hauptfläche.
+let navigationSeq = 0;
+let navigationAbort = null;
+let navigationIndicatorTimer = 0;
+let slowNavigationNoticeShown = false;
+
+/** Ladebalken am oberen Rand (app.css, `html[data-navigating]`). */
+function showNavigationIndicator() {
+  window.clearTimeout(navigationIndicatorTimer);
+  navigationIndicatorTimer = window.setTimeout(() => {
+    document.documentElement.dataset.navigating = 'true';
+  }, NAVIGATION_INDICATOR_DELAY_MS);
+}
+
+function hideNavigationIndicator() {
+  window.clearTimeout(navigationIndicatorTimer);
+  delete document.documentElement.dataset.navigating;
+}
+
+function noteSlowNavigation() {
+  if (slowNavigationNoticeShown) {
+    return;
+  }
+  slowNavigationNoticeShown = true;
+  showToast('Langsame Verbindung – gespeicherte Fassung angezeigt, sie wird im Hintergrund aktualisiert.');
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -278,6 +326,9 @@ export function pageList() {
     searchLoadingMore: false,
     searchLoading: false,
     navigating: false,
+    // Angetippte Seite, solange sie lädt - die Zeile zeigt das sofort an.
+    pendingPageId: null,
+    navigationSeq: 0,
     activeCollection: 'home',
     activeNotebookId: null,
     selectedPageIds: [],
@@ -829,18 +880,86 @@ export function pageList() {
       if (!page || !page.id) {
         return;
       }
-      await this.navigateTo(this.pageUrl(page), page, false);
+      await this.navigateTo(this.pageUrl(page), page, false, { fresh: true });
     },
 
-    async navigateTo(url, page = null, pushHistory = true) {
-      if (this.navigating) {
-        return;
+    /**
+     * Beginnt den Abruf schon beim Berühren eines Eintrags (pointerdown) -
+     * bis zum Klick vergeht sonst ungenutzte Zeit. Scrollt der Finger statt
+     * zu tippen, bricht pointercancel den Abruf wieder ab.
+     */
+    warmPage(page) {
+      if (page && Number(page.id) > 0 && navigator.onLine) {
+        warmFragment(this.pageUrl(page));
+      }
+    },
+
+    coolPage(page) {
+      if (page) {
+        coolFragment(this.pageUrl(page));
+      }
+    },
+
+    isPendingPage(page) {
+      return this.pendingPageId !== null && Number(page?.id) === this.pendingPageId;
+    },
+
+    /**
+     * Holt <main> der Zielseite (`?_partial=main`). Mit gespeicherter Fassung
+     * wird höchstens SLOW_NAVIGATION_MS auf das Netz gewartet, ohne sie
+     * höchstens HARD_NAVIGATION_MS. `fresh` verzichtet auf die gespeicherte
+     * Fassung - nach einer Änderung an der Seite selbst wäre sie veraltet.
+     */
+    async loadNavigationHtml(url, fresh = false) {
+      const warmed = takeWarmFragment(url);
+      const controller = warmed?.controller || new AbortController();
+      const fetching = warmed?.promise || fetchFragment(url, controller.signal);
+      navigationAbort = controller;
+
+      const cached = fresh ? null : await readCachedDocument(url).catch(() => null);
+      if (cached) {
+        const result = await within(fetching, SLOW_NAVIGATION_MS);
+        if (result) {
+          await cacheDocument(url, result.value).catch(() => undefined);
+          return result.value;
+        }
+        // Der Abruf läuft weiter und frischt nur noch den Speicher auf - ein
+        // späterer Wechsel darf ihn deshalb nicht mehr abbrechen.
+        navigationAbort = null;
+        fetching.then((html) => cacheDocument(url, html)).catch(() => undefined);
+        noteSlowNavigation();
+        return cached;
       }
 
+      const hardTimer = window.setTimeout(() => controller.abort(), HARD_NAVIGATION_MS);
+      try {
+        const html = await fetching;
+        await cacheDocument(url, html).catch(() => undefined);
+        return html;
+      } finally {
+        window.clearTimeout(hardTimer);
+      }
+    },
+
+    async navigateTo(url, page = null, pushHistory = true, { fresh = false } = {}) {
+      // Ein neuer Tipp gewinnt: Der laufende Wechsel wird abgebrochen, statt
+      // den neuen Tipp still zu verwerfen - das wirkte wie eine App, die
+      // nicht reagiert.
+      const seq = ++navigationSeq;
+      const isCurrent = () => seq === navigationSeq;
+      navigationAbort?.abort();
+      navigationAbort = null;
+
+      this.navigationSeq = seq;
       this.navigating = true;
+      this.pendingPageId = page ? Number(page.id) : null;
+      showNavigationIndicator();
       try {
         if (typeof window.__prepareWorkspaceNavigation === 'function') {
           await window.__prepareWorkspaceNavigation();
+        }
+        if (!isCurrent()) {
+          return;
         }
 
         let html = null;
@@ -851,20 +970,17 @@ export function pageList() {
             // Antwort liefern und unter der Temporär-URL cachen.
             html = offlinePageHtml(page);
           } else {
-            const response = await fetch(url, {
-              credentials: 'same-origin',
-              headers: {
-                Accept: 'text/html',
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-            });
-            if (!response.ok) {
-              throw new Error(`Navigation fehlgeschlagen (${response.status})`);
-            }
-            html = await response.text();
-            await cacheDocument(url, html);
+            html = await this.loadNavigationHtml(url, fresh);
           }
         } catch (error) {
+          if (!isCurrent()) {
+            return;
+          }
+          // Abgelaufene Sitzung: zur Anmeldung, nicht zur gespeicherten Fassung.
+          if (error instanceof SessionRedirectError) {
+            window.location.href = url;
+            return;
+          }
           html = await readCachedDocument(url);
           if (!html && page) {
             html = offlinePageHtml(page);
@@ -882,6 +998,9 @@ export function pageList() {
           if (!html) {
             throw error;
           }
+        }
+        if (!isCurrent()) {
+          return;
         }
 
         const documentParser = new DOMParser();
@@ -910,13 +1029,25 @@ export function pageList() {
         window.Alpine?.initTree(nextMain);
         window.scrollTo(0, 0);
       } catch (error) {
+        if (!isCurrent()) {
+          return;
+        }
         if (navigator.onLine) {
           window.location.href = url;
         } else {
           window.alert('Diese Seite ist offline nicht verfügbar. Bitte zuerst online laden.');
         }
       } finally {
-        this.navigating = false;
+        if (isCurrent()) {
+          navigationAbort = null;
+          hideNavigationIndicator();
+        }
+        // Nur der letzte eigene Wechsel setzt zurück; ein abgelöster darf die
+        // Markierung des neueren nicht löschen.
+        if (this.navigationSeq === seq) {
+          this.navigating = false;
+          this.pendingPageId = null;
+        }
       }
     },
 

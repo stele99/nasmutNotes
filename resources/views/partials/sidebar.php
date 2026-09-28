@@ -58,7 +58,7 @@
     <nav class="min-h-0 flex-1 overflow-y-auto pb-3" aria-label="Seiten">
         <div x-show="!nearbyActive">
             <template x-for="page in filteredPages()" :key="page.id">
-                <div class="page-card group cursor-pointer px-4 py-3" :class="{ 'is-current font-medium': page.id === currentPageId, 'is-selected': isPageSelected(page.id) }" :draggable="!page.is_shared && activeCollection !== 'trash'" role="link" tabindex="0" :aria-selected="isPageSelected(page.id)" @click="handlePageClick(page, $event)" @keydown.enter.prevent="handlePageClick(page, $event)" @keydown.space.prevent="handlePageClick(page, $event)" @dragstart.stop="beginPageDrag(page, $event)" @dragend="endPageDrag">
+                <div class="page-card group cursor-pointer px-4 py-3" :class="{ 'is-current font-medium': page.id === currentPageId, 'is-selected': isPageSelected(page.id), 'is-pending': isPendingPage(page) }" @pointerdown="warmPage(page)" @pointercancel="coolPage(page)" :draggable="!page.is_shared && activeCollection !== 'trash'" role="link" tabindex="0" :aria-selected="isPageSelected(page.id)" @click="handlePageClick(page, $event)" @keydown.enter.prevent="handlePageClick(page, $event)" @keydown.space.prevent="handlePageClick(page, $event)" @dragstart.stop="beginPageDrag(page, $event)" @dragend="endPageDrag">
                     <div class="flex items-start gap-2">
                         <span x-show="page.type === 'task'" class="mt-0.5 shrink-0" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
                         <span x-show="page.type === 'log'" class="mt-0.5 shrink-0" style="color: var(--color-text-muted);" x-icon="scroll-text"></span>

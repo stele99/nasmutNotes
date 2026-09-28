@@ -1,3 +1,8 @@
+<?php /* Seitenwechsel innerhalb der App (pageList.js, `?_partial=main`)
+         brauchen nur <main> - die Hülle mit Notizbuchleiste, Schublade und
+         Dialogen steht schon im Dokument und machte zwei Drittel der
+         Antwort aus. */ ?>
+<?php if (empty($partial)): ?>
 <script nonce="<?= e($cspNonce ?? '') ?>" data-cfasync="false">window.__CURRENT_PAGE_ID__ = <?= (int) $page['id'] ?>; window.__CURRENT_PAGE_TITLE__ = <?= json_encode($page['title'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_IS_SHARED__ = <?= !empty($page['is_shared']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_PERMISSION__ = <?= json_encode($page['share_permission'] ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__CURRENT_PAGE_CAN_EDIT__ = <?= !empty($page['can_edit']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_IS_ENCRYPTED__ = <?= !empty($page['is_encrypted']) ? 'true' : 'false' ?>; window.__CURRENT_PAGE_VOICE_TEMPLATE__ = <?= isset($page['voice_template_id']) && $page['voice_template_id'] !== null ? (int) $page['voice_template_id'] : 'null' ?>;</script>
 <div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
     <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
@@ -26,6 +31,7 @@
     <?php include __DIR__ . '/partials/notebook_share_dialog.php'; ?>
     <?php include __DIR__ . '/partials/shortcuts_dialog.php'; ?>
     <?php include __DIR__ . '/partials/toast_host.php'; ?>
+<?php endif; ?>
     <main
         id="main-content"
         tabindex="-1"
@@ -146,4 +152,6 @@
             </form>
         </div>
     </main>
+<?php if (empty($partial)): ?>
 </div>
+<?php endif; ?>

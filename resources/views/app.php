@@ -1,3 +1,8 @@
+<?php /* Seitenwechsel innerhalb der App (pageList.js, `?_partial=main`)
+         brauchen nur <main> - die Hülle mit Notizbuchleiste, Schublade und
+         Dialogen steht schon im Dokument und machte zwei Drittel der
+         Antwort aus. */ ?>
+<?php if (empty($partial)): ?>
 <div class="workspace-shell flex h-dvh overflow-hidden" x-data="workspaceShell" @close-sidebar.window="showContent()" @pages-changed.window="refreshNotebooks" @touchstart="startMobileSwipe($event)" @touchmove="moveMobileSwipe($event)" @touchend="endMobileSwipe($event)" @touchcancel="cancelMobileSwipe()">
     <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
     <?php /* Mobil decken beide Leisten den Bildschirm vollständig ab; eine
@@ -26,6 +31,7 @@
     <?php include __DIR__ . '/partials/info_dialog.php'; ?>
     <?php include __DIR__ . '/partials/shortcuts_dialog.php'; ?>
     <?php include __DIR__ . '/partials/toast_host.php'; ?>
+<?php endif; ?>
     <main id="main-content" tabindex="-1" class="workspace-main min-w-0 flex-1 h-dvh overflow-y-auto">
         <?php /* Die Übersicht ist mobil der Einstieg und hat keine eigene
                  Kopfzeile; der Weg zu den Notizbüchern liegt deshalb hier als
@@ -128,7 +134,7 @@
                 <p x-show="searchQuery.trim() !== '' && searchLoading" x-cloak class="py-6 text-sm" style="color: var(--color-text-muted);">Suche läuft…</p>
                 <div x-show="(searchQuery.trim() !== '' || workspaceTab !== 'location') && !searchLoading" class="divide-y divide-[color:var(--color-border)]">
                     <template x-for="page in (searchQuery.trim() !== '' ? searchResults : workspacePages())" :key="page.id">
-                        <a :href="pageUrl(page)" @click.prevent="navigate(page)" class="flex items-start gap-3 py-4 hover:opacity-70">
+                        <a :href="pageUrl(page)" @click.prevent="navigate(page)" @pointerdown="warmPage(page)" @pointercancel="coolPage(page)" class="page-link flex items-start gap-3 py-4 hover:opacity-70" :class="isPendingPage(page) ? 'is-pending' : ''">
                             <span x-show="page.type === 'note' && !page.is_encrypted" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="file-text"></span>
                             <span x-show="page.type === 'note' && page.is_encrypted" class="pt-0.5" style="color: var(--color-accent);" title="Verschlüsselte Notiz" x-icon="lock"></span>
                             <span x-show="page.type === 'task'" class="pt-0.5" style="color: var(--color-text-muted);" x-icon="list-todo"></span>
@@ -159,4 +165,6 @@
             <?php include __DIR__ . '/partials/nearby_search_dialog.php'; ?>
         </section>
     </main>
+<?php if (empty($partial)): ?>
 </div>
+<?php endif; ?>

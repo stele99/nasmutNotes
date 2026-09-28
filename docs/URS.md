@@ -550,6 +550,9 @@ LIMIT 20;
 | NFR-PERF-05 | Autosave gedrosselt; keine parallelen Speicheranfragen für dieselbe Seite. | S |
 | NFR-PERF-06 | JS-Bundle (gzip) < 200 kB für die Hauptansicht; TipTap wird nur auf Notizseiten geladen (Code-Splitting). | S |
 | NFR-PERF-07 | Statische Assets mit Content-Hash und langlebigen Cache-Headern. | S |
+| NFR-PERF-08 | Seitenwechsel innerhalb der App laden nur den Inhaltsbereich (`?_partial=main`: Titel und `<main>`), nicht das ganze Dokument samt Hülle - eine Notiz rund 78 statt 245 KB. Dasselbe gilt für das Offline-Vorladen. Der Service Worker legt Teilantworten nicht in seinen Navigations-Cache, damit eine Offline-Navigation nie eine Seite ohne Hülle erhält. | S |
+| NFR-PERF-09 | Rückmeldung beim Seitenwechsel: Die angetippte Zeile wird sofort markiert, nach 150 ms erscheint ein Ladebalken am oberen Rand. Ein weiterer Tipp bricht den laufenden Wechsel ab, statt verworfen zu werden. Der Abruf beginnt schon beim Berühren (`pointerdown`), Scrollen (`pointercancel`) bricht ihn ab. | S |
+| NFR-PERF-10 | Liegt eine gespeicherte Fassung der Zielseite vor, wartet der Wechsel höchstens 2,5 s auf das Netz und zeigt dann die gespeicherte (einmal je Sitzung mit Hinweis); der Abruf frischt sie im Hintergrund auf. Ohne gespeicherte Fassung wird nach 15 s abgebrochen und die Offline-Darstellung gezeigt. Nach einer Änderung an der Seite selbst (Verschieben) wird immer frisch geladen. | S |
 
 ### 7.4 Sicherheit
 

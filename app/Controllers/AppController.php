@@ -30,7 +30,8 @@ final class AppController
     public function shell(Request $request, Response $response): Response
     {
         $user = CurrentUser::require($request);
-        $html = $this->renderer->page(
+        $render = Renderer::wantsFragment($request) ? $this->renderer->fragment(...) : $this->renderer->page(...);
+        $html = $render(
             $request,
             'app',
             [
@@ -88,7 +89,8 @@ final class AppController
         $user = CurrentUser::require($request);
         $page = $this->pages->find($user, (int) $args['id']);
 
-        $html = $this->renderer->page(
+        $render = Renderer::wantsFragment($request) ? $this->renderer->fragment(...) : $this->renderer->page(...);
+        $html = $render(
             $request,
             'page',
             ['isAdmin' => $user->isAdmin, 'page' => $page, ...$this->voiceViewData()],
