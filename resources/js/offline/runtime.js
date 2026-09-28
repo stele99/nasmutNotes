@@ -15,6 +15,9 @@ const PREFETCH_MIN_INTERVAL_MS = 5 * 60 * 1000;
 const SYNC_LEASE_MS = 5 * 60 * 1000;
 const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 60 * 1000;
+// Bearbeitungssperre einer Notiz: Versuche und Abstand (acquireNoteEditLock).
+const NOTE_LOCK_ATTEMPTS = 4;
+const NOTE_LOCK_RETRY_MS = 100;
 const RUNTIME_ID = crypto.randomUUID();
 const syncChannel = typeof BroadcastChannel === 'function'
   ? new BroadcastChannel('shareinfo-offline-sync')
@@ -97,6 +100,28 @@ export async function acquireNoteEditLock(pageId) {
     };
   }
 
+  // Wird dieselbe Notiz im selben Tab neu aufgebaut (etwa nach dem
+  // Verschieben in ein anderes Notizbuch), hat die alte Instanz ihre Sperre
+  // zwar schon losgelassen, der Browser gibt sie aber erst einen Moment
+  // später frei. Ohne zweiten Versuch hielte sich die neue Instanz dann für
+  // „in einem anderen Tab geöffnet" und schaltete auf schreibgeschützt. Hält
+  // wirklich ein anderer Tab die Notiz, bleibt es beim Ergebnis - nur um
+  // diese kurze Wartezeit später.
+  for (let attempt = 0; attempt < NOTE_LOCK_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, NOTE_LOCK_RETRY_MS));
+    }
+    const release = await requestNoteLock(pageId);
+    if (release) {
+      return release;
+    }
+  }
+
+  return null;
+}
+
+/** Ein Versuch über die Web-Locks-API; null, wenn die Sperre belegt ist. */
+async function requestNoteLock(pageId) {
   let releaseLock;
   const released = new Promise((resolve) => {
     releaseLock = resolve;
