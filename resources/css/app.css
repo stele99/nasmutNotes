@@ -2091,10 +2091,51 @@ button:disabled,
   overflow-x: auto;
 }
 
+/* Hülle der Codeblock-NodeView (codeBlock.js): trägt den Kopierknopf, damit
+   er beim waagerechten Scrollen des <pre> stehen bleibt. */
+.prose-editor .note-code-block {
+  position: relative;
+}
+
+.note-code-copy {
+  align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  opacity: 0.6;
+  padding: 0;
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  transition: opacity 120ms ease;
+  width: 28px;
+  z-index: 2;
+}
+
+.note-code-block:hover .note-code-copy,
+.note-code-copy:focus-visible,
+.note-code-copy.is-copied {
+  opacity: 1;
+}
+
+.note-code-copy.is-copied {
+  color: var(--color-accent);
+}
+
+.note-code-copy svg {
+  height: 14px;
+  width: 14px;
+}
+
 /* Codeblöcke lassen sich als Ganzes auswählen (z. B. mit Escape aus dem Block
    heraus) statt nur zeichenweise per Textmarkierung - ProseMirror setzt dafür
    dieselbe Klasse wie bei Bildern, nur ohne eigene Formatierung. */
-.prose-editor .tiptap pre.ProseMirror-selectednode {
+.prose-editor .tiptap .note-code-block.ProseMirror-selectednode pre {
   background: color-mix(in srgb, var(--color-text) 12%, var(--color-bg-subtle));
   outline: 3px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
   outline-offset: 3px;
@@ -2538,7 +2579,8 @@ button:disabled,
   }
 
   /* Der Bearbeiten-Knopf am Bild ist reine Bildschirmbedienung. */
-  .note-image-tools {
+  .note-image-tools,
+  .note-code-copy {
     display: none !important;
   }
 

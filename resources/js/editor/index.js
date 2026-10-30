@@ -5,7 +5,7 @@ import { AnnotatedImage } from './annotatedImage.js';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
-import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
+import { CopyableCodeBlock } from './codeBlock.js';
 import { createLowlight, common } from 'lowlight';
 import { ProtectedImageUpload } from './imageUpload.js';
 import { HEADING_LEVELS, sanitizePastedHtml } from './sanitize.js';
@@ -32,7 +32,7 @@ export function createEditor({
       // Nur H1-H3: der Server lehnt tiefere Ebenen ab, StarterKit würde von sich
       // aus H1-H6 anlegen.
       StarterKit.configure({ codeBlock: false, link: false, heading: { levels: HEADING_LEVELS } }),
-      CodeBlockLowlight.configure({ lowlight }),
+      CopyableCodeBlock.configure({ lowlight }),
       Link.configure({
         openOnClick: false,
         enableClickSelection: true,
