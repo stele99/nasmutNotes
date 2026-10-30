@@ -1,5 +1,12 @@
 RewriteEngine On
 
+# Immer HTTPS. Vor Apache sitzt ein nginx-Proxy: Je nach Hoster setzt er
+# HTTPS=on oder nur den Header X-Forwarded-Proto - umgeleitet wird erst, wenn
+# beides fehlt, sonst entstünde hinter dem Proxy eine Umleitungsschleife.
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
 # Static assets and existing files are served directly. All application routes
 # are forwarded to Slim's front controller.
 RewriteCond %{REQUEST_FILENAME} !-f
