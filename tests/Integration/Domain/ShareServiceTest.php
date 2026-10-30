@@ -232,6 +232,14 @@ final class ShareServiceTest extends TestCase
         self::assertTrue(str_starts_with((string) $row['expires_at'], $future));
     }
 
+    public function testCreateRejectsPasswordForWriteShare(): void
+    {
+        $page = $this->pages->create($this->userA, 'note', 'Gemeinsam', null);
+
+        $this->expectException(\App\Support\ValidationException::class);
+        $this->shares->create($this->userA, (int) $page['id'], 'write', null, 'geheim123');
+    }
+
     public function testCreateRejectsExpiryDateInThePast(): void
     {
         $page = $this->pages->create($this->userA, 'note', 'Ungültiges Ablaufdatum', null);

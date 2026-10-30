@@ -203,7 +203,9 @@ export function pageShare() {
           body: JSON.stringify({
             permission: this.permission,
             expires_at: this.shareExpiresAt || null,
-            password: this.sharePassword || null,
+            // Schreibfreigaben kennen kein Kennwort (der Server lehnt es ab);
+            // ein vorher eingetipptes, jetzt ausgeblendetes bleibt außen vor.
+            password: this.permission === 'write' ? null : (this.sharePassword || null),
             requires_login: this.shareRequiresLogin,
           }),
         });

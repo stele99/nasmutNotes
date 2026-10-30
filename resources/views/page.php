@@ -109,7 +109,7 @@
                         <label for="share-expires-at" class="block text-sm font-medium">Ablaufdatum</label>
                         <input id="share-expires-at" x-model="shareExpiresAt" type="date" class="mt-1.5 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
                     </div>
-                    <div>
+                    <div x-show="permission !== 'write'">
                         <label for="share-password" class="block text-sm font-medium">Kennwort</label>
                         <input id="share-password" x-model="sharePassword" type="password" autocomplete="new-password" placeholder="Ohne Eingabe: kein Kennwortschutz" class="mt-1.5 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
                     </div>

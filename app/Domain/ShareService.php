@@ -48,6 +48,12 @@ final class ShareService
         if (!in_array($permission, self::PERMISSIONS, true)) {
             throw new ValidationException('Ungültige Freigabeart.');
         }
+        // Eine Schreibfreigabe führt nach der Anmeldung direkt in den Workspace
+        // des Empfängers (open()) - ein Kennwort würde dort nie abgefragt und
+        // täuschte nur Schutz vor.
+        if ($permission === 'write' && $password !== null && trim($password) !== '') {
+            throw new ValidationException('Schreibfreigaben können nicht mit einem Kennwort geschützt werden.');
+        }
 
         $normalizedExpiresAt = $this->normalizeExpiresAt($expiresAt);
         $passwordHash = $this->hashPassword($password);
