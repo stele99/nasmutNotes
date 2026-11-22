@@ -24,33 +24,56 @@ final class HealthController
         private readonly PDO $pdo,
         private readonly UploadStorage $uploadStorage,
         private readonly ?BackupLayout $backups = null,
+        private readonly ?string $migrationsPath = null,
     ) {
     }
 
     public function __invoke(Request $request, Response $response): Response
     {
         $dbOk = false;
-        $migrationCount = 0;
         try {
             $dbOk = $this->pdo->query('SELECT 1') !== false;
-            $stmt = $this->pdo->query('SELECT COUNT(*) AS c FROM migrations');
-            $migrationCount = $stmt !== false ? (int) $stmt->fetch()['c'] : 0;
         } catch (\Throwable) {
             $dbOk = false;
         }
 
+        // Migrationen laufen erst nach dem Deploy (per CLI). Fehlende oder
+        // ausstehende Migrationen dürfen den Health-Check des Deploys deshalb
+        // nicht scheitern lassen - sie erscheinen als Warnung.
+        $migrationCount = null;
+        if ($dbOk) {
+            try {
+                $stmt = $this->pdo->query('SELECT COUNT(*) AS c FROM migrations');
+                $migrationCount = $stmt !== false ? (int) $stmt->fetch()['c'] : null;
+            } catch (\Throwable) {
+                $migrationCount = null;
+            }
+        }
+        $migrationFiles = $this->migrationsPath !== null
+            ? count(glob($this->migrationsPath . '/*.sql') ?: [])
+            : null;
+
         $uploadWritable = $this->uploadStorage->isWritable();
 
-        // Ohne Datenbank ist die Anwendung unbenutzbar (503). Ein nicht
-        // beschreibbares Upload-Verzeichnis meldet "degraded", bleibt aber
-        // 200 - ein Neustart des Containers würde daran nichts ändern.
-        $status = !$dbOk ? 'error' : ($uploadWritable ? 'ok' : 'degraded');
+        // Nur eine nicht erreichbare Datenbank ergibt 503. Nicht beschreibbare
+        // Uploads oder ein leeres Schema melden "degraded", bleiben aber 200 -
+        // ein Neustart oder Rollback des Containers würde daran nichts ändern.
+        $status = match (true) {
+            !$dbOk => 'error',
+            !$uploadWritable || $migrationCount === null => 'degraded',
+            default => 'ok',
+        };
 
         // Ausgefallene Cronjobs machen die Anwendung nicht unbenutzbar - sie
         // erscheinen als Warnung, der Statuscode bleibt 200.
         $backupAge = $this->lastBackupAgeHours();
         $purgeAge = $dbOk ? $this->lastTrashPurgeAgeHours() : null;
         $warnings = [];
+        if ($dbOk && $migrationCount === null) {
+            $warnings[] = 'migrations_missing';
+        } elseif ($migrationCount !== null && $migrationFiles !== null && $migrationFiles > $migrationCount) {
+            $warnings[] = 'migrations_pending';
+        }
         if ($backupAge === null || $backupAge > self::STALE_AFTER_HOURS) {
             $warnings[] = 'backup_stale';
         }
@@ -61,7 +84,7 @@ final class HealthController
         return JsonResponse::json($response, [
             'status' => $status,
             'database' => $dbOk ? 'ok' : 'error',
-            'migrations_applied' => $migrationCount,
+            'migrations_applied' => $migrationCount ?? 0,
             'uploads_writable' => $uploadWritable,
             'last_backup_age_hours' => $backupAge,
             'last_trash_purge_age_hours' => $purgeAge,

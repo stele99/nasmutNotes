@@ -311,7 +311,7 @@ return static function (string $rootPath): DI\Container {
         ),
 
         HealthController::class => static fn (PDO $pdo, UploadStorage $storage, BackupLayout $backups): HealthController
-            => new HealthController($pdo, $storage, $backups),
+            => new HealthController($pdo, $storage, $backups, $rootPath . '/database/migrations'),
 
         WorkspaceRepository::class => static fn (PDO $pdo): WorkspaceRepository => new WorkspaceRepository($pdo),
 

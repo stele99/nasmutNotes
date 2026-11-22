@@ -61,10 +61,10 @@ final class HealthControllerTest extends TestCase
         self::assertSame([], $body['warnings']);
     }
 
-    public function testDatabaseFailureReturns503(): void
+    public function testUnreachableDatabaseReturns503(): void
     {
-        $pdo = $this->makeDatabase();
-        $pdo->exec('DROP TABLE migrations');
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willThrowException(new \PDOException('unable to open database file'));
 
         $controller = new HealthController($pdo, new UploadStorage($this->root, $this->root . '/uploads'));
         $response = $controller(
@@ -74,6 +74,40 @@ final class HealthControllerTest extends TestCase
 
         self::assertSame(503, $response->getStatusCode());
         self::assertSame('error', json_decode((string) $response->getBody(), true)['status']);
+    }
+
+    public function testEmptySchemaStaysHealthySoTheDeployCanFinish(): void
+    {
+        // Frisches Datenverzeichnis: Datenbank erreichbar, Migrationen laufen
+        // erst nach dem Deploy - der Health-Check darf nicht zurückrollen.
+        $pdo = new \PDO('sqlite::memory:');
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $body = $this->health($pdo);
+
+        self::assertSame('degraded', $body['status']);
+        self::assertContains('migrations_missing', $body['warnings']);
+    }
+
+    public function testPendingMigrationsAreReported(): void
+    {
+        $pdo = $this->makeDatabase();
+        $controller = new HealthController(
+            $pdo,
+            new UploadStorage($this->root, $this->root . '/uploads'),
+            null,
+            dirname(__DIR__, 3) . '/database/migrations',
+        );
+        $pdo->exec("DELETE FROM migrations WHERE rowid = (SELECT MAX(rowid) FROM migrations)");
+
+        $response = $controller(
+            (new ServerRequestFactory())->createServerRequest('GET', '/health'),
+            (new ResponseFactory())->createResponse(),
+        );
+        $body = json_decode((string) $response->getBody(), true);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertContains('migrations_pending', $body['warnings']);
     }
 
     /** @return array<string, mixed> */
