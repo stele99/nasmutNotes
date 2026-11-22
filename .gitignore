@@ -1,4 +1,5 @@
 .data/*
+/.localdata/
 var/
 config/local.php
 
@@ -10,9 +11,10 @@ config/local.php
 # Dependencies
 /vendor/
 /node_modules/
+composer.phar
 
-# Build output
-/public/build/
+# Build output: public/build/ wird bewusst eingecheckt - auf dem Server gibt
+# es keinen npm-Build. Nach Frontend-Änderungen `npm run build` und mitcommitten.
 
 # Tooling caches
 .phpunit.cache/

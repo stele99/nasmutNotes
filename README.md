@@ -53,96 +53,72 @@ php -S localhost:8080 -t public public/index.php
 
 Anwendung erreichbar unter `http://localhost:8080`. `/health` liefert den Status von Datenbank, Migrationsstand und Upload-Verzeichnis.
 
-## Deployment über GitHub Actions
+## Deployment (FrankenPHP-Container)
 
-Der Workflow `.github/workflows/ci.yml` deployt nach erfolgreicher Backend- und
-Frontend-CI automatisch bei einem Push auf `main`. Ein manueller Start ist über
-GitHub unter **Actions → CI → Run workflow** möglich. Pull Requests deployen
-nicht.
+Betrieben wird die Anwendung in FrankenPHP (Caddy) im Docker-Container:
 
-Das Deployment-Paket enthält den PHP-Code, `vendor/`, Migrationen und die mit
-Vite erzeugten Dateien unter `public/build/`. Die Produktions-Assets werden in
-der Action gebaut und müssen nicht committed werden. Die serverseitige `.env`, die
-SQLite-Datei und `var/` werden nicht überschrieben. Auf dem Hoster wird nach
-dem Upload automatisch `php bin/console.php migrate` ausgeführt.
+- Der Code liegt **schreibgeschützt** unter `/app`, Document Root ist `public/`,
+  alle unbekannten Pfade gehen an `public/index.php`. Eine `.htaccess` gibt es
+  nicht mehr (Caddy würde sie ignorieren); die HTTPS-Umleitung macht
+  `TrustedProxyMiddleware` anhand von `X-Forwarded-Proto`.
+- Geschrieben wird nur nach `APP_DATA_DIR` (`/data`, persistent) und `/tmp`.
+  Relative Pfade wie `DB_PATH=var/data/app.sqlite` gelten relativ zu
+  `APP_DATA_DIR`, also `/data/var/data/app.sqlite`. Ohne `APP_DATA_DIR` (lokal)
+  bleibt alles wie bisher im Projektordner.
+- Konfiguration nur über Umgebungsvariablen (Docker `env_file`), keine `.env`.
+  `APP_KEY` beim Umzug unverändert übernehmen.
+- HTTPS endet bei Cloudflare; die Client-IP kommt aus `CF-Connecting-IP` bzw.
+  `X-Forwarded-For`.
 
-### Hoster vorbereiten
+### Ablauf
 
-1. Einen SSH-Schlüssel nur für GitHub Actions erzeugen und den öffentlichen
-   Schlüssel beim Hoster in `authorized_keys` hinterlegen.
-2. Ein Zielverzeichnis außerhalb oder oberhalb des Web-Roots anlegen und dort
-   eine produktive `.env` erstellen. `DB_PATH` sollte auf die persistente
-   SQLite-Datei zeigen, zum Beispiel `var/data/app.sqlite`.
-3. Den Web-Root des Hosters auf das Unterverzeichnis `public/` des Projekts
-   zeigen lassen. `public/index.php` erwartet `app/`, `resources/` und `vendor/`
-   relativ zum Projekt-Root.
-4. Den PHP-CLI-Befehl des Hosters ermitteln. Das ist je nach Anbieter zum
-   Beispiel `php`, `php8.4` oder ein absoluter Pfad.
-5. Das persistente `UPLOAD_PATH` anlegen und für den PHP-Prozess beschreibbar
-   machen. `upload_max_filesize` und `post_max_size` müssen mindestens so groß
-   wie `MAX_UPLOAD_MB` konfiguriert sein.
+Der Workflow `.github/workflows/deploy.yml` prüft jeden Push und PR (PHP-Syntax,
+Migrationen, `composer audit`, PHP-CS-Fixer, PHPStan, PHPUnit, `npm audit`,
+Frontend-Tests, Aktualität von `public/build/`). Bei einem Push auf `main` löst
+er danach per SSH den Deploy aus; manuell über **Actions → deploy → Run
+workflow**. Pull Requests deployen nicht.
 
-Der Hoster benötigt neben SSH auch `scp`, `tar` und einen passenden PHP-CLI-
-Befehl. Der für GitHub Actions verwendete private Schlüssel darf in der
-aktuellen Action keine Passphrase haben.
+Der Server holt den Commit, führt `composer install --no-dev --no-scripts
+--no-plugins` aus und startet den Container neu. **Es gibt dort keinen
+npm-Build:** `public/build/` ist eingecheckt. Nach jeder Frontend-Änderung
+`npm run build` ausführen und `public/build/` mitcommitten — sonst bricht der
+Workflow ab.
 
-Für Apache liegt die Rewrite-Konfiguration in `public/.htaccess` und wird mit
-ausgeliefert. Falls `/auth/google` oder andere Slim-Routen weiterhin HTTP 404 liefern,
-muss der Hoster `mod_rewrite` und `AllowOverride FileInfo` für den Webroot
-aktivieren. Bei Nginx muss stattdessen die Domain-Konfiguration alle nicht
-vorhandenen Pfade mit `try_files $uri $uri/ /index.php?$query_string;` an
-`public/index.php` weiterleiten.
+**Migrationen führt der Server nicht aus.** Enthält ein Deploy neue Dateien
+unter `database/migrations/` (der Workflow weist in der Zusammenfassung darauf
+hin), einmal im Container ausführen:
+
+```bash
+php bin/console.php migrate --backup
+```
+
+Secrets und Variablen (Settings → Secrets and variables → Actions):
+
+| Name | Art | Inhalt |
+|---|---|---|
+| `DEPLOY_HOST` | Secret | Deploy-Server (gibt `app new` / `app ci-key` aus) |
+| `DEPLOY_KNOWN_HOSTS` | Secret | Geprüfter `known_hosts`-Eintrag des Servers |
+| `DEPLOY_SSH_KEY` | Secret | Privater Schlüssel, darf nur `deploy <app> <sha>` auslösen |
+| `DEPLOY_PORT` | Variable | Optional, nur wenn SSH nicht auf Port 22 läuft |
+
+### Daten umziehen
+
+Vom alten Hosting werden `var/data/` (inkl. `app.sqlite`, ggf. `-wal`/`-shm`),
+`var/uploads/` und empfohlen `var/backups/` nach `/data/var/` kopiert — bei
+gestoppter Anwendung. Danach einmal `php bin/console.php migrate` im Container.
 
 **Warum das Icon-Verzeichnis `public/icon/` heißt (nicht `icons/`):**
 Apache definiert in `mods-available/alias.conf` standardmäßig
 `Alias /icons/ "/usr/share/apache2/icons/"` für die Symbole von `mod_autoindex`.
 Dieses Alias hat Vorrang vor dem DocumentRoot: Unter `/icons/…` liefert der Server
 dann die Systemsymbole statt der Anwendungsdateien — vorhandene eigene Icons enden
-in HTTP 404, ohne dass `.htaccess` oder Deployment etwas damit zu tun hätten. Der
+in HTTP 404. Der
 Verzeichnisname `icon` umgeht das Alias. Beim Umbenennen sind
 `resources/views/layout.php`, `resources/views/partials/sidebar.php`,
 `public/manifest.webmanifest` und die Precache-Liste in `public/sw.js` mitzuziehen
 (dort zusätzlich `SHELL_CACHE` hochzählen, damit Clients die alte Liste verwerfen).
 
-**Statische Dateien liefern 404, obwohl sie auf dem Server liegen?** Erst die
-antwortende Ebene bestimmen — die Fehlerseite verrät sie:
-
-```bash
-curl -sI https://<domain>/icon/icon-192.png | head -3
-```
-
-- Slim-Fehlerseite (`charset=utf-8`) → die Anfrage wurde an `index.php`
-  weitergereicht; dann greift die Rewrite-Bedingung nicht.
-- Apache-eigene 404 (`charset=iso-8859-1`) → Apache hat selbst gesucht und nichts
-  gefunden. Ob Verzeichnis oder Datei fehlt, zeigt der Vergleich: bei
-  `Options -Indexes` antwortet ein **vorhandenes** Verzeichnis mit 403:
-
-  ```bash
-  curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/icon/     # 403 = Verzeichnis da
-  curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/build/    # Gegenprobe
-  ```
-
-  403 für das Verzeichnis und 404 für die Datei darin heißt: Verzeichnis vorhanden,
-  Inhalt fehlt — oder ein `Alias` schiebt sich davor (siehe oben).
-- Bei Nginx greift keine `.htaccess`. Dort muss `try_files` vorhandene Dateien
-  zuerst ausliefern; routet die Konfiguration pauschal auf `index.php`, gibt Slim
-  für jede statische Datei 404 zurück.
-
-Die folgenden Secrets im GitHub-Environment `production` anlegen:
-
-| Secret | Inhalt |
-|---|---|
-| `DEPLOY_HOST` | SSH-Hostname des Hosters |
-| `DEPLOY_PORT` | SSH-Port, meistens `22` |
-| `DEPLOY_USER` | SSH-Benutzer |
-| `DEPLOY_PATH` | Absoluter Projektpfad auf dem Hoster |
-| `DEPLOY_PHP_BIN` | PHP-CLI-Befehl, zum Beispiel `php8.4` |
-| `DEPLOY_SSH_KEY` | Privater Inhalt des Deploy-Schlüssels |
-| `DEPLOY_KNOWN_HOSTS` | Geprüfter Eintrag aus `known_hosts` |
-
-`DEPLOY_KNOWN_HOSTS` sollte vor dem Hinterlegen mit dem Hoster-Fingerabdruck
-abgeglichen werden, zum Beispiel über `ssh-keyscan -p 22 host.example`.
-Private Schlüssel, `.env` und Produktionsdaten gehören nicht ins Repository.
+Der Name bleibt, damit die Anwendung auch hinter Apache weiter funktioniert.
 
 ### Cloudflare
 
@@ -236,8 +212,8 @@ meldet einen ausgefallenen Lauf nach 36 Stunden unter `warnings`
 30 3 * * * cd /pfad/zum/projekt && php bin/console.php trash:purge >> var/log/maintenance.log 2>&1
 ```
 
-Den PHP-Befehl (`php`, `php8.4`, absoluter Pfad) wie beim Deployment an den
-Hoster anpassen.
+Im Container ohne `cd` und mit Ausgabe ins Container-Log, z. B. per
+`docker exec <container> php bin/console.php backup:run`.
 
 ## Export
 
@@ -308,8 +284,8 @@ an und lädt eine beliebige davon als vollständiges, in sich geschlossenes ZIP
 herunter (aus Pool und Manifest zusammengesetzt).
 
 Der tägliche Lauf gehört in die Cronjobs (siehe [Cronjobs](#cronjobs-erforderlich)).
-Zusätzlich sichert jedes Deployment vor einer Schemaänderung automatisch
-(`migrate --backup`); der Migrator kennt kein Rollback.
+Vor einer Schemaänderung sichert `migrate --backup` automatisch; der Migrator
+kennt kein Rollback.
 
 **Wiederherstellen** — bewusst nur über die CLI, denn der Vorgang ersetzt
 Datenbank und Anhänge. Die Anwendung sollte dabei gestoppt sein:
@@ -365,7 +341,7 @@ composer cs-fix   # PHP-CS-Fixer anwenden
 npm run build     # Produktions-Assets bauen
 ```
 
-CI (`.github/workflows/ci.yml`) führt `composer audit`, `php-cs-fixer`, PHPStan, PHPUnit sowie `npm audit` sowie den Frontend-Build bei jedem Push/PR aus.
+Der Workflow `.github/workflows/deploy.yml` führt `composer audit`, `php-cs-fixer`, PHPStan, PHPUnit, `npm audit`, `npm test` und den Frontend-Build (inkl. Abgleich mit dem eingecheckten `public/build/`) bei jedem Push/PR aus.
 
 ## Projektstruktur
 

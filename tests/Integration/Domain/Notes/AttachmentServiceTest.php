@@ -100,7 +100,75 @@ final class AttachmentServiceTest extends TestCase
         self::assertSame(1, $uploaded['width']);
         self::assertSame(1, $uploaded['height']);
         self::assertFileExists($opened['path']);
-        self::assertSame($bytes, file_get_contents($opened['path']));
+
+        // Gespeichert wird die GD-Neucodierung, nie das Original.
+        $stored = (string) file_get_contents($opened['path']);
+        self::assertNotSame($bytes, $stored);
+        $info = getimagesizefromstring($stored);
+        self::assertIsArray($info);
+        self::assertSame('image/png', $info['mime']);
+        self::assertSame(strlen($stored), $opened['byte_size']);
+    }
+
+    public function testReencodingDropsDataAppendedToTheImage(): void
+    {
+        $uploaded = $this->attachments->upload(
+            $this->owner,
+            $this->pageId,
+            $this->uploadedFile($this->pngBytes() . '<?php echo "polyglot"; ?>', 'polyglot.png'),
+        );
+        $opened = $this->attachments->open($this->owner, $uploaded['token']);
+
+        self::assertStringNotContainsString('<?php', (string) file_get_contents($opened['path']));
+    }
+
+    public function testJpegIsRotatedByExifOrientationAndMetadataIsRemoved(): void
+    {
+        if (!function_exists('exif_read_data')) {
+            self::markTestSkipped('exif ist in dieser lokalen PHP-Laufzeit nicht installiert.');
+        }
+
+        $image = imagecreatetruecolor(40, 20);
+        self::assertInstanceOf(\GdImage::class, $image);
+        ob_start();
+        self::assertTrue(imagejpeg($image, null, 90));
+        $jpeg = (string) ob_get_clean();
+        imagedestroy($image);
+
+        // Minimales EXIF-Segment (APP1) mit Orientation = 6 (90° im Uhrzeigersinn).
+        $tiff = "II*\x00" . pack('V', 8) . pack('v', 1)
+            . pack('vvVvv', 0x0112, 3, 1, 6, 0) . pack('V', 0);
+        $payload = "Exif\x00\x00" . $tiff;
+        $app1 = "\xFF\xE1" . pack('n', strlen($payload) + 2) . $payload;
+        $bytes = substr($jpeg, 0, 2) . $app1 . substr($jpeg, 2);
+
+        $uploaded = $this->attachments->upload(
+            $this->owner,
+            $this->pageId,
+            $this->uploadedFile($bytes, 'hochkant.jpg'),
+        );
+        $opened = $this->attachments->open($this->owner, $uploaded['token']);
+        $stored = (string) file_get_contents($opened['path']);
+
+        self::assertSame(20, $uploaded['width']);
+        self::assertSame(40, $uploaded['height']);
+        self::assertStringNotContainsString('Exif', $stored);
+    }
+
+    public function testRejectsImagesAboveThePixelLimit(): void
+    {
+        // Nur der Dateikopf zählt: Die Abmessungen werden vor dem Dekodieren
+        // geprüft, GD bekommt das Bild gar nicht erst zu sehen.
+        $header = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            true,
+        );
+        self::assertIsString($header);
+        // IHDR-Breite/Höhe auf 10000 x 10000 setzen (CRC egal für getimagesize).
+        $bytes = substr($header, 0, 16) . pack('NN', 10000, 10000) . substr($header, 24);
+
+        $this->expectException(ValidationException::class);
+        $this->attachments->upload($this->owner, $this->pageId, $this->uploadedFile($bytes, 'riesig.png'));
     }
 
     public function testWriteShareCanUploadImage(): void

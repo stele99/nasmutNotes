@@ -21,7 +21,14 @@ final class AttachmentService
         'image/jpeg' => 'jpg',
         'image/webp' => 'webp',
     ];
-    private const MAX_PIXELS = 40_000_000;
+    /**
+     * Obergrenze vor dem Dekodieren: GD braucht 4 Byte je Pixel, 24 MP sind
+     * also rund 96 MB - bei 256 MB Container-Speicher die sinnvolle Grenze.
+     * Der Editor verkleinert ohnehin auf 1960 px Kantenlänge.
+     */
+    public const MAX_PIXELS = 24_000_000;
+
+    private readonly ImageSanitizer $sanitizer;
 
     public function __construct(
         private readonly PageService $pages,
@@ -31,7 +38,9 @@ final class AttachmentService
         private readonly ?SettingsRepository $settings = null,
         private readonly int $defaultQuotaMb = 0,
         private readonly ?PageAttachmentRepository $files = null,
+        ?ImageSanitizer $sanitizer = null,
     ) {
+        $this->sanitizer = $sanitizer ?? new ImageSanitizer();
     }
 
     /**
@@ -84,6 +93,8 @@ final class AttachmentService
             throw new ValidationException('Erlaubt sind ausschließlich PNG-, JPEG- und WebP-Bilder.');
         }
 
+        // Typ und Abmessungen aus dem Dateikopf (nicht aus Endung oder
+        // Client-Angabe) - und zwar bevor GD das Bild dekodiert.
         $imageInfo = getimagesizefromstring($bytes);
         if ($imageInfo === false) {
             throw new ValidationException('Die Bilddatei ist beschädigt oder ungültig.');
@@ -94,6 +105,15 @@ final class AttachmentService
         if ($width < 1 || $height < 1 || $width * $height > self::MAX_PIXELS || $detectedMime !== $mimeType) {
             throw new ValidationException('Das Bild hat ungültige oder zu große Abmessungen.');
         }
+
+        // Immer mit GD neu speichern: entfernt Metadaten und eingebettete
+        // Inhalte, wendet die EXIF-Ausrichtung an. Gespeichert und
+        // ausgeliefert wird nur das Ergebnis, nie das Original.
+        $sanitized = $this->sanitizer->sanitize($bytes, $mimeType, $width, $height);
+        $bytes = $sanitized['bytes'];
+        $width = $sanitized['width'];
+        $height = $sanitized['height'];
+        $byteSize = strlen($bytes);
 
         // Kontingentprüfung erst hier: Die tatsächliche Dateigröße steht erst
         // nach dem Einlesen fest, die gemeldete Größe ist nicht verbindlich.

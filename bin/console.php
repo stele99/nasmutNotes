@@ -16,37 +16,40 @@ use App\Repositories\PageAttachmentRepository;
 use App\Repositories\PageRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\TaskRepository;
+use App\Support\Bootstrap;
 use App\Support\Database;
 use App\Support\Env;
 use App\Support\Migrator;
+use App\Support\Paths;
 use App\Support\UploadStorage;
 
 require __DIR__ . '/../vendor/autoload.php';
 
+// Unbehandelte Fehler mit Stacktrace ins Log (CLI: stderr) und Exit-Code 1,
+// damit Cron und Deploy-Skripte den Fehlschlag bemerken.
+set_exception_handler(static function (\Throwable $e): void {
+    error_log((string) $e);
+    exit(1);
+});
+
 $rootPath = dirname(__DIR__);
-Env::load($rootPath);
+Bootstrap::init($rootPath);
 
 $command = $argv[1] ?? null;
 
-function resolveDbPath(string $rootPath): string
+function resolveDbPath(): string
 {
-    $dbPath = Env::get('DB_PATH', 'var/data/app.sqlite') ?? 'var/data/app.sqlite';
-
-    return $dbPath === ':memory:' || str_starts_with($dbPath, '/')
-        ? $dbPath
-        : $rootPath . '/' . $dbPath;
+    return Paths::require('DB_PATH');
 }
 
-function resolvePath(string $rootPath, string $key, string $default): string
+function uploadStorage(): UploadStorage
 {
-    $path = Env::get($key, $default) ?? $default;
-
-    return str_starts_with($path, '/') ? rtrim($path, '/') : $rootPath . '/' . trim($path, '/');
+    return new UploadStorage(Paths::dataDir(), Paths::require('UPLOAD_PATH'));
 }
 
-function backupLayout(string $rootPath): BackupLayout
+function backupLayout(): BackupLayout
 {
-    return new BackupLayout(resolvePath($rootPath, 'BACKUP_PATH', 'var/backups'));
+    return new BackupLayout(Paths::require('BACKUP_PATH'));
 }
 
 function formatBytes(int $bytes): string
@@ -64,7 +67,7 @@ function formatBytes(int $bytes): string
 
 switch ($command) {
     case 'migrate':
-        $pdo = Database::connect(resolveDbPath($rootPath));
+        $pdo = Database::connect(resolveDbPath());
         $migrator = new Migrator($pdo, $rootPath . '/database/migrations');
 
         // --backup (Deploy): vor einer Schemaänderung einen vollständigen Stand
@@ -74,11 +77,11 @@ switch ($command) {
         if (in_array('--backup', array_slice($argv, 2), true)) {
             $pending = $migrator->pending();
             if ($pending !== [] && $migrator->appliedCount() > 0) {
-                $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+                $storage = uploadStorage();
                 $snapshot = new BackupService(
                     $pdo,
                     new AuditLogRepository($pdo),
-                    backupLayout($rootPath),
+                    backupLayout(),
                     $storage->basePath(),
                     Env::int('BACKUP_KEEP', 14),
                 )->create();
@@ -103,7 +106,7 @@ switch ($command) {
         break;
 
     case 'user:list':
-        $pdo = Database::connect(resolveDbPath($rootPath));
+        $pdo = Database::connect(resolveDbPath());
         $stmt = $pdo->query('SELECT id, email, name, is_active, created_at, last_login_at FROM users ORDER BY id');
         $users = $stmt !== false ? $stmt->fetchAll() : [];
 
@@ -128,9 +131,9 @@ switch ($command) {
     case 'trash:purge':
         // Für den Cron-Betrieb: entfernt Seiten, deren Aufbewahrungsfrist im
         // Papierkorb abgelaufen ist, samt zugehöriger Bilddateien (FR-WS-06).
-        $pdo = Database::connect(resolveDbPath($rootPath));
+        $pdo = Database::connect(resolveDbPath());
         $retentionDays = Env::int('TRASH_RETENTION_DAYS', 90);
-        $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+        $storage = uploadStorage();
         $attachments = new NoteAttachmentRepository($pdo);
         $files = new PageAttachmentRepository($pdo);
         $pages = new PageRepository($pdo);
@@ -190,12 +193,12 @@ switch ($command) {
     case 'backup:run':
         // Für den Cron-Betrieb. Jeder Lauf ist ein vollständiger Stand; nur die
         // seither hinzugekommenen Dateien werden tatsächlich kopiert (NFR-OPS-06).
-        $pdo = Database::connect(resolveDbPath($rootPath));
-        $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+        $pdo = Database::connect(resolveDbPath());
+        $storage = uploadStorage();
         $service = new BackupService(
             $pdo,
             new AuditLogRepository($pdo),
-            backupLayout($rootPath),
+            backupLayout(),
             $storage->basePath(),
             Env::int('BACKUP_KEEP', 14),
         );
@@ -221,12 +224,12 @@ switch ($command) {
         break;
 
     case 'backup:list':
-        $pdo = Database::connect(resolveDbPath($rootPath));
-        $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+        $pdo = Database::connect(resolveDbPath());
+        $storage = uploadStorage();
         $service = new BackupService(
             $pdo,
             new AuditLogRepository($pdo),
-            backupLayout($rootPath),
+            backupLayout(),
             $storage->basePath(),
             Env::int('BACKUP_KEEP', 14),
         );
@@ -271,9 +274,9 @@ switch ($command) {
         }
 
         $restorer = new BackupRestorer(
-            backupLayout($rootPath),
-            resolveDbPath($rootPath),
-            resolvePath($rootPath, 'UPLOAD_PATH', 'var/uploads'),
+            backupLayout(),
+            resolveDbPath(),
+            Paths::require('UPLOAD_PATH'),
         );
         $report = $restorer->verify($id);
 
@@ -305,11 +308,11 @@ switch ($command) {
         $prune = in_array('--prune', $options, true);
         $confirmed = in_array('--yes', $options, true);
 
-        $layout = backupLayout($rootPath);
+        $layout = backupLayout();
         $restorer = new BackupRestorer(
             $layout,
-            resolveDbPath($rootPath),
-            resolvePath($rootPath, 'UPLOAD_PATH', 'var/uploads'),
+            resolveDbPath(),
+            Paths::require('UPLOAD_PATH'),
         );
 
         $check = $restorer->verify($id);
@@ -337,8 +340,8 @@ switch ($command) {
 
         // Vor dem Überschreiben den aktuellen Stand sichern - ein Restore auf den
         // falschen Snapshot wäre sonst nicht rückholbar.
-        $pdo = Database::connect(resolveDbPath($rootPath));
-        $storage = new UploadStorage($rootPath, Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads');
+        $pdo = Database::connect(resolveDbPath());
+        $storage = uploadStorage();
         $safety = new BackupService(
             $pdo,
             new AuditLogRepository($pdo),
@@ -377,9 +380,13 @@ switch ($command) {
                 $target = substr($option, strlen('--out='));
             }
         }
-        $target ??= getcwd() . '/wiederherstellung-' . preg_replace('/[^a-z0-9]+/i', '-', $email) . "-{$id}.zip";
+        // Im Container ist das Arbeitsverzeichnis (/app) schreibgeschützt -
+        // dann landet das Archiv im Datenverzeichnis.
+        $cwd = getcwd();
+        $outDir = $cwd !== false && is_writable($cwd) ? $cwd : Paths::dataDir();
+        $target ??= $outDir . '/wiederherstellung-' . preg_replace('/[^a-z0-9]+/i', '-', $email) . "-{$id}.zip";
 
-        $result = new BackupExtractor(backupLayout($rootPath), $rootPath . '/database/migrations')->extract(
+        $result = new BackupExtractor(backupLayout(), $rootPath . '/database/migrations')->extract(
             $id,
             $email,
             $target,

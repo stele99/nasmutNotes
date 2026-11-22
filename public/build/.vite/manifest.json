@@ -1,0 +1,54 @@
+{
+  "_noteCrypto-B2hzRSFS.css": {
+    "file": "assets/noteCrypto-B2hzRSFS.css",
+    "src": "_noteCrypto-B2hzRSFS.css"
+  },
+  "_noteCrypto-NGzVS3U-.js": {
+    "file": "assets/noteCrypto-NGzVS3U-.js",
+    "name": "noteCrypto",
+    "css": [
+      "assets/noteCrypto-B2hzRSFS.css"
+    ],
+    "assets": [
+      "assets/InterVariable-DiVDrmQJ.woff2",
+      "assets/InterVariable-Italic-FCBEiFp6.woff2"
+    ]
+  },
+  "resources/fonts/InterVariable-Italic.woff2": {
+    "file": "assets/InterVariable-Italic-FCBEiFp6.woff2",
+    "src": "resources/fonts/InterVariable-Italic.woff2"
+  },
+  "resources/fonts/InterVariable.woff2": {
+    "file": "assets/InterVariable-DiVDrmQJ.woff2",
+    "src": "resources/fonts/InterVariable.woff2"
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-cPNGl3H4.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true,
+    "imports": [
+      "_noteCrypto-NGzVS3U-.js",
+      "resources/js/editor/index.js"
+    ],
+    "css": [
+      "assets/app-CIGW-MKW.css"
+    ]
+  },
+  "resources/js/editor/index.js": {
+    "file": "assets/editor-9VPekQui.js",
+    "name": "editor",
+    "src": "resources/js/editor/index.js",
+    "isEntry": true
+  },
+  "resources/js/public-share.js": {
+    "file": "assets/publicShare-y30ytG58.js",
+    "name": "publicShare",
+    "src": "resources/js/public-share.js",
+    "isEntry": true,
+    "imports": [
+      "_noteCrypto-NGzVS3U-.js",
+      "resources/js/editor/index.js"
+    ]
+  }
+}

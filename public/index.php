@@ -6,6 +6,8 @@ use App\Middleware\CsrfMiddleware;
 use App\Middleware\RequestIdMiddleware;
 use App\Middleware\SecurityHeadersMiddleware;
 use App\Middleware\SessionAuthMiddleware;
+use App\Middleware\TrustedProxyMiddleware;
+use App\Support\Bootstrap;
 use App\Support\Env;
 use App\Support\ForbiddenException;
 use App\Support\JsonResponse;
@@ -13,6 +15,7 @@ use App\Support\NotFoundException;
 use App\Support\ValidationException;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Log\LoggerInterface;
+use Slim\Exception\HttpException;
 use Slim\Factory\AppFactory;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -32,8 +35,24 @@ if (PHP_SAPI === 'cli-server') {
     }
 }
 
+// Letzte Verteidigungslinie: Was außerhalb von Slims Fehlerbehandlung
+// scheitert (Start, Container, Konfiguration), landet ebenfalls im Log -
+// ohne Details in der Antwort.
+// Scheitert schon der Start (z. B. Datenbank nicht erreichbar, bevor ein
+// Controller läuft), meldet /health trotzdem 503 statt 500.
+$failHard = static function (\Throwable $e): void {
+    error_log((string) $e);
+    $isHealth = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) === '/health';
+    if (!headers_sent()) {
+        http_response_code($isHealth ? 503 : 500);
+        header('Content-Type: ' . ($isHealth ? 'application/json' : 'text/plain; charset=utf-8'));
+    }
+    echo $isHealth ? '{"status":"error","database":"error"}' : "Interner Serverfehler.\n";
+};
+set_exception_handler($failHard);
+
 $rootPath = dirname(__DIR__);
-Env::load($rootPath);
+Bootstrap::init($rootPath);
 
 $buildContainer = require $rootPath . '/app/Config/container.php';
 $container = $buildContainer($rootPath);
@@ -42,7 +61,7 @@ AppFactory::setContainer($container);
 $app = AppFactory::create();
 
 $isProduction = Env::get('APP_ENV') === 'production';
-$isDebug = Env::bool('APP_DEBUG', false);
+$isDebug = Bootstrap::displayErrorDetails();
 $viteDevServerUrl = Env::bool('APP_DEBUG', false) && Env::get('APP_ENV') === 'development'
     ? Env::get('VITE_DEV_SERVER', 'http://localhost:5173')
     : null;
@@ -62,8 +81,31 @@ $app->add(new CsrfMiddleware(
 $app->add($container->get(SessionAuthMiddleware::class));
 $app->add(new SecurityHeadersMiddleware($isProduction, $viteDevServerUrl));
 $app->add(new RequestIdMiddleware());
+// Außen: Schema (X-Forwarded-Proto) und HTTPS-Umleitung vor allem anderen,
+// damit HSTS und Cookies das Schema des Browsers sehen.
+$app->add(new TrustedProxyMiddleware($isProduction));
 
-$errorMiddleware = $app->addErrorMiddleware($isDebug, true, true, $container->get(LoggerInterface::class));
+// Slim protokolliert selbst nicht; der Standard-Handler unten schreibt jede
+// unerwartete Ausnahme genau einmal per error_log() ins Container-Log.
+$errorMiddleware = $app->addErrorMiddleware($isDebug, false, false, $container->get(LoggerInterface::class));
+$defaultErrorHandler = $errorMiddleware->getDefaultErrorHandler();
+// Bewusst nicht static: Slim bindet Handler-Closures an den Container.
+$errorMiddleware->setDefaultErrorHandler(
+    function (
+        Request $request,
+        \Throwable $e,
+        bool $displayErrorDetails,
+        bool $logErrors,
+        bool $logErrorDetails,
+    ) use ($defaultErrorHandler): \Psr\Http\Message\ResponseInterface {
+        // 404/405 & Co. sind keine Fehler der Anwendung.
+        if (!$e instanceof HttpException || $e->getCode() >= 500) {
+            error_log((string) $e);
+        }
+
+        return $defaultErrorHandler($request, $e, $displayErrorDetails, false, false);
+    },
+);
 
 $errorMiddleware->setErrorHandler(
     ValidationException::class,
@@ -84,4 +126,8 @@ $errorMiddleware->setErrorHandler(
     true,
 );
 
-$app->run();
+try {
+    $app->run();
+} catch (\Throwable $e) {
+    $failHard($e);
+}

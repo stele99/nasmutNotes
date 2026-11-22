@@ -1,0 +1,228 @@
+# .github/workflows/deploy.yml
+# Prüft das Projekt und löst bei jedem Push auf main den Deploy auf dem Server aus.
+#
+# Nötig im Repo (Settings → Secrets and variables → Actions):
+#   Secrets:   DEPLOY_HOST, DEPLOY_KNOWN_HOSTS, DEPLOY_SSH_KEY   (gibt `app new` / `app ci-key` aus)
+#   Variable:  DEPLOY_PORT   (optional, nur wenn SSH nicht auf Port 22 läuft)
+# Auf dem Server: Lese-Schlüssel unter Settings → Deploy keys (ohne Schreibrecht).
+#
+# Fremde Actions sind auf feste Commits gepinnt (Tags kann der Herausgeber verschieben).
+# Updates: Dependabot (.github/dependabot.yml, package-ecosystem "github-actions") schlägt
+# neue Versionen als Pull Request vor.
+#
+# Projektspezifisch (nasmutNotes):
+# - Der Server baut kein Frontend: public/build/ ist eingecheckt. Der Job "Frontend"
+#   baut neu und bricht ab, wenn der eingecheckte Stand veraltet ist.
+# - Eigenes Migrationssystem unter database/migrations/ (App\Support\Migrator).
+#   Der Server führt es NICHT aus: Nach einem Deploy mit neuen Migrationen einmal
+#   im Container `php bin/console.php migrate --backup` ausführen. Der Workflow
+#   weist in der Zusammenfassung darauf hin.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:          # nur prüfen, nie deployen
+  workflow_dispatch:     # manuell starten (Actions → deploy → Run workflow)
+
+permissions:
+  contents: read         # der Workflow braucht keine Schreibrechte im Repo
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # laufende Deploys nie abbrechen
+
+jobs:
+  check:
+    name: Prüfen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0               # für den Vergleich der Migrationen
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: "8.4"           # wie auf dem Server
+          # Nur Extensions, die der Server auch hat (kein intl/imagick/redis).
+          extensions: pdo_sqlite, sqlite3, zip, gd, exif, mbstring, fileinfo
+          tools: composer
+          coverage: none
+
+      - name: PHP-Syntax
+        run: |
+          find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -print0 \
+            | xargs -0 -r -n1 -P4 php -l > /dev/null
+          echo "Syntax ok"
+
+      - name: Migrationen
+        run: |
+          dir=database/migrations
+          [ -d "$dir" ] || { echo "keine Migrationen"; exit 0; }
+          fail=0
+          for f in "$dir"/*.sql; do
+            [ -e "$f" ] || continue
+            n=$(basename "$f")
+            if [[ ! "$n" =~ ^[0-9]{4}_[A-Za-z0-9_-]+\.sql$ ]]; then
+              echo "::error file=$f::Dateiname muss NNNN_name.sql sein"; fail=1
+            fi
+            # Der Migrator kapselt jede Datei in eine Transaktion. Eigenes
+            # BEGIN/COMMIT nur bei Tabellen-Umbauten mit der Markierung
+            # "-- migrator:no-transaction" (siehe AGENTS.md).
+            if grep -Eiq '^\s*(BEGIN(\s+(TRANSACTION|IMMEDIATE|DEFERRED|EXCLUSIVE))?\s*;|COMMIT\s*;|ROLLBACK\s*;|END\s+TRANSACTION)' "$f" \
+               && ! grep -q 'migrator:no-transaction' "$f"; then
+              echo "::error file=$f::BEGIN/COMMIT nur zusammen mit '-- migrator:no-transaction' – sonst macht der Migrator die Transaktion"; fail=1
+            fi
+          done
+          dups=$(for f in "$dir"/*.sql; do
+                   n=$(basename "$f"); [[ "$n" =~ ^[0-9]+_ ]] && echo $((10#${n%%_*}))
+                 done | sort -n | uniq -d)
+          [ -z "$dups" ] || { echo "::error::Doppelte Migrationsnummer(n): $dups"; fail=1; }
+
+          # Vergleichsstand: bei Push der vorige Stand von main, beim PR die Basis.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            before="${{ github.event.pull_request.base.sha }}"
+          else
+            before="${{ github.event.before }}"
+          fi
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "$before" 2>/dev/null; then
+            # bereits ausgerollte Migrationen dürfen nicht geändert oder gelöscht werden
+            changed=$(git diff --name-status "$before" "$GITHUB_SHA" -- "$dir/" | grep -E '^(M|D|R)' || true)
+            if [ -n "$changed" ]; then
+              echo "::error::Bestehende Migrationen geändert/gelöscht – stattdessen neue Datei anlegen:"
+              echo "$changed"; fail=1
+            fi
+            added=$(git diff --name-only --diff-filter=A "$before" "$GITHUB_SHA" -- "$dir/" || true)
+            if [ -n "$added" ]; then
+              echo "::warning::Neue Migrationen – nach dem Deploy im Container 'php bin/console.php migrate --backup' ausführen"
+              {
+                echo "### Neue Migrationen"
+                echo "Nach dem Deploy im Container ausführen: \`php bin/console.php migrate --backup\`"
+                echo '```'
+                echo "$added"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          exit $fail
+
+      - name: Composer
+        run: |
+          composer validate --no-check-publish --no-check-all
+          composer install --no-interaction --no-progress --prefer-dist
+          composer audit --no-interaction
+
+      - name: Code-Stil (PHP-CS-Fixer)
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff
+
+      - name: Statische Analyse (PHPStan)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+      - name: Tests (PHPUnit)
+        run: vendor/bin/phpunit
+
+      - name: Produktionsabhängigkeiten
+        # So installiert auch der Server: ohne Dev-Pakete, Skripte und Plugins.
+        run: |
+          composer install --no-dev --no-scripts --no-plugins --no-interaction --no-progress --prefer-dist
+          composer check-platform-reqs --no-dev
+
+      - name: Hinweise für den Server-Betrieb
+        run: |
+          if find . -name .htaccess -not -path './vendor/*' -not -path './node_modules/*' | grep -q .; then
+            echo "::warning::.htaccess wird auf dem Server ignoriert (Caddy statt Apache) – Routing in PHP"
+          fi
+          if git ls-files --error-unmatch vendor >/dev/null 2>&1; then
+            echo "::warning::vendor/ ist eingecheckt – gehört in .gitignore, der Server installiert selbst"
+          fi
+          if git ls-files | grep -Eq '(^|/)\.env$'; then
+            echo "::error::.env ist eingecheckt – Geheimnisse gehören auf den Server, nicht ins Repo"; exit 1
+          fi
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: npm
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+      - name: Tests
+        run: npm test
+
+      - name: Build aktuell?
+        # Der Server baut nicht – ausgeliefert wird das eingecheckte public/build/.
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- public/build)" ]; then
+            echo "::error::public/build/ ist veraltet – lokal 'npm run build' ausführen und public/build/ mitcommitten"
+            git status --short -- public/build | head -20
+            exit 1
+          fi
+          echo "public/build/ ist aktuell"
+
+  deploy:
+    name: Deploy
+    needs: [check, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production    # optional: unter Settings → Environments Freigabe/Schutz einstellen
+    steps:
+      - name: Secrets prüfen
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          [ -n "$KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$KNOWN_HOSTS" ] || missing="$missing DEPLOY_KNOWN_HOSTS"
+          [ -z "$missing" ] || { echo "::error::Secrets fehlen:$missing (siehe app new / app ci-key)"; exit 1; }
+
+      # Nur nötig, wenn der Server per Tailscale statt öffentlich erreichbar ist:
+      # - uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3
+      #   with:
+      #     oauth-client-id: ${{ secrets.TS_OAUTH_ID }}
+      #     oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+      #     tags: tag:ci
+
+      - name: Deploy auslösen
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # Der Schlüssel kann auf dem Server nur "deploy <app> <sha>" auslösen.
+          ssh -T -p "$PORT" -i ~/.ssh/deploy \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
+            deploy@"$HOST" "$GITHUB_SHA" 2>&1 | tee deploy.log
+          rc=${PIPESTATUS[0]}
+          rm -f ~/.ssh/deploy
+          {
+            echo "### Deploy ${GITHUB_SHA::12}"
+            echo '```'
+            tail -n 20 deploy.log
+            echo '```'
+            echo "Neue Migrationen? Dann im Container: \`php bin/console.php migrate --backup\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"

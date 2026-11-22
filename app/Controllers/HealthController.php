@@ -41,7 +41,10 @@ final class HealthController
 
         $uploadWritable = $this->uploadStorage->isWritable();
 
-        $status = $dbOk && $uploadWritable ? 'ok' : 'degraded';
+        // Ohne Datenbank ist die Anwendung unbenutzbar (503). Ein nicht
+        // beschreibbares Upload-Verzeichnis meldet "degraded", bleibt aber
+        // 200 - ein Neustart des Containers würde daran nichts ändern.
+        $status = !$dbOk ? 'error' : ($uploadWritable ? 'ok' : 'degraded');
 
         // Ausgefallene Cronjobs machen die Anwendung nicht unbenutzbar - sie
         // erscheinen als Warnung, der Statuscode bleibt 200.
@@ -63,7 +66,7 @@ final class HealthController
             'last_backup_age_hours' => $backupAge,
             'last_trash_purge_age_hours' => $purgeAge,
             'warnings' => $warnings,
-        ], $status === 'ok' ? 200 : 503);
+        ], $dbOk ? 200 : 503);
     }
 
     private function lastBackupAgeHours(): ?int

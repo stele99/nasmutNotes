@@ -68,6 +68,7 @@ use App\Repositories\WorkspaceRepository;
 use App\Support\AdminEmails;
 use App\Support\Database;
 use App\Support\Env;
+use App\Support\Paths;
 use App\Support\RateLimiter;
 use App\Support\Renderer;
 use App\Support\UploadStorage;
@@ -75,6 +76,7 @@ use App\Support\View;
 use App\Support\Vite;
 use DI\ContainerBuilder;
 use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\ErrorLogHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -86,16 +88,11 @@ return static function (string $rootPath): DI\Container {
     $builder->addDefinitions([
         'root_path' => $rootPath,
 
-        PDO::class => static function (): PDO {
-            $dbPath = Env::get('DB_PATH', 'var/data/app.sqlite') ?? 'var/data/app.sqlite';
-            if ($dbPath !== ':memory:' && !str_starts_with($dbPath, '/')) {
-                $dbPath = dirname(__DIR__, 2) . '/' . $dbPath;
-            }
+        'data_path' => Paths::dataDir(),
 
-            return Database::connect($dbPath);
-        },
+        PDO::class => static fn (): PDO => Database::connect(Paths::require('DB_PATH')),
 
-        LoggerInterface::class => static function () use ($rootPath): LoggerInterface {
+        LoggerInterface::class => static function (): LoggerInterface {
             $logger = new Logger('app');
             $level = match (strtolower(Env::get('LOG_LEVEL', 'info') ?? 'info')) {
                 'debug' => Level::Debug,
@@ -104,9 +101,18 @@ return static function (string $rootPath): DI\Container {
                 default => Level::Info,
             };
 
-            $handler = new StreamHandler($rootPath . '/var/log/app.log', $level);
-            $handler->setFormatter(new JsonFormatter());
-            $logger->pushHandler($handler);
+            // Immer auch über error_log() ohne Zieldatei: Im Container landet das
+            // auf stderr und damit im Container-Log.
+            $logger->pushHandler(new ErrorLogHandler(ErrorLogHandler::OPERATING_SYSTEM, $level));
+
+            // Zusätzlich eine Logdatei im Datenverzeichnis; LOG_FILE= (leer)
+            // schaltet sie ab, z. B. wenn nur das Container-Log zählt.
+            $logFile = Paths::fromEnv('LOG_FILE');
+            if ($logFile !== null) {
+                $handler = new StreamHandler($logFile, $level);
+                $handler->setFormatter(new JsonFormatter());
+                $logger->pushHandler($handler);
+            }
 
             return $logger;
         },
@@ -162,8 +168,8 @@ return static function (string $rootPath): DI\Container {
         Renderer::class => static fn (View $view, Vite $vite): Renderer => new Renderer($view, $vite),
 
         UploadStorage::class => static fn (): UploadStorage => new UploadStorage(
-            $rootPath,
-            Env::get('UPLOAD_PATH', 'var/uploads') ?? 'var/uploads',
+            Paths::dataDir(),
+            Paths::require('UPLOAD_PATH'),
         ),
 
         SettingsRepository::class => static fn (PDO $pdo): SettingsRepository => new SettingsRepository($pdo),
@@ -229,13 +235,7 @@ return static function (string $rootPath): DI\Container {
 
         // Sicherungen liegen außerhalb des Web-Roots und überstehen ein
         // Deployment, weil var/ dabei nicht überschrieben wird (NFR-OPS-06).
-        BackupLayout::class => static function () use ($rootPath): BackupLayout {
-            $path = Env::get('BACKUP_PATH', 'var/backups') ?? 'var/backups';
-
-            return new BackupLayout(
-                str_starts_with($path, '/') ? rtrim($path, '/') : $rootPath . '/' . trim($path, '/'),
-            );
-        },
+        BackupLayout::class => static fn (): BackupLayout => new BackupLayout(Paths::require('BACKUP_PATH')),
 
         BackupService::class => static fn (
             PDO $pdo,
@@ -280,13 +280,13 @@ return static function (string $rootPath): DI\Container {
             $storage,
             $markdown,
             $auditLog,
-            $rootPath . '/' . trim(Env::get('EXPORT_TMP_PATH', 'var/tmp/export') ?? 'var/tmp/export', '/'),
+            Paths::require('EXPORT_TMP_PATH'),
         ),
 
         // Teile eines laufenden Uploads liegen außerhalb des Web-Roots und sind
         // flüchtig; var/ ist dafür der richtige Ort.
         ArchiveChunkStore::class => static fn (): ArchiveChunkStore => new ArchiveChunkStore(
-            $rootPath . '/' . trim(Env::get('IMPORT_TMP_PATH', 'var/tmp/import') ?? 'var/tmp/import', '/'),
+            Paths::require('IMPORT_TMP_PATH'),
         ),
 
         ZipImportService::class => static fn (
@@ -340,10 +340,10 @@ return static function (string $rootPath): DI\Container {
         // Kartenkacheln für die Standortauswahl - server-seitig geholt und
         // zwischengespeichert, damit der Browser des Nutzers nie direkt mit
         // dem Kartendienst spricht (FR-NOTE-27).
-        MapTileProxy::class => static function (LoggerInterface $logger) use ($rootPath): MapTileProxy {
+        MapTileProxy::class => static function (LoggerInterface $logger): MapTileProxy {
             return new MapTileProxy(
                 $logger,
-                $rootPath . '/' . trim(Env::get('MAP_TILE_CACHE_PATH', 'var/cache/tiles') ?? 'var/cache/tiles', '/'),
+                Paths::require('MAP_TILE_CACHE_PATH'),
                 Env::get('MAP_TILE_URL_TEMPLATE', MapTileProxy::DEFAULT_URL_TEMPLATE) ?? MapTileProxy::DEFAULT_URL_TEMPLATE,
                 Env::get('APP_URL', '') ?? '',
             );
@@ -500,7 +500,7 @@ return static function (string $rootPath): DI\Container {
             Env::get('OPENAI_BASE_URL', VoiceNoteService::DEFAULT_BASE_URL) ?? VoiceNoteService::DEFAULT_BASE_URL,
             Env::get('VOICE_POSTPROCESS_MODEL', VoiceNoteService::DEFAULT_POSTPROCESS_MODEL)
                 ?? VoiceNoteService::DEFAULT_POSTPROCESS_MODEL,
-            $rootPath . '/' . trim(Env::get('VOICE_TMP_PATH', 'var/tmp/voice') ?? 'var/tmp/voice', '/'),
+            Paths::require('VOICE_TMP_PATH'),
         ),
 
         // Sprachnotizen: Der .env liefert nur Anfangswerte, maßgeblich sind die
@@ -527,7 +527,7 @@ return static function (string $rootPath): DI\Container {
             $templates,
             $pageRepository,
             $markdownRenderer,
-            $rootPath . '/' . trim(Env::get('VOICE_TMP_PATH', 'var/tmp/voice') ?? 'var/tmp/voice', '/'),
+            Paths::require('VOICE_TMP_PATH'),
             // Das Geheimnis kommt nur aus der Umgebung; OPENAI_API_KEY bleibt als
             // gebräuchlicher Zweitname zulässig.
             Env::get('OPENAI_KEY') ?: (Env::get('OPENAI_API_KEY', '') ?? ''),
@@ -565,7 +565,7 @@ return static function (string $rootPath): DI\Container {
         IdTokenVerifierInterface::class => static fn (): IdTokenVerifierInterface => new GoogleIdTokenVerifier(
             Env::get('GOOGLE_CLIENT_ID', '') ?? '',
             Env::get('GOOGLE_HOSTED_DOMAIN') ?: null,
-            $rootPath . '/var/data/google_jwks_cache.json',
+            Paths::require('GOOGLE_JWKS_CACHE'),
         ),
 
         AuthService::class => static fn (

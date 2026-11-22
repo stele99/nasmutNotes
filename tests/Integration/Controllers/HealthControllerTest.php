@@ -61,6 +61,21 @@ final class HealthControllerTest extends TestCase
         self::assertSame([], $body['warnings']);
     }
 
+    public function testDatabaseFailureReturns503(): void
+    {
+        $pdo = $this->makeDatabase();
+        $pdo->exec('DROP TABLE migrations');
+
+        $controller = new HealthController($pdo, new UploadStorage($this->root, $this->root . '/uploads'));
+        $response = $controller(
+            (new ServerRequestFactory())->createServerRequest('GET', '/health'),
+            (new ResponseFactory())->createResponse(),
+        );
+
+        self::assertSame(503, $response->getStatusCode());
+        self::assertSame('error', json_decode((string) $response->getBody(), true)['status']);
+    }
+
     /** @return array<string, mixed> */
     private function health(\PDO $pdo): array
     {

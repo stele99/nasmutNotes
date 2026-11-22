@@ -4,32 +4,34 @@
 
 - This is a Slim 4 PHP 8.4+ application with SQLite, Composer dependencies, and a Vite 7 frontend; `public/index.php` is the HTTP entrypoint and `bin/console.php` is the CLI entrypoint.
 - HTTP routes are registered in `app/Config/routes.php`; controllers, domain services, repositories, middleware, and shared support code live under `app/`.
-- Vite entrypoints are `resources/js/app.js`, `resources/js/editor/index.js`, and `resources/js/public-share.js`; Vite writes the manifest and assets to `public/build/`, which is generated and gitignored.
+- Vite entrypoints are `resources/js/app.js`, `resources/js/editor/index.js`, and `resources/js/public-share.js`; Vite writes the manifest and assets to `public/build/`, which is generated but committed: the container host runs no npm build, so rebuild with `npm run build` and commit `public/build/` with every frontend change.
 - Database schema changes are numbered SQL files in `database/migrations/`; `App\Support\Migrator` applies pending files in sorted filename order and records them in SQLite.
 
 ## Setup And Commands
 
 - Install backend and frontend dependencies with `composer install` and `npm ci`.
 - Copy `.env.example` to `.env` and replace the placeholder `APP_KEY`; non-testing startup exits if `APP_ENV`, `APP_KEY`, `DB_PATH`, or `SESSION_LIFETIME_DAYS` is missing.
-- Apply the local database migrations with `composer migrate` (`php bin/console.php migrate`; the deploy runs `migrate --backup`, which snapshots first when migrations are pending); the CLI also provides `user:list`, `trash:purge` (daily maintenance cron: expired trash pages, soft-deleted tasks/categories/log entries/log columns, audit log retention, stale rate limits), and `backup:run|list|verify|restore|extract` (full `VACUUM INTO` snapshot plus content-addressed upload pool; `backup:restore` is CLI-only by design, `backup:extract` exports one user's state from a snapshot as an import ZIP).
+- Apply the local database migrations with `composer migrate` (`php bin/console.php migrate`; after a deploy with new migrations run `migrate --backup` once in the container — the server does not run migrations; it snapshots first when migrations are pending); the CLI also provides `user:list`, `trash:purge` (daily maintenance cron: expired trash pages, soft-deleted tasks/categories/log entries/log columns, audit log retention, stale rate limits), and `backup:run|list|verify|restore|extract` (full `VACUUM INTO` snapshot plus content-addressed upload pool; `backup:restore` is CLI-only by design, `backup:extract` exports one user's state from a snapshot as an import ZIP).
 - Build production assets with `npm run build`; use `npm run dev` for Vite on strict port `5173` when `APP_ENV=development` and `VITE_DEV_SERVER` is configured. Local PHP server: `php -S localhost:8080 -t public public/index.php`.
 
 ## Verification
 
 - Match CI's backend order when validating changes: `composer audit`, `composer cs`, `composer stan`, then `composer test`.
-- Frontend verification is `npm audit --audit-level=high` followed by `npm run build`. `npm test` runs the frontend tests (`node --test tests/Frontend/*.test.js`), but CI does not run them — run them manually when touching JS.
+- Frontend verification is `npm audit --audit-level=high` followed by `npm run build`. `npm test` runs the frontend tests (`node --test tests/Frontend/*.test.js`); CI runs them too.
 - PHP-CS-Fixer and PHPStan cover `app/`, `tests/`, and `bin/console.php` as configured; PHPStan is level 8 with its cache under `var/phpstan`.
 - PHPUnit runs `tests/Unit` and `tests/Integration` with `tests/bootstrap.php` against in-memory SQLite (`phpunit.xml` sets `APP_ENV=testing` and `DB_PATH=:memory:`).
 
 ## Runtime Constraints
 
-- Pushing to `main` auto-deploys to production via CI once backend and frontend jobs pass (manual trigger possible via workflow_dispatch; PRs do not deploy) — treat pushes to `main` accordingly.
+- Pushing to `main` auto-deploys to production via `.github/workflows/deploy.yml` once the `check` and `frontend` jobs pass (manual trigger possible via workflow_dispatch; PRs do not deploy) — treat pushes to `main` accordingly. The server only runs `composer install --no-dev --no-scripts --no-plugins` and restarts the container: no npm build, no migrations. The `frontend` job fails when the committed `public/build/` differs from a fresh build.
 - Keep database paths and other relative paths rooted at the repository; `DB_PATH=:memory:` is reserved for tests, while normal startup resolves relative paths beneath the project root.
 - Add migrations rather than editing already-applied migration files; the migrator has no rollback command.
 - Each migration runs inside a transaction unless its file contains the marker `-- migrator:no-transaction`; that marker is reserved for table rebuilds that need `PRAGMA foreign_keys = OFF` (changing a CHECK constraint, for example) and makes the file responsible for its own `BEGIN`/`COMMIT`.
 - Alpine.js runs as the CSP build (`@alpinejs/csp`): templates must not use arbitrary JS expressions (arrow functions, template strings) in `x-*` attributes — logic belongs in Alpine components under `resources/js/`.
 - `public/icon/` (not `icons/`) is deliberate: Apache's default `/icons/` alias would shadow an `icons/` directory and 404 the files. Renaming requires updating `resources/views/layout.php`, the sidebar partial, `public/manifest.webmanifest`, and the precache list in `public/sw.js` (bump `SHELL_CACHE`).
-- Do not commit `.env`, `var/`, `vendor/`, `node_modules/`, or `public/build/`; these are ignored and include runtime data, dependencies, caches, or generated assets.
+- Do not commit `.env`, `var/`, `.localdata/`, `vendor/`, or `node_modules/`; these are ignored and include runtime data, dependencies, or caches.
+- Production runs in FrankenPHP (Docker) with the code read-only under `/app`; the app may only write to `APP_DATA_DIR` (`/data`) and `/tmp`. Every writable path goes through `App\Support\Paths` (relative values resolve against `APP_DATA_DIR`, falling back to the project root); never write below the project root directly. HTTPS terminates at Cloudflare: scheme comes from `X-Forwarded-Proto` (`TrustedProxyMiddleware`), client IP from `CF-Connecting-IP`/`X-Forwarded-For` (`RequestIp`). There is no `.htaccess`.
+- Uploaded images are always re-encoded with GD (`ImageSanitizer`) before they are stored; never store or serve the original bytes.
 - For requirements context consult `docs/URS.md`; concept docs `docs/KONZEPT-NOTE-ENCRYPTION.md`, `docs/KONZEPT-NOTESVOICE.md`, `docs/KONZEPT-DESKTOP-API.md`, and `docs/KONZEPT-BILD-ANNOTATIONEN.md` cover page encryption, voice notes, the Desktop Assistant proxy, and image annotations; `docs/API-DESKTOP-ASSISTANT.md` is the frozen client contract for the Desktop Assistant endpoints. Prefer `composer.json`, `package.json`, PHP config, and CI when they disagree with the specification.
 - Tasks, categories, log entries and log columns are soft-deleted (`deleted_at`); every repository query that lists or counts them must filter `deleted_at IS NULL`, and restore endpoints exist for the undo toast. Log values of deleted columns stay in `log_values` until purge.
 - Offline editing of tasks and log entries lives in `resources/js/offline/records.js` (outbox types `task.*` and `log.*`, overlaid on the cached board, three-way merge on 409). New records carry a `client_uuid` so replays are idempotent server-side.
