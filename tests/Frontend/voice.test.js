@@ -105,10 +105,14 @@ function installGetUserMedia(impl) {
 
 globalThis.window = globalThis;
 globalThis.MediaRecorder = FakeMediaRecorder;
-globalThis.navigator = {
-  onLine: true,
-  mediaDevices: {},
-};
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
+    onLine: true,
+    mediaDevices: {},
+  },
+  configurable: true,
+  writable: true,
+});
 
 installGetUserMedia();
 

@@ -24,7 +24,7 @@ function makeComponent({ pageId = 7, shared = false, online = true } = {}) {
     CustomEvent,
     Event,
   };
-  globalThis.navigator = { onLine: online };
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: online }, configurable: true, writable: true });
 
   const component = { pageId, ...pageCopyMixin() };
   component.initPageCopy({ dataset: { pageIsShared: shared ? '1' : '0' } });

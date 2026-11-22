@@ -3,7 +3,7 @@ import test from 'node:test';
 import 'fake-indexeddb/auto';
 
 globalThis.window = { addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
-globalThis.navigator = { onLine: true };
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true, writable: true });
 
 const { describeBlocked } = await import('../../resources/js/offline/blockedDetails.js');
 

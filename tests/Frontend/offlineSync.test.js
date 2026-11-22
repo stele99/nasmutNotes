@@ -23,7 +23,7 @@ globalThis.window = {
 };
 globalThis.localStorage = window.localStorage;
 globalThis.document = { querySelector: () => null, readyState: 'complete' };
-globalThis.navigator = { onLine: true, storage: {}, locks: { request: (_name, fn) => fn() } };
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: true, storage: {}, locks: { request: (_name, fn) => fn() } }, configurable: true, writable: true });
 globalThis.createImageBitmap = async () => ({ width: 4, height: 2, close() {} });
 globalThis.window.createImageBitmap = globalThis.createImageBitmap;
 
