@@ -275,20 +275,21 @@
                                     <p x-show="mcpError" x-cloak x-text="mcpError" class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
                                 </div>
 
-                                <?php /* Notizbuch-Freigaben (FR-MCP-03) als Übersicht; einzeln
-                                         freigegebene Seiten stehen im Teilen-Dialog der Seite. */ ?>
+                                <?php /* Notizbuch-Freigaben und -Sperren (FR-MCP-03/08) als Übersicht;
+                                         einzeln freigegebene Seiten stehen im Teilen-Dialog der Seite. */ ?>
                                 <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
-                                    <h4 class="text-sm font-semibold">Freigegebene Notizbücher</h4>
-                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Für MCP-Zugänge mit „Nur freigegebene Seiten bearbeiten“: Alle Seiten eines freigegebenen Notizbuchs sind beschreibbar, auch später hinzukommende. Einzelne Seiten gibst du im Teilen-Dialog der Seite frei.</p>
-                                    <p x-show="mcpNotebooks.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Keine Notizbücher mit Schreibrecht.</p>
+                                    <h4 class="text-sm font-semibold">Notizbücher</h4>
+                                    <p class="mt-1 text-xs" style="color: var(--color-text-muted);">„Bearbeiten erlaubt“ wirkt für MCP-Zugänge mit „Nur freigegebene Seiten bearbeiten“ auf alle Seiten des Notizbuchs, auch später hinzukommende. „Gesperrt“ verbirgt das Notizbuch samt Seiten vor allen deinen MCP-Clients - unabhängig von Schreibrechten und Seitenfreigaben.</p>
+                                    <p x-show="mcpNotebooks.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Noch keine Notizbücher.</p>
                                     <ul class="mt-3 space-y-1">
                                         <template x-for="notebook in mcpNotebooks" :key="notebook.id">
-                                            <li>
-                                                <label class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10">
-                                                    <input type="checkbox" :checked="notebook.writable" :disabled="!notebook.can_edit && !notebook.writable" @change="changeMcpNotebook(notebook, $event)">
-                                                    <span class="min-w-0 flex-1 truncate" x-text="mcpNotebookLabel(notebook)"></span>
-                                                    <span x-show="!notebook.can_edit" x-cloak class="shrink-0 text-xs" style="color: var(--color-text-muted);">nur lesen</span>
-                                                </label>
+                                            <li class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
+                                                <span class="min-w-0 flex-1 truncate" x-text="mcpNotebookLabel(notebook)"></span>
+                                                <select @change="changeMcpNotebook(notebook, $event)" :aria-label="'MCP-Zugriff auf ' + notebook.name" class="shrink-0 rounded-md border px-2 py-1 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                                    <option value="default" :selected="isMcpNotebookMode(notebook, 'default')">Standard</option>
+                                                    <option value="write" :selected="isMcpNotebookMode(notebook, 'write')" :disabled="!notebook.can_edit">Bearbeiten erlaubt</option>
+                                                    <option value="excluded" :selected="isMcpNotebookMode(notebook, 'excluded')">Gesperrt</option>
+                                                </select>
                                             </li>
                                         </template>
                                     </ul>

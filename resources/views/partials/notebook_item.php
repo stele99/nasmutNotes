@@ -11,8 +11,11 @@
         <button type="button" x-show="notebook.is_owner" @click="openNotebookShareDialog(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="share-2"></span>Teilen</button>
         <button type="button" x-show="notebook.is_owner" @click="openRenameNotebookDialog(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="pencil"></span>Umbenennen</button>
         <?php /* MCP-Freigabe des ganzen Notizbuchs (FR-MCP-03) - für alle mit
-                 Schreibrecht, gilt nur für die eigenen MCP-Clients. */ ?>
+                 Schreibrecht, gilt nur für die eigenen MCP-Clients; bei
+                 gesperrtem Notizbuch ausgeblendet. */ ?>
         <button type="button" x-show="notebookMcpVisible(notebook)" x-cloak @click="toggleNotebookMcp(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="cpu"></span><span x-text="notebookMcpLabel(notebook)"></span></button>
+        <?php /* Sperre (FR-MCP-08): Notizbuch samt Seiten für die eigenen MCP-Clients unsichtbar. */ ?>
+        <button type="button" x-show="notebookMcpExclusionVisible()" x-cloak @click="toggleNotebookMcpExclusion(notebook)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="eye-off"></span><span x-text="notebookMcpExclusionLabel(notebook)"></span></button>
         <?php /* Ausblenden betrifft nur diese Liste - die Seiten bleiben
                  auffindbar und stehen weiter unter „Alle Seiten". */ ?>
         <button type="button" x-show="notebook.is_owner && !notebook.is_hidden" @click="setNotebookHidden(notebook, true)" class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"><span x-icon="eye-off"></span>Ausblenden</button>

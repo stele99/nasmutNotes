@@ -24,6 +24,11 @@ final class McpTokenService
     /** Erkennbares Präfix, damit ein versehentlich geteilter Token auffällt. */
     public const TOKEN_PREFIX = 'nmcp_';
 
+    public const NOTEBOOK_DEFAULT = 'default';
+    public const NOTEBOOK_WRITE = 'write';
+    public const NOTEBOOK_EXCLUDED = 'excluded';
+    public const NOTEBOOK_MODES = [self::NOTEBOOK_DEFAULT, self::NOTEBOOK_WRITE, self::NOTEBOOK_EXCLUDED];
+
     private const MAX_LABEL_LENGTH = 60;
     private const MAX_TOKENS_PER_USER = 20;
 
@@ -142,7 +147,7 @@ final class McpTokenService
      * oder ihr Notizbuch freigegeben ist und wie viele eigene Token davon
      * betroffen sind (Modus "selected") bzw. ohnehin überall schreiben ("all").
      *
-     * @return array{writable: bool, notebook_writable: bool, selected_tokens: int, all_tokens: int}
+     * @return array{writable: bool, notebook_writable: bool, notebook_excluded: bool, selected_tokens: int, all_tokens: int}
      */
     public function pageAccess(User $user, int $pageId): array
     {
@@ -152,6 +157,7 @@ final class McpTokenService
         return [
             'writable' => $this->tokens->hasPageGrant($user->id, $pageId),
             'notebook_writable' => $this->tokens->hasNotebookGrantForPage($user->id, $pageId),
+            'notebook_excluded' => $this->tokens->excludedPageIds($user->id, [$pageId]) !== [],
         ] + $this->tokenCounts($user);
     }
 
@@ -160,7 +166,7 @@ final class McpTokenService
      * Freigeben setzt eigenes Schreibrecht voraus; entziehen geht immer, solange
      * die Seite sichtbar ist.
      *
-     * @return array{writable: bool, notebook_writable: bool, selected_tokens: int, all_tokens: int}
+     * @return array{writable: bool, notebook_writable: bool, notebook_excluded: bool, selected_tokens: int, all_tokens: int}
      */
     public function setPageWritable(User $user, int $pageId, bool $writable, string $ipHash): array
     {
@@ -185,29 +191,29 @@ final class McpTokenService
     }
 
     /**
-     * Notizbücher für die MCP-Übersicht: alle, in die der Nutzer schreiben
-     * darf, plus bereits freigegebene (damit sich eine Freigabe auch nach
-     * einem entzogenen Schreibrecht noch zurücknehmen lässt).
+     * Notizbücher für die MCP-Übersicht mit ihrem Zustand: Standard, für MCP
+     * beschreibbar (FR-MCP-03) oder für MCP gesperrt (FR-MCP-08). Gesperrt
+     * werden kann jedes sichtbare Notizbuch, freigegeben nur mit Schreibrecht.
      *
-     * @return array{notebooks: list<array{id: int, name: string, owner_name: ?string, is_owner: bool, can_edit: bool, writable: bool}>, selected_tokens: int, all_tokens: int}
+     * @return array{notebooks: list<array{id: int, name: string, owner_name: ?string, is_owner: bool, can_edit: bool, mode: string, writable: bool, excluded: bool}>, selected_tokens: int, all_tokens: int}
      */
     public function notebookAccessList(User $user): array
     {
         $granted = $this->tokens->grantedNotebookIds($user->id);
+        $excluded = $this->tokens->excludedNotebookIds($user->id);
         $notebooks = [];
         foreach ($this->notebooks->listWithShared($user) as $notebook) {
             $id = (int) $notebook['id'];
-            $canEdit = self::canEditNotebook($notebook);
-            if (!$canEdit && !isset($granted[$id])) {
-                continue;
-            }
+            $mode = isset($excluded[$id]) ? self::NOTEBOOK_EXCLUDED : (isset($granted[$id]) ? self::NOTEBOOK_WRITE : self::NOTEBOOK_DEFAULT);
             $notebooks[] = [
                 'id' => $id,
                 'name' => (string) $notebook['name'],
                 'owner_name' => isset($notebook['owner_name']) ? (string) $notebook['owner_name'] : null,
                 'is_owner' => ($notebook['is_owner'] ?? false) === true,
-                'can_edit' => $canEdit,
-                'writable' => isset($granted[$id]),
+                'can_edit' => self::canEditNotebook($notebook),
+                'mode' => $mode,
+                'writable' => $mode === self::NOTEBOOK_WRITE,
+                'excluded' => $mode === self::NOTEBOOK_EXCLUDED,
             ];
         }
 
@@ -215,33 +221,103 @@ final class McpTokenService
     }
 
     /**
-     * Ganzes Notizbuch für die eigenen MCP-Clients freigeben (FR-MCP-03). Gilt
-     * für alle Seiten darin, auch künftige. Freigeben setzt Schreibrecht am
-     * Notizbuch voraus; jede einzelne Schreibaktion prüft es ohnehin erneut.
+     * Zustand eines Notizbuchs für die eigenen MCP-Clients setzen:
+     * - default:  lesbar, beschreibbar nur im Modus "Alle Seiten"
+     * - write:    alle Seiten darin beschreibbar, auch künftige (FR-MCP-03)
+     * - excluded: Notizbuch samt Seiten für MCP unsichtbar (FR-MCP-08)
+     * Freigabe und Sperre schließen sich aus; der neue Zustand ersetzt den alten.
      *
-     * @return array{writable: bool, selected_tokens: int, all_tokens: int}
+     * @return array{mode: string, writable: bool, excluded: bool, selected_tokens: int, all_tokens: int}
+     */
+    public function setNotebookMode(User $user, int $notebookId, mixed $mode, string $ipHash): array
+    {
+        if (!is_string($mode) || !in_array($mode, self::NOTEBOOK_MODES, true)) {
+            throw new ValidationException('Ungültiger Zustand. Erlaubt: default, write, excluded.');
+        }
+        $notebook = $this->visibleNotebook($user, $notebookId);
+        if ($mode === self::NOTEBOOK_WRITE && !self::canEditNotebook($notebook)) {
+            throw new ForbiddenException('In diesem Notizbuch darfst du nur lesen.');
+        }
+
+        $previous = $this->notebookMode($user, $notebookId);
+        if ($mode === self::NOTEBOOK_WRITE) {
+            $this->tokens->removeNotebookExclusion($user->id, $notebookId);
+            $this->tokens->grantNotebook($user->id, $notebookId);
+        } elseif ($mode === self::NOTEBOOK_EXCLUDED) {
+            $this->tokens->revokeNotebookGrant($user->id, $notebookId);
+            $this->tokens->excludeNotebook($user->id, $notebookId);
+        } else {
+            $this->tokens->revokeNotebookGrant($user->id, $notebookId);
+            $this->tokens->removeNotebookExclusion($user->id, $notebookId);
+        }
+
+        if ($previous !== $mode) {
+            $this->auditLog->log($user->id, match ($mode) {
+                self::NOTEBOOK_WRITE => 'mcp_notebook_granted',
+                self::NOTEBOOK_EXCLUDED => 'mcp_notebook_excluded',
+                default => $previous === self::NOTEBOOK_EXCLUDED ? 'mcp_notebook_included' : 'mcp_notebook_revoked',
+            }, 'notebook', $notebookId, $ipHash);
+        }
+
+        return [
+            'mode' => $mode,
+            'writable' => $mode === self::NOTEBOOK_WRITE,
+            'excluded' => $mode === self::NOTEBOOK_EXCLUDED,
+        ] + $this->tokenCounts($user);
+    }
+
+    /**
+     * Kurzform von setNotebookMode für die Freigabe (true) bzw. ihre Rücknahme.
+     * Die Rücknahme hebt keine Sperre auf.
+     *
+     * @return array{mode: string, writable: bool, excluded: bool, selected_tokens: int, all_tokens: int}
      */
     public function setNotebookWritable(User $user, int $notebookId, bool $writable, string $ipHash): array
     {
-        $notebook = $this->visibleNotebook($user, $notebookId);
+        if (!$writable && $this->notebookMode($user, $notebookId) === self::NOTEBOOK_EXCLUDED) {
+            $this->visibleNotebook($user, $notebookId);
 
-        if ($writable) {
-            if (!self::canEditNotebook($notebook)) {
-                throw new ForbiddenException('In diesem Notizbuch darfst du nur lesen.');
-            }
-            $this->tokens->grantNotebook($user->id, $notebookId);
-        } else {
-            $this->tokens->revokeNotebookGrant($user->id, $notebookId);
+            return ['mode' => self::NOTEBOOK_EXCLUDED, 'writable' => false, 'excluded' => true]
+                + $this->tokenCounts($user);
         }
-        $this->auditLog->log(
-            $user->id,
-            $writable ? 'mcp_notebook_granted' : 'mcp_notebook_revoked',
-            'notebook',
+
+        return $this->setNotebookMode(
+            $user,
             $notebookId,
+            $writable ? self::NOTEBOOK_WRITE : self::NOTEBOOK_DEFAULT,
             $ipHash,
         );
+    }
 
-        return ['writable' => $writable] + $this->tokenCounts($user);
+    private function notebookMode(User $user, int $notebookId): string
+    {
+        if (isset($this->tokens->excludedNotebookIds($user->id)[$notebookId])) {
+            return self::NOTEBOOK_EXCLUDED;
+        }
+
+        return isset($this->tokens->grantedNotebookIds($user->id)[$notebookId])
+            ? self::NOTEBOOK_WRITE
+            : self::NOTEBOOK_DEFAULT;
+    }
+
+    /** @return array<int, true> Notizbuch-ID => für MCP gesperrt */
+    public function excludedNotebookIds(User $user): array
+    {
+        return $this->tokens->excludedNotebookIds($user->id);
+    }
+
+    public function isPageExcluded(User $user, int $pageId): bool
+    {
+        return $this->tokens->excludedPageIds($user->id, [$pageId]) !== [];
+    }
+
+    /**
+     * @param list<int> $pageIds
+     * @return array<int, true> Seiten-ID => in gesperrtem Notizbuch
+     */
+    public function excludedPageIds(User $user, array $pageIds): array
+    {
+        return $this->tokens->excludedPageIds($user->id, $pageIds);
     }
 
     /** @return array<int, true> Notizbuch-ID => freigegeben */

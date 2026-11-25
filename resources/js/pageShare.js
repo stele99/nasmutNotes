@@ -27,6 +27,7 @@ export function pageShare() {
     // Schreibfreigabe für die eigenen MCP-Clients (FR-MCP-03).
     mcpWritable: false,
     mcpNotebookWritable: false,
+    mcpNotebookExcluded: false,
     mcpSelectedTokens: 0,
     mcpAllTokens: 0,
     mcpAccessSaving: false,
@@ -191,6 +192,7 @@ export function pageShare() {
     applyMcpAccess(access) {
       this.mcpWritable = access.writable === true;
       this.mcpNotebookWritable = access.notebook_writable === true;
+      this.mcpNotebookExcluded = access.notebook_excluded === true;
       this.mcpSelectedTokens = Number(access.selected_tokens) || 0;
       this.mcpAllTokens = Number(access.all_tokens) || 0;
     },
@@ -227,6 +229,9 @@ export function pageShare() {
     mcpAccessHint() {
       if (this.isEncrypted) {
         return 'Verschlüsselte Notizen sind für MCP-Clients weder les- noch änderbar.';
+      }
+      if (this.mcpNotebookExcluded) {
+        return 'Das Notizbuch dieser Seite ist für MCP gesperrt - deine MCP-Clients sehen die Seite nicht, auch wenn sie hier freigegeben ist.';
       }
       if (this.mcpNotebookWritable) {
         return 'Das Notizbuch dieser Seite ist bereits für MCP freigegeben - die Seite ist damit beschreibbar, auch ohne diesen Schalter.';

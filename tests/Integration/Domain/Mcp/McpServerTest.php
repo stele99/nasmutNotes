@@ -697,7 +697,16 @@ final class McpServerTest extends TestCase
 
         // Die Übersicht zeigt die verbliebene Freigabe, damit A sie zurücknehmen kann.
         $list = $this->tokens->notebookAccessList($this->user)['notebooks'];
-        self::assertSame([['id' => $notebookId, 'name' => 'Team', 'owner_name' => 'b@example.com', 'is_owner' => false, 'can_edit' => false, 'writable' => true]], $list);
+        self::assertSame([[
+            'id' => $notebookId,
+            'name' => 'Team',
+            'owner_name' => 'b@example.com',
+            'is_owner' => false,
+            'can_edit' => false,
+            'mode' => 'write',
+            'writable' => true,
+            'excluded' => false,
+        ]], $list);
         self::assertFalse($this->tokens->setNotebookWritable($this->user, $notebookId, false, 'ip')['writable']);
     }
 
@@ -736,5 +745,103 @@ final class McpServerTest extends TestCase
         // Ein späteres Umbenennen des Zugangs ändert den Verlauf nicht.
         $this->tokens->update($this->user, (int) $token['id'], ['label' => 'Anders'], 'ip');
         self::assertSame('Claude Desktop', $this->notes->listVersions($this->user, $pageId)['versions'][0]['created_via']);
+    }
+
+    public function testExcludedNotebookIsInvisibleToMcp(): void
+    {
+        $secret = $this->notebook('Privat');
+        $open = $this->notebook('Offen');
+        $hidden = $this->note('Tagebuch', 'streng geheim');
+        $visible = $this->note('Einkauf', 'geheim wie Milch');
+        $this->pages->update($this->user, $hidden, ['notebook_id' => $secret]);
+        $this->pages->update($this->user, $visible, ['notebook_id' => $open]);
+        // Selbst eine einzelne Freigabe der Seite hebt die Sperre nicht auf.
+        $this->tokens->setPageWritable($this->user, $hidden, true, 'ip');
+
+        $result = $this->tokens->setNotebookMode($this->user, $secret, 'excluded', 'ip');
+        self::assertTrue($result['excluded']);
+        self::assertTrue($this->tokens->pageAccess($this->user, $hidden)['notebook_excluded']);
+
+        $token = $this->token(McpToken::WRITE_ALL, true);
+
+        $notebooks = $this->call($token, 'list_notebooks', [])['structuredContent']['notebooks'];
+        self::assertSame(['Offen'], array_column($notebooks, 'name'));
+
+        $pages = $this->call($token, 'list_pages', [])['structuredContent'];
+        self::assertSame(['Einkauf'], array_column($pages['pages'], 'title'));
+        self::assertSame(1, $pages['total']);
+
+        $search = $this->call($token, 'search_pages', ['query' => 'geheim'])['structuredContent']['pages'];
+        self::assertSame([$visible], array_column($search, 'id'));
+
+        // Gleiche Antwort wie für fremde Seiten: Die Existenz bleibt verborgen.
+        self::assertToolError($this->call($token, 'read_page', ['page_id' => $hidden]), "Seite #{$hidden} nicht gefunden");
+        self::assertToolError(
+            $this->call($token, 'update_note', ['page_id' => $hidden, 'markdown' => 'x']),
+            "Seite #{$hidden} nicht gefunden",
+        );
+        self::assertToolError($this->call($token, 'list_pages', ['notebook_id' => $secret]), 'Notizbuch nicht gefunden');
+        self::assertToolError(
+            $this->call($token, 'search_pages', ['query' => 'geheim', 'notebook_id' => $secret]),
+            'Notizbuch nicht gefunden',
+        );
+        self::assertToolError(
+            $this->call($token, 'create_note', ['title' => 'Neu', 'notebook_id' => $secret]),
+            'Notizbuch nicht gefunden',
+        );
+
+        // Auch neu ins Notizbuch gelegte Seiten sind sofort gesperrt.
+        $board = (int) $this->pages->create($this->user, 'task', 'Board', null, $secret)['id'];
+        self::assertToolError($this->call($token, 'add_task', ['page_id' => $board, 'title' => 'x']), 'nicht gefunden');
+
+        // Sperre aufheben: alles wieder da.
+        $this->tokens->setNotebookMode($this->user, $secret, 'default', 'ip');
+        $read = $this->call($token, 'read_page', ['page_id' => $hidden]);
+        self::assertFalse($read['isError'] ?? false, (string) json_encode($read));
+    }
+
+    public function testExcludingRemovesGrantAndGrantingRemovesExclusion(): void
+    {
+        $notebookId = $this->notebook('Projekt');
+
+        $this->tokens->setNotebookMode($this->user, $notebookId, 'write', 'ip');
+        $this->tokens->setNotebookMode($this->user, $notebookId, 'excluded', 'ip');
+        self::assertSame([], $this->tokens->grantedNotebookIds($this->user));
+        self::assertSame([$notebookId => true], $this->tokens->excludedNotebookIds($this->user));
+
+        // „Freigabe entziehen" hebt eine Sperre nicht versehentlich auf.
+        self::assertTrue($this->tokens->setNotebookWritable($this->user, $notebookId, false, 'ip')['excluded']);
+
+        $this->tokens->setNotebookMode($this->user, $notebookId, 'write', 'ip');
+        self::assertSame([], $this->tokens->excludedNotebookIds($this->user));
+        self::assertSame([$notebookId => true], $this->tokens->grantedNotebookIds($this->user));
+    }
+
+    public function testReadOnlyNotebookCanBeExcludedButNotGranted(): void
+    {
+        $notebookId = $this->notebook('Fremd', $this->otherUser);
+        $this->shareNotebook($notebookId, $this->user, 'read');
+
+        self::assertTrue($this->tokens->setNotebookMode($this->user, $notebookId, 'excluded', 'ip')['excluded']);
+        // Die Sperre gilt nur für die Clients von A, nicht für die des Eigentümers.
+        $pageId = (int) $this->pages->create($this->otherUser, 'note', 'Gemeinsam', null, $notebookId)['id'];
+        self::assertFalse($this->tokens->isPageExcluded($this->otherUser, $pageId));
+        self::assertTrue($this->tokens->isPageExcluded($this->user, $pageId));
+
+        $this->expectException(ForbiddenException::class);
+        $this->tokens->setNotebookMode($this->user, $notebookId, 'write', 'ip');
+    }
+
+    public function testInvalidNotebookModeAndForeignNotebookAreRejected(): void
+    {
+        $own = $this->notebook('Eigen');
+        try {
+            $this->tokens->setNotebookMode($this->user, $own, 'hidden', 'ip');
+            self::fail('Ungültiger Zustand wurde angenommen.');
+        } catch (ValidationException) {
+        }
+
+        $this->expectException(NotFoundException::class);
+        $this->tokens->setNotebookMode($this->user, $this->notebook('Fremd', $this->otherUser), 'excluded', 'ip');
     }
 }

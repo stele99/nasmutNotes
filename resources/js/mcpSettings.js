@@ -108,18 +108,22 @@ export function mcpSettingsMixin(instance) {
     },
 
     async changeMcpNotebook(notebook, event) {
-      const writable = event.target.checked === true;
+      const mode = event.target.value;
       this.mcpError = '';
       try {
         await apiFetch(`/api/notebooks/${notebook.id}/mcp-access`, {
           method: 'PUT',
-          body: JSON.stringify({ writable }),
+          body: JSON.stringify({ mode }),
         });
       } catch (error) {
-        event.target.checked = !writable;
-        this.mcpError = error.message || 'Die Freigabe konnte nicht gespeichert werden.';
+        event.target.value = notebook.mode;
+        this.mcpError = error.message || 'Die Einstellung konnte nicht gespeichert werden.';
       }
       await this.loadMcpNotebooks();
+    },
+
+    isMcpNotebookMode(notebook, mode) {
+      return notebook.mode === mode;
     },
 
     mcpNotebookLabel(notebook) {
