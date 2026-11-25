@@ -82,6 +82,7 @@
                             <select id="settings-section-select" x-model="settingsSection" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
                                 <option value="app">App</option>
                                 <option value="clients">Verbundene Clients</option>
+                                <option value="mcp">MCP-Zugang</option>
                                 <?php if (!empty($voiceEnabled)): ?><option value="speech2text">Speech2Text</option><?php endif; ?>
                                 <option value="sync">Sync</option>
                                 <option value="transfer">Import / Export</option>
@@ -91,6 +92,7 @@
                         <nav class="hidden space-y-1 border-r p-3 sm:block" aria-label="Einstellungen" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
                             <button type="button" @click="selectSettingsSection('app')" class="settings-nav-button" :class="isSettingsSection('app') ? 'is-active' : ''"><span x-icon="home"></span><span>App</span></button>
                             <button type="button" @click="selectSettingsSection('clients')" class="settings-nav-button" :class="isSettingsSection('clients') ? 'is-active' : ''"><span x-icon="laptop"></span><span>Verbundene Clients</span></button>
+                            <button type="button" @click="selectSettingsSection('mcp')" class="settings-nav-button" :class="isSettingsSection('mcp') ? 'is-active' : ''"><span x-icon="cpu"></span><span>MCP-Zugang</span></button>
                             <?php if (!empty($voiceEnabled)): ?><button type="button" @click="selectSettingsSection('speech2text')" class="settings-nav-button" :class="isSettingsSection('speech2text') ? 'is-active' : ''"><span x-icon="mic"></span><span>Speech2Text</span></button><?php endif; ?>
                             <button type="button" @click="selectSettingsSection('sync')" class="settings-nav-button" :class="isSettingsSection('sync') ? 'is-active' : ''"><span x-icon="wifi"></span><span>Sync</span></button>
                             <button type="button" @click="selectSettingsSection('transfer')" class="settings-nav-button" :class="isSettingsSection('transfer') ? 'is-active' : ''"><span x-icon="upload"></span><span>Import / Export</span></button>
@@ -210,6 +212,94 @@
                                                     <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted);" x-text="deviceTokenSummary(token)"></p>
                                                 </div>
                                                 <button type="button" @click="revokeDeviceToken(token)" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);" x-text="token.source === 'desktop' ? 'Trennen' : 'Widerrufen'"></button>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </section>
+
+                            <?php /* MCP-Zugang (FR-MCP-01/02): KI-Clients per Model Context
+                                     Protocol verbinden. Der Token ist wie beim Automations-Token
+                                     nur direkt nach dem Erzeugen sichtbar. */ ?>
+                            <section x-show="isSettingsSection('mcp')" x-cloak>
+                                <h3 class="text-xl font-semibold">MCP-Zugang</h3>
+                                <p class="mt-1 text-sm" style="color: var(--color-text-muted);">Verbinde KI-Assistenten wie Claude, ChatGPT oder Cursor über das Model Context Protocol mit deinen Notizen. Jeder Client bekommt einen eigenen Token; was er darf, legst du hier fest. Ein Client kann nie mehr als du selbst.</p>
+
+                                <div class="mt-5 rounded-lg border p-3" style="border-color: var(--color-border);">
+                                    <p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Endpunkt</p>
+                                    <div class="mt-1.5 flex items-center gap-2">
+                                        <code class="min-w-0 flex-1 truncate font-mono text-sm" x-text="mcpEndpoint()"></code>
+                                        <button type="button" @click="copyMcp('endpoint')" class="btn btn-secondary shrink-0" x-text="mcpCopyLabel('endpoint')"></button>
+                                    </div>
+                                </div>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <h4 class="text-sm font-semibold">Neuen Client verbinden</h4>
+                                    <form @submit.prevent="createMcpToken" class="mt-3 space-y-3">
+                                        <div>
+                                            <label :for="mcpFieldIds.label" class="block text-sm font-medium">Name</label>
+                                            <input :id="mcpFieldIds.label" type="text" maxlength="60" x-model="mcpLabel" placeholder="z. B. Claude Desktop" :disabled="mcpCreating" class="mt-1.5 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                        </div>
+                                        <div>
+                                            <label :for="mcpFieldIds.mode" class="block text-sm font-medium">Schreibrechte</label>
+                                            <select :id="mcpFieldIds.mode" x-model="mcpWriteMode" :disabled="mcpCreating" class="mt-1.5 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                                <option value="none">Nur lesen</option>
+                                                <option value="selected">Nur freigegebene Seiten bearbeiten</option>
+                                                <option value="all">Alle Seiten bearbeiten</option>
+                                            </select>
+                                            <p class="mt-1 text-xs" style="color: var(--color-text-muted);">Einzelne Seiten gibst du im Teilen-Dialog der Seite unter „MCP-Clients" frei.</p>
+                                        </div>
+                                        <label class="flex cursor-pointer items-center gap-2 text-sm">
+                                            <input type="checkbox" x-model="mcpCanCreate" :disabled="mcpCreating">
+                                            Darf neue Notizen anlegen
+                                        </label>
+                                        <button type="submit" class="btn btn-primary" :disabled="mcpCreating" x-text="mcpCreating ? 'Erstelle…' : 'Token erzeugen'"></button>
+                                    </form>
+
+                                    <div x-show="mcpLastCreated" x-cloak class="mt-4 rounded-lg p-3" style="background: var(--color-bg-subtle);">
+                                        <p class="text-sm font-medium">Token für „<span x-text="mcpLastCreated ? mcpLastCreated.label : ''"></span>“ (nur jetzt sichtbar)</p>
+                                        <p class="mt-1.5 break-all font-mono text-xs" style="color: var(--color-text-muted);" x-text="mcpLastCreated ? mcpLastCreated.token : ''"></p>
+                                        <button type="button" @click="copyMcp('token')" class="btn btn-secondary mt-2 w-full" x-text="mcpCopyLabel('token')"></button>
+
+                                        <p class="mt-4 text-xs font-semibold">Claude Code</p>
+                                        <pre class="mt-1 whitespace-pre-wrap break-all rounded-md p-2 font-mono text-xs" style="background: var(--color-bg);" x-text="mcpLastCommand()"></pre>
+                                        <button type="button" @click="copyMcp('command')" class="btn btn-secondary mt-2 w-full" x-text="mcpCopyLabel('command')"></button>
+
+                                        <p class="mt-4 text-xs font-semibold">Andere Clients (JSON-Konfiguration)</p>
+                                        <pre class="mt-1 overflow-x-auto rounded-md p-2 font-mono text-xs" style="background: var(--color-bg);" x-text="mcpLastJson()"></pre>
+                                        <button type="button" @click="copyMcp('json')" class="btn btn-secondary mt-2 w-full" x-text="mcpCopyLabel('json')"></button>
+
+                                        <p class="mt-3 text-xs" style="color: var(--color-text-muted);">Der Client muss eine Kopfzeile <code>Authorization: Bearer …</code> senden können. Clients, die ausschließlich eine OAuth-Anmeldung anbieten, lassen sich derzeit nicht verbinden.</p>
+                                    </div>
+
+                                    <p x-show="mcpError" x-cloak x-text="mcpError" class="mt-3 text-sm" style="color: var(--color-danger);" role="alert"></p>
+                                </div>
+
+                                <div class="mt-8 border-t pt-5" style="border-color: var(--color-border);">
+                                    <h4 class="text-sm font-semibold">Verbundene MCP-Clients</h4>
+                                    <p x-show="mcpTokensLoading" class="mt-3 text-sm" style="color: var(--color-text-muted);">Lädt…</p>
+                                    <p x-show="!mcpTokensLoading && mcpTokens.length === 0" class="mt-3 text-sm" style="color: var(--color-text-muted);">Noch keine MCP-Clients verbunden.</p>
+                                    <ul class="mt-3 space-y-2">
+                                        <template x-for="token in mcpTokens" :key="token.id">
+                                            <li class="rounded-lg border p-3" style="border-color: var(--color-border);">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="min-w-0 flex-1">
+                                                        <p class="truncate text-sm font-medium" x-text="token.label"></p>
+                                                        <p class="mt-0.5 truncate text-xs" style="color: var(--color-text-muted);" x-text="mcpTokenSummary(token)"></p>
+                                                    </div>
+                                                    <button type="button" @click="revokeMcpToken(token)" class="shrink-0 text-sm font-medium" style="color: var(--color-danger);">Widerrufen</button>
+                                                </div>
+                                                <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                    <select @change="changeMcpTokenMode(token, $event)" aria-label="Schreibrechte" class="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-bg);">
+                                                        <option value="none" :selected="isMcpTokenMode(token, 'none')">Nur lesen</option>
+                                                        <option value="selected" :selected="isMcpTokenMode(token, 'selected')">Nur freigegebene Seiten bearbeiten</option>
+                                                        <option value="all" :selected="isMcpTokenMode(token, 'all')">Alle Seiten bearbeiten</option>
+                                                    </select>
+                                                    <label class="flex shrink-0 cursor-pointer items-center gap-2 text-sm">
+                                                        <input type="checkbox" :checked="token.can_create" @change="changeMcpTokenCreate(token, $event)">
+                                                        Notizen anlegen
+                                                    </label>
+                                                </div>
                                             </li>
                                         </template>
                                     </ul>

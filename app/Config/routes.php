@@ -21,6 +21,8 @@ use App\Controllers\ImportController;
 use App\Controllers\InviteController;
 use App\Controllers\LogController;
 use App\Controllers\MapTileController;
+use App\Controllers\McpController;
+use App\Controllers\McpTokenController;
 use App\Controllers\NoteAiController;
 use App\Controllers\NotebookController;
 use App\Controllers\NotebookShareController;
@@ -135,6 +137,15 @@ return static function (App $app, ContainerInterface $container): void {
         $group->delete('/{id}', [DeviceTokenController::class, 'destroy']);
     })->add(new RequireAuthMiddleware(true));
 
+    // MCP-Token (FR-MCP-01/02): eigene KI-Clients verbinden, Rechte je Token
+    // ändern, widerrufen.
+    $app->group('/api/profile/mcp-tokens', function ($group): void {
+        $group->get('', [McpTokenController::class, 'index']);
+        $group->post('', [McpTokenController::class, 'store']);
+        $group->patch('/{id}', [McpTokenController::class, 'update']);
+        $group->delete('/{id}', [McpTokenController::class, 'destroy']);
+    })->add(new RequireAuthMiddleware(true));
+
     // Eigene Anmeldungen: einsehen, einzeln oder alle anderen beenden.
     $app->group('/api/profile/sessions', function ($group): void {
         $group->get('', [SessionController::class, 'index']);
@@ -187,6 +198,9 @@ return static function (App $app, ContainerInterface $container): void {
         $group->get('/{id}/writers', [ShareController::class, 'writers']);
         $group->get('/{id}/collaborators', [ShareController::class, 'collaborators']);
         $group->delete('/{id}/share-access', [ShareController::class, 'leave']);
+        // Schreibfreigabe der Seite für die eigenen MCP-Clients (FR-MCP-03).
+        $group->get('/{id}/mcp-access', [McpTokenController::class, 'pageAccess']);
+        $group->put('/{id}/mcp-access', [McpTokenController::class, 'updatePageAccess']);
         $group->get('/{id}/content', [NoteController::class, 'show']);
         $group->put('/{id}/content', [NoteController::class, 'update']);
         $group->put('/{id}/content/encryption', [NoteController::class, 'updateEncryption']);
@@ -301,6 +315,13 @@ return static function (App $app, ContainerInterface $container): void {
     })
         ->add(new RequireAuthMiddleware(true))
         ->add($deviceTokenAuth);
+
+    // MCP-Server (FR-MCP-04): Streamable HTTP, zustandslos, nur MCP-Token.
+    // Bewusst ohne RequireAuthMiddleware - der Controller prüft den Token
+    // selbst und antwortet mit 401 samt WWW-Authenticate.
+    $app->post('/mcp', [McpController::class, 'handle']);
+    $app->get('/mcp', [McpController::class, 'methodNotAllowed']);
+    $app->delete('/mcp', [McpController::class, 'methodNotAllowed']);
 
     $app->get('/api/search', [SearchController::class, 'index'])->add(new RequireAuthMiddleware(true));
     $app->get('/api/search/nearby', [SearchController::class, 'nearby'])->add(new RequireAuthMiddleware(true));

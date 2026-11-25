@@ -18,6 +18,16 @@ use App\Domain\Notes\ImageAnnotationValidator;
 final class MarkdownRenderer
 {
     /**
+     * @param bool $includeAnnotationTexts Bildnotizen als Text unter das Bild
+     *     schreiben. Der MCP-Zugang (FR-MCP-05) schaltet das ab: Er schreibt das
+     *     Markdown zurück und behält die Bildnotizen am Bild selbst - als Text
+     *     kämen sie dabei doppelt in die Notiz.
+     */
+    public function __construct(private readonly bool $includeAnnotationTexts = true)
+    {
+    }
+
+    /**
      * @param array<string, mixed>      $document
      * @param (callable(string): ?string)|null $resolveImage Bild-Token → relativer Pfad im Archiv
      */
@@ -330,7 +340,9 @@ final class MarkdownRenderer
         }
 
         $markdown = '![' . $alt . '](' . $this->url($target) . ')';
-        $texts = ImageAnnotationValidator::texts($attrs['annotations'] ?? null);
+        $texts = $this->includeAnnotationTexts
+            ? ImageAnnotationValidator::texts($attrs['annotations'] ?? null)
+            : [];
         if ($texts !== []) {
             // Annotationen lassen sich in Markdown nicht darstellen, ohne sie
             // einzubrennen - was dieses Konzept ausschließt. Damit trotzdem

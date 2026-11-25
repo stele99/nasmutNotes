@@ -39,6 +39,16 @@ const ACTION_LABELS = {
   device_token_issued: 'Geräte-Token erstellt',
   device_token_paired: 'Gerät verbunden',
   device_token_revoked: 'Gerät getrennt',
+  mcp_token_issued: 'MCP-Zugang erstellt',
+  mcp_token_updated: 'MCP-Zugang geändert',
+  mcp_token_revoked: 'MCP-Zugang widerrufen',
+  mcp_page_granted: 'Seite für MCP freigegeben',
+  mcp_page_revoked: 'MCP-Freigabe der Seite entzogen',
+  mcp_page_created: 'Notiz per MCP angelegt',
+  mcp_note_updated: 'Notiz per MCP geändert',
+  mcp_task_created: 'Aufgabe per MCP angelegt',
+  mcp_task_updated: 'Aufgabe per MCP geändert',
+  mcp_log_entry_created: 'Logbuch-Eintrag per MCP angelegt',
   entries_restored: 'Gelöschte Einträge wiederhergestellt',
 };
 

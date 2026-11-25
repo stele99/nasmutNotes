@@ -119,6 +119,19 @@
                     </label>
                 </fieldset>
 
+                <?php /* Schreibfreigabe für die eigenen MCP-Clients (FR-MCP-03). Wirkt
+                         nur auf MCP-Zugänge im Modus „Nur freigegebene Seiten"; der
+                         Schalter speichert sofort und erzeugt keinen Link. */ ?>
+                <div class="mt-5 rounded-lg border p-3" style="border-color: var(--color-border);">
+                    <label class="flex cursor-pointer items-start gap-3">
+                        <input type="checkbox" class="mt-1" :checked="mcpWritable" :disabled="mcpAccessSaving || isEncrypted" @change="toggleMcpWritable($event)">
+                        <span>
+                            <span class="block text-sm font-medium">MCP-Clients dürfen diese Seite bearbeiten</span>
+                            <span class="block text-xs" style="color: var(--color-text-muted);" x-text="mcpAccessHint()"></span>
+                        </span>
+                    </label>
+                </div>
+
                 <div x-show="existingShares.length > 0" x-cloak class="mt-5 flex items-center justify-between gap-4 rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-bg-subtle);">
                     <div class="min-w-0">
                         <p class="text-sm font-medium" x-text="activeSharesLabel()"></p>
