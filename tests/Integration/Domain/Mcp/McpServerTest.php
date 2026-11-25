@@ -700,4 +700,41 @@ final class McpServerTest extends TestCase
         self::assertSame([['id' => $notebookId, 'name' => 'Team', 'owner_name' => 'b@example.com', 'is_owner' => false, 'can_edit' => false, 'writable' => true]], $list);
         self::assertFalse($this->tokens->setNotebookWritable($this->user, $notebookId, false, 'ip')['writable']);
     }
+
+    public function testVersionHistoryShowsMcpOrigin(): void
+    {
+        $pageId = $this->note('Protokoll', 'Von Hand');
+        $token = $this->tokens->issue($this->user, 'Claude Desktop', McpToken::WRITE_ALL, false, 'ip');
+        $resolved = $this->tokens->resolve((string) $token['token']);
+        self::assertNotNull($resolved);
+        $before = $this->versionCount($pageId);
+
+        // Auch ein bloßes Anhängen direkt nach der Handarbeit legt eine eigene
+        // Fassung an - sonst verschwämmen Mensch und Client zu einer.
+        $appended = $this->call($resolved['token'], 'update_note', ['page_id' => $pageId, 'markdown' => 'Von KI']);
+        self::assertFalse($appended['isError'] ?? false, (string) json_encode($appended));
+        self::assertSame($before + 1, $this->versionCount($pageId));
+
+        $current = $this->notes->get($this->user, $pageId);
+        self::assertSame('Claude Desktop', $current['last_editor_via']);
+        self::assertNull($this->notes->listVersions($this->user, $pageId)['versions'][0]['created_via']);
+
+        // Die nächste Änderung im Editor sichert den MCP-Stand mit Herkunft.
+        $edited = $current['content'];
+        $edited['content'][] = ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Nachgebessert']]];
+        $result = $this->notes->save($this->user, $pageId, $edited, $current['version']);
+        self::assertNull($result['last_editor_via']);
+        self::assertNull($this->notes->get($this->user, $pageId)['last_editor_via']);
+
+        $versions = $this->notes->listVersions($this->user, $pageId)['versions'];
+        self::assertSame('Claude Desktop', $versions[0]['created_via']);
+        self::assertSame(
+            'Claude Desktop',
+            $this->notes->getVersion($this->user, $pageId, $versions[0]['id'])['created_via'],
+        );
+
+        // Ein späteres Umbenennen des Zugangs ändert den Verlauf nicht.
+        $this->tokens->update($this->user, (int) $token['id'], ['label' => 'Anders'], 'ip');
+        self::assertSame('Claude Desktop', $this->notes->listVersions($this->user, $pageId)['versions'][0]['created_via']);
+    }
 }
