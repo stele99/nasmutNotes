@@ -26,6 +26,9 @@ use App\Domain\Import\MarkdownConverter;
 use App\Domain\Import\ZipImportService;
 use App\Domain\Log\LogExportService;
 use App\Domain\Log\LogService;
+use App\Domain\Mcp\McpServer;
+use App\Domain\Mcp\McpTokenService;
+use App\Domain\Mcp\McpTools;
 use App\Domain\NotebookService;
 use App\Domain\NotebookShareService;
 use App\Domain\Notes\AttachmentService;
@@ -38,6 +41,7 @@ use App\Domain\Notes\ProseMirrorValidator;
 use App\Domain\PageCopyService;
 use App\Domain\PageService;
 use App\Domain\SessionService;
+use App\Domain\TaskBoardService;
 use App\Domain\Voice\OpenAiClient;
 use App\Domain\Voice\VoiceNoteService;
 use App\Domain\Voice\VoiceTemplateService;
@@ -50,6 +54,7 @@ use App\Repositories\DevicePairRequestRepository;
 use App\Repositories\DeviceTokenRepository;
 use App\Repositories\InviteRepository;
 use App\Repositories\LogRepository;
+use App\Repositories\McpTokenRepository;
 use App\Repositories\NoteAttachmentRepository;
 use App\Repositories\NotebookRepository;
 use App\Repositories\NotebookShareRepository;
@@ -420,6 +425,49 @@ return static function (string $rootPath): DI\Container {
             UserRepository $users,
             AuditLogRepository $auditLog,
         ): DeviceTokenService => new DeviceTokenService($tokens, $users, $auditLog),
+
+        McpTokenRepository::class => static fn (PDO $pdo): McpTokenRepository => new McpTokenRepository($pdo),
+
+        McpTokenService::class => static fn (
+            McpTokenRepository $tokens,
+            UserRepository $users,
+            PageService $pages,
+            AuditLogRepository $auditLog,
+        ): McpTokenService => new McpTokenService($tokens, $users, $pages, $auditLog),
+
+        McpTools::class => static fn (
+            PageService $pages,
+            NotebookService $notebooks,
+            NoteService $notes,
+            TaskBoardService $boards,
+            LogService $logs,
+            SearchRepository $search,
+            TaskRepository $tasks,
+            CategoryRepository $categories,
+            MarkdownConverter $converter,
+            ProseMirrorValidator $validator,
+            McpTokenService $tokens,
+            AuditLogRepository $auditLog,
+        ): McpTools => new McpTools(
+            $pages,
+            $notebooks,
+            $notes,
+            $boards,
+            $logs,
+            $search,
+            $tasks,
+            $categories,
+            // Bildnotizen bleiben am Bild, statt als Text in das Markdown zu
+            // wandern, das der Client womöglich zurückschreibt.
+            new MarkdownRenderer(includeAnnotationTexts: false),
+            $converter,
+            $validator,
+            $tokens,
+            $auditLog,
+        ),
+
+        McpServer::class => static fn (McpTools $tools, LoggerInterface $logger): McpServer
+            => new McpServer($tools, $logger),
 
         DevicePairRequestRepository::class => static fn (PDO $pdo): DevicePairRequestRepository
             => new DevicePairRequestRepository($pdo),

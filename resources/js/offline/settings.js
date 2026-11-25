@@ -20,6 +20,7 @@ import {
 import { onInstallStateChange, promptInstall } from '../install.js';
 import { loadBlockedDetails } from './blockedDetails.js';
 import { apiFetch } from '../api.js';
+import { mcpSettingsMixin } from '../mcpSettings.js';
 import { getLocationMode, isLocationSupported, loadLocationMode, saveLocationMode } from '../geo.js';
 
 const LARGE_LIMITS = [5000, 10000, 'all'];
@@ -43,6 +44,8 @@ export function offlineSettings() {
   settingsInstance += 1;
 
   return {
+    // MCP-Zugang (FR-MCP): Token für KI-Clients.
+    ...mcpSettingsMixin(settingsInstance),
     open: false,
     settingsSection: 'app',
     limits: CACHE_LIMITS,
@@ -214,6 +217,7 @@ export function offlineSettings() {
       await this.refreshStats();
       await Promise.all([
         this.loadDeviceTokens(),
+        this.loadMcpTokens(),
         this.loadSessions(),
         this.loadAiUsage(),
         this.loadVoiceTemplates(),

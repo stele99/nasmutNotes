@@ -4,9 +4,9 @@
 | Feld | Wert |
 |---|---|
 | Dokument-ID | URS-NOTES-001 |
-| Version | **3.5** |
+| Version | **3.8** |
 | Status | Entwurf |
-| Datum | 2026-07-30 |
+| Datum | 2026-11-25 |
 | Technologie | PHP 8.5, SQLite 3 (WAL + FTS5), Vite 7 + Alpine.js 3 + TipTap 3 |
 
 ---
@@ -407,6 +407,21 @@ Ergebnis: 5 Tasks; der dritte ohne Listenmarkierung, der vierte direkt als erled
 | FR-VOICE-12 | Eine per Diktat entstandene Notiz **merkt sich ihre Vorlage**. Ein weiteres Diktat in dieselbe Notiz fragt nicht erneut, sondern nimmt sofort auf und verwendet sie wieder. Das Modell bekommt dabei den bisherigen Notizinhalt als Vorbild (höchstens 12000 Zeichen) und die Anweisung, die Notiz in genau dieser Form fortzuführen — gleiche Gliederung, fortlaufende Positionsnummern — und ausschließlich den neuen Teil zurückzugeben, der unten angefügt wird. Auch das erste Diktat in eine bisher handgetippte Notiz hinterlegt die dabei gewählte Vorlage. Löscht der Admin die Vorlage, fragt die Notiz wieder nach; ihr Inhalt bleibt unberührt. | S |
 | FR-VOICE-11 | Globale Vorlagen kann jeder Nutzer **für sich abschalten**, damit die Auswahl vor der Aufnahme kurz bleibt. Abgeschaltete erscheinen nicht mehr in der Auswahl, bleiben in den Einstellungen aber sichtbar und jederzeit wieder einschaltbar. Die Abwahl gilt je Nutzer und lässt andere unberührt; neu angelegte globale Vorlagen sind für alle zunächst aktiv. Eigene Vorlagen kennen das nicht — wer seine nicht mehr braucht, löscht sie. In beiden Verwaltungen (Nutzer und Admin) zeigt die Liste nur Name und Zustand; Anweisung und Vokabular klappen auf Klick auf. | M |
 | FR-VOICE-10 | Die Anweisung der Vorlage ergänzt die im Dashboard gepflegte Anweisung aus FR-VOICE-05, ersetzt sie nicht: Antwortformat, Markdown-Regeln und Notizbuchzuordnung bleiben zentral. Das Vokabular geht zusätzlich als Ausspracheshilfe an die Transkription, die davon die letzten 224 Tokens auswertet. Eine Migration legt die globale Vorlage „Standard" an, damit das Diktat unmittelbar nach der Aktualisierung weiter nutzbar ist. | M |
+
+### 5.11 MCP-Zugang für KI-Clients *(neu in v3.8)*
+
+Über das **Model Context Protocol** (MCP) können KI-Assistenten (Claude, ChatGPT, Cursor u. a.) Notizen lesen und – soweit freigegeben – ändern. Der Endpunkt ist `/mcp` (Transport „Streamable HTTP", zustandslos, Antworten als JSON).
+
+| ID | Anforderung | Prio |
+|---|---|---|
+| FR-MCP-01 | Jeder Nutzer erzeugt unter **Einstellungen › MCP-Zugang** beliebig viele (höchstens 20) **MCP-Token** mit Namen. Der Rohwert (Präfix `nmcp_`) ist nur unmittelbar nach dem Erzeugen sichtbar und wird ausschließlich als SHA-256-Hash gespeichert. Der Dialog zeigt Endpunkt, Befehl für Claude Code und eine JSON-Konfiguration für andere Clients. MCP-Token sind von den Automations-Token (FR-NVOICE) getrennt und gelten nur für `/mcp`. | M |
+| FR-MCP-02 | Je Token wählt der Nutzer den **Schreibmodus** – *nur lesen*, *nur freigegebene Seiten bearbeiten* oder *alle Seiten bearbeiten* – und, unabhängig davon, ob der Client **neue Notizen anlegen** darf. Beides ist nachträglich änderbar, ohne den Token zu wechseln; ein Token lässt sich jederzeit widerrufen. Ein gesperrter Nutzer verliert sofort auch den MCP-Zugang. | M |
+| FR-MCP-03 | Im Modus *nur freigegebene Seiten* schreibt ein Client nur in Seiten, die der Nutzer im **Teilen-Dialog der Seite** („MCP-Clients dürfen diese Seite bearbeiten") freigegeben hat. Die Freigabe gilt je Nutzer und für alle seine Token in diesem Modus. Vom Client selbst angelegte Notizen sind automatisch freigegeben. | M |
+| FR-MCP-04 | Ein MCP-Client kann **nie mehr als sein Nutzer**: Jedes Werkzeug läuft über die normalen Domain-Services mit dessen Rechten (eigene Seiten, Seiten- und Notizbuchfreigaben, Lese-/Schreibberechtigung, Papierkorb). Die Werkzeugliste enthält nur, was der Token darf. | M |
+| FR-MCP-05 | Werkzeuge: `list_notebooks`, `list_pages`, `search_pages`, `read_page` (Notizen als Markdown mit Version, Aufgabenlisten, Logbücher); schreibend `create_note`, `update_note` (anhängen oder ersetzen, optional mit `expected_version` und neuem Titel), `add_task`, `update_task`, `add_log_entry`. Vor jedem Ersetzen entsteht ein Versionsstand. Vorhandene Bilder bleiben beim Ersetzen samt Größe und Bildnotizen erhalten, wenn ihr Verweis im Markdown steht. **Verschlüsselte Notizen** sind weder les- noch änderbar. | M |
+| FR-MCP-06 | Fachliche Fehler (fehlendes Recht, Versionskonflikt, ungültige Eingabe) kommen als Werkzeugergebnis mit `isError` zurück, damit das Modell reagieren kann. Ohne gültigen Token antwortet `/mcp` mit 401 und `WWW-Authenticate: Bearer`; je Token sind 240 Anfragen pro Minute erlaubt. Anlegen, Ändern und Widerrufen von Token, Seitenfreigaben sowie jede schreibende MCP-Aktion werden im Audit-Log vermerkt. | M |
+
+Bekannte Grenze: Clients, die ausschließlich OAuth-Anmeldung anbieten (z. B. Web-Connectoren ohne eigene Kopfzeilen), lassen sich nicht verbinden – der Client muss `Authorization: Bearer <Token>` senden können.
 
 ---
 
@@ -825,6 +840,10 @@ users ──1:n── audit_log
 | **POST** | **`/api/import/archive/parts/{id}`** | **Nächsten Teil anhängen (multipart, Felder `chunk` und `index`)** |
 | **POST** | **`/api/import/archive/parts/{id}/complete`** | **Teile zusammensetzen und importieren; liefert den Bericht** |
 | **DELETE** | **`/api/import/archive/parts/{id}`** | **Geteilten Upload abbrechen und Teile verwerfen** |
+| POST | `/mcp` | MCP-Endpunkt (JSON-RPC, nur MCP-Token per Bearer; GET/DELETE liefern 405, FR-MCP-04) |
+| GET/POST | `/api/profile/mcp-tokens` | Eigene MCP-Token auflisten bzw. erzeugen (`label`, `write_mode`, `can_create`, FR-MCP-01/02) |
+| PATCH/DELETE | `/api/profile/mcp-tokens/{id}` | Rechte/Namen eines MCP-Tokens ändern bzw. Token widerrufen |
+| GET/PUT | `/api/pages/{id}/mcp-access` | Schreibfreigabe der Seite für die eigenen MCP-Clients lesen bzw. setzen (`writable`, FR-MCP-03) |
 | GET | `/api/admin/users` | Nutzer auflisten (Admin) |
 | PATCH | `/api/admin/users/{id}` | Aktivieren/Deaktivieren (Admin) |
 | GET | `/api/admin/audit` | Audit-Log (Admin) |
@@ -1041,6 +1060,7 @@ users ──1:n── audit_log
 
 | Version | Datum | Änderung |
 |---|---|---|
+| 3.8 | 2026-11-25 | **MCP-Zugang für KI-Clients** (Kap. 5.11, FR-MCP-01–06, Migration 0049): eigene MCP-Token je Nutzer mit Schreibmodus und Anlegerecht, Seitenfreigabe im Teilen-Dialog, zustandsloser MCP-Endpunkt `/mcp` (`McpController`, `McpServer`, `McpTools`, `McpTokenService`) |
 | 3.5 | 2026-07-30 | **Zero-Knowledge-Verschlüsselung einzelner Notizseiten** (FR-CRYPT-01–10, AK-54–59, Migration 0033): PBKDF2/AES-GCM ausschließlich im Browser, serverseitiger Zustandsautomat und Guards, verschlüsselter Offline-Autosave, Sperr- und Kennwortwechsel-Abläufe, Ciphertext-Export sowie dokumentierte Grenzen für Metadaten, historische Backups und WAL-Reste |
 | 3.4 | 2026-07-29 | **Logbuch-Seiten** (Kap. 5.9a, FR-LOG-01–10, API 10.2, Migrationen 0027 und 0028): dritter Seitentyp mit Zeitspalte und frei definierbaren Spalten (Text, Standort, Uhrzeit, Stunden, Zahl, Betrag), neueste Einträge oben und Sortierung nach jeder Spalte, Summen der Zahlenspalten, diktierte Einträge über die Spaltenzuordnung eines Modells (`LogService`, `LogRepository`, `LogController`, `VoiceNoteService::transcribeForLog`). Der `Migrator` kann eine Migration jetzt ohne umgebende Transaktion ausführen (`-- migrator:no-transaction`) — nötig, um die CHECK-Bedingung von `pages.type` mit abgeschalteten Fremdschlüsseln umzubauen |
 | 3.3 | 2026-07-29 | **Sprachnotizen** (Kap. 5.10, FR-VOICE-01–07, API 10.2): Aufnahme im Browser über `MediaRecorder`, serverseitige Transkription über OpenAI (`gpt-4o-mini-transcribe`), optionale Nachbearbeitung durch ein zweites Modell mit Überschrift und abgeleitetem Notizbuch (`VoiceNoteService`, `OpenAiClient`, `VoiceNoteController`); sämtliche Parameter im Admin-Dashboard, der Schlüssel ausschließlich in `OPENAI_KEY`. Zusätzlich der optionale **Aufnahmeort** von Notizen (FR-NOTE-25/26, Migrationen 0025 und 0026): je Gerät wahlweise auf Klick (Vorgabe) oder automatisch beim Anlegen, jederzeit verschiebbar über Koordinaten oder Kartenlink, mit serverseitig ermittelter Anschrift über Nominatim (`ReverseGeocoder`) |

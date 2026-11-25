@@ -24,6 +24,11 @@ export function pageShare() {
     writerRefreshHandler: null,
     writerRefreshTimer: null,
     encryptionChangeHandler: null,
+    // Schreibfreigabe für die eigenen MCP-Clients (FR-MCP-03).
+    mcpWritable: false,
+    mcpSelectedTokens: 0,
+    mcpAllTokens: 0,
+    mcpAccessSaving: false,
 
     permissionLabel() {
       return this.currentPermission === 'write' ? 'schreibend' : 'lesend';
@@ -179,7 +184,59 @@ export function pageShare() {
       this.shareExpiresAt = '';
       this.shareRequiresLogin = false;
       this.shareDialogOpen = true;
-      await this.loadShares();
+      await Promise.all([this.loadShares(), this.loadMcpAccess()]);
+    },
+
+    applyMcpAccess(access) {
+      this.mcpWritable = access.writable === true;
+      this.mcpSelectedTokens = Number(access.selected_tokens) || 0;
+      this.mcpAllTokens = Number(access.all_tokens) || 0;
+    },
+
+    async loadMcpAccess() {
+      if (!this.pageId || !navigator.onLine) {
+        return;
+      }
+      try {
+        this.applyMcpAccess(await apiFetch(`/api/pages/${this.pageId}/mcp-access`));
+      } catch (error) {
+        // Der Schalter ist eine Nebensache des Dialogs - ein Ladefehler darf
+        // das Teilen per Link nicht blockieren.
+      }
+    },
+
+    async toggleMcpWritable(event) {
+      const writable = event.target.checked === true;
+      this.mcpAccessSaving = true;
+      this.errorMessage = '';
+      try {
+        this.applyMcpAccess(await apiFetch(`/api/pages/${this.pageId}/mcp-access`, {
+          method: 'PUT',
+          body: JSON.stringify({ writable }),
+        }));
+      } catch (error) {
+        event.target.checked = !writable;
+        this.errorMessage = error.message || 'Die MCP-Freigabe konnte nicht gespeichert werden.';
+      } finally {
+        this.mcpAccessSaving = false;
+      }
+    },
+
+    mcpAccessHint() {
+      if (this.isEncrypted) {
+        return 'Verschlüsselte Notizen sind für MCP-Clients weder les- noch änderbar.';
+      }
+      if (this.mcpSelectedTokens === 0 && this.mcpAllTokens === 0) {
+        return 'Wirkt auf MCP-Zugänge mit „Nur freigegebene Seiten bearbeiten“ (Einstellungen › MCP-Zugang). Du hast derzeit keinen schreibenden Zugang.';
+      }
+      const selected = this.mcpSelectedTokens === 1
+        ? '1 MCP-Zugang mit „Nur freigegebene Seiten“'
+        : `${this.mcpSelectedTokens} MCP-Zugänge mit „Nur freigegebene Seiten“`;
+      const all = this.mcpAllTokens === 0
+        ? ''
+        : ` ${this.mcpAllTokens === 1 ? '1 weiterer Zugang darf' : `${this.mcpAllTokens} weitere Zugänge dürfen`} ohnehin alle Seiten bearbeiten.`;
+
+      return `Betrifft ${selected}.${all}`;
     },
 
     closeShareDialog() {
