@@ -432,8 +432,9 @@ return static function (string $rootPath): DI\Container {
             McpTokenRepository $tokens,
             UserRepository $users,
             PageService $pages,
+            NotebookService $notebooks,
             AuditLogRepository $auditLog,
-        ): McpTokenService => new McpTokenService($tokens, $users, $pages, $auditLog),
+        ): McpTokenService => new McpTokenService($tokens, $users, $pages, $notebooks, $auditLog),
 
         McpTools::class => static fn (
             PageService $pages,

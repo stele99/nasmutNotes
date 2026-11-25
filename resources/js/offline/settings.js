@@ -218,6 +218,7 @@ export function offlineSettings() {
       await Promise.all([
         this.loadDeviceTokens(),
         this.loadMcpTokens(),
+        this.loadMcpNotebooks(),
         this.loadSessions(),
         this.loadAiUsage(),
         this.loadVoiceTemplates(),

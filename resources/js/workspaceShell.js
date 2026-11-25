@@ -668,6 +668,74 @@ export function workspaceShell() {
       this.openNotebookMenuId = Number(this.openNotebookMenuId) === Number(notebookId)
         ? null
         : Number(notebookId);
+      if (this.openNotebookMenuId !== null) {
+        void this.loadNotebookMcpGrants();
+      }
+    },
+
+    // ------------------------------------- MCP-Freigabe ganzer Notizbücher
+
+    /** Freigegebene Notizbuch-IDs; null, solange nicht geladen. */
+    notebookMcpGrants: null,
+    notebookMcpSaving: false,
+
+    async loadNotebookMcpGrants() {
+      if (!navigator.onLine) {
+        return;
+      }
+      try {
+        const data = await apiFetch('/api/profile/mcp-notebooks');
+        this.notebookMcpGrants = (data.notebooks || [])
+          .filter((notebook) => notebook.writable)
+          .map((notebook) => Number(notebook.id));
+      } catch (error) {
+        this.notebookMcpGrants = null;
+      }
+    },
+
+    isNotebookMcpWritable(notebook) {
+      return Array.isArray(this.notebookMcpGrants) && this.notebookMcpGrants.includes(Number(notebook.id));
+    },
+
+    /** Freigeben setzt Schreibrecht voraus; zurücknehmen geht immer. */
+    notebookMcpVisible(notebook) {
+      if (this.notebookMcpGrants === null) {
+        return false;
+      }
+      const canEdit = notebook.is_owner === true || notebook.share_permission !== 'read';
+
+      return canEdit || this.isNotebookMcpWritable(notebook);
+    },
+
+    notebookMcpLabel(notebook) {
+      return this.isNotebookMcpWritable(notebook) ? 'MCP-Freigabe entziehen' : 'Für MCP freigeben';
+    },
+
+    async toggleNotebookMcp(notebook) {
+      if (this.notebookMcpSaving) {
+        return;
+      }
+      const writable = !this.isNotebookMcpWritable(notebook);
+      this.notebookMcpSaving = true;
+      this.closeNotebookMenu();
+      try {
+        const result = await apiFetch(`/api/notebooks/${notebook.id}/mcp-access`, {
+          method: 'PUT',
+          body: JSON.stringify({ writable }),
+        });
+        await this.loadNotebookMcpGrants();
+        if (!writable) {
+          showToast(`MCP-Clients dürfen „${notebook.name}“ nicht mehr bearbeiten.`);
+        } else if (result.selected_tokens === 0 && result.all_tokens === 0) {
+          showToast(`„${notebook.name}“ freigegeben - wirkt, sobald ein MCP-Zugang „Nur freigegebene Seiten bearbeiten“ hat.`);
+        } else {
+          showToast(`MCP-Clients dürfen alle Seiten in „${notebook.name}“ bearbeiten.`);
+        }
+      } catch (error) {
+        showToast(error.message || 'Die MCP-Freigabe konnte nicht gespeichert werden.', 'error');
+      } finally {
+        this.notebookMcpSaving = false;
+      }
     },
 
     closeNotebookMenu() {

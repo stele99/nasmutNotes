@@ -137,7 +137,23 @@ final class McpTokenRepository
         $stmt->execute(['user_id' => $userId, 'page_id' => $pageId]);
     }
 
+    /** Liegt die Seite in einem Notizbuch, das der Nutzer für MCP freigegeben hat? */
+    public function hasNotebookGrantForPage(int $userId, int $pageId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM pages p
+             JOIN mcp_notebook_grants g ON g.notebook_id = p.notebook_id AND g.user_id = :user_id
+             WHERE p.id = :page_id'
+        );
+        $stmt->execute(['user_id' => $userId, 'page_id' => $pageId]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
     /**
+     * Seiten, die für die MCP-Clients des Nutzers beschreibbar sind - direkt
+     * oder über ihr Notizbuch freigegeben.
+     *
      * @param list<int> $pageIds
      * @return array<int, true> Seiten-ID => freigegeben
      */
@@ -148,13 +164,49 @@ final class McpTokenRepository
         }
         $placeholders = implode(',', array_fill(0, count($pageIds), '?'));
         $stmt = $this->pdo->prepare(
-            "SELECT page_id FROM mcp_page_grants WHERE user_id = ? AND page_id IN ({$placeholders})"
+            "SELECT p.id FROM pages p
+             WHERE p.id IN ({$placeholders})
+               AND (
+                   EXISTS (SELECT 1 FROM mcp_page_grants g WHERE g.user_id = ? AND g.page_id = p.id)
+                   OR EXISTS (SELECT 1 FROM mcp_notebook_grants n WHERE n.user_id = ? AND n.notebook_id = p.notebook_id)
+               )"
         );
-        $stmt->execute([$userId, ...$pageIds]);
+        $stmt->execute([...$pageIds, $userId, $userId]);
 
         $granted = [];
         foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $pageId) {
             $granted[(int) $pageId] = true;
+        }
+
+        return $granted;
+    }
+
+    public function grantNotebook(int $userId, int $notebookId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO mcp_notebook_grants (user_id, notebook_id, created_at)
+             VALUES (:user_id, :notebook_id, :now)'
+        );
+        $stmt->execute(['user_id' => $userId, 'notebook_id' => $notebookId, 'now' => self::now()]);
+    }
+
+    public function revokeNotebookGrant(int $userId, int $notebookId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM mcp_notebook_grants WHERE user_id = :user_id AND notebook_id = :notebook_id'
+        );
+        $stmt->execute(['user_id' => $userId, 'notebook_id' => $notebookId]);
+    }
+
+    /** @return array<int, true> Notizbuch-ID => freigegeben */
+    public function grantedNotebookIds(int $userId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT notebook_id FROM mcp_notebook_grants WHERE user_id = :user_id');
+        $stmt->execute(['user_id' => $userId]);
+
+        $granted = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $notebookId) {
+            $granted[(int) $notebookId] = true;
         }
 
         return $granted;

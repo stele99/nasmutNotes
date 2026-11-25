@@ -48,6 +48,7 @@ export function mcpJsonConfig(token) {
 export function mcpSettingsMixin(instance) {
   return {
     mcpTokens: [],
+    mcpNotebooks: [],
     mcpTokensLoading: false,
     mcpError: '',
     mcpLabel: '',
@@ -95,6 +96,34 @@ export function mcpSettingsMixin(instance) {
       } finally {
         this.mcpTokensLoading = false;
       }
+    },
+
+    async loadMcpNotebooks() {
+      try {
+        const data = await apiFetch('/api/profile/mcp-notebooks');
+        this.mcpNotebooks = data.notebooks || [];
+      } catch (error) {
+        this.mcpError = error.message || 'Notizbücher konnten nicht geladen werden.';
+      }
+    },
+
+    async changeMcpNotebook(notebook, event) {
+      const writable = event.target.checked === true;
+      this.mcpError = '';
+      try {
+        await apiFetch(`/api/notebooks/${notebook.id}/mcp-access`, {
+          method: 'PUT',
+          body: JSON.stringify({ writable }),
+        });
+      } catch (error) {
+        event.target.checked = !writable;
+        this.mcpError = error.message || 'Die Freigabe konnte nicht gespeichert werden.';
+      }
+      await this.loadMcpNotebooks();
+    },
+
+    mcpNotebookLabel(notebook) {
+      return notebook.owner_name ? `${notebook.name} (von ${notebook.owner_name})` : notebook.name;
     },
 
     async createMcpToken() {

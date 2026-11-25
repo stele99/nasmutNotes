@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Mcp;
 
+use App\Domain\NotebookService;
 use App\Domain\PageService;
 use App\Domain\User;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\McpTokenRepository;
 use App\Repositories\UserRepository;
+use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\ValidationException;
 
@@ -29,6 +31,7 @@ final class McpTokenService
         private readonly McpTokenRepository $tokens,
         private readonly UserRepository $users,
         private readonly PageService $pages,
+        private readonly NotebookService $notebooks,
         private readonly AuditLogRepository $auditLog,
     ) {
     }
@@ -135,31 +138,21 @@ final class McpTokenService
     }
 
     /**
-     * Zustand der Seitenfreigabe für den Teilen-Dialog: ob die Seite
-     * freigegeben ist und wie viele eigene Token davon überhaupt betroffen
-     * sind (Modus "selected") bzw. ohnehin überall schreiben dürfen ("all").
+     * Zustand der Seitenfreigabe für den Teilen-Dialog: ob die Seite selbst
+     * oder ihr Notizbuch freigegeben ist und wie viele eigene Token davon
+     * betroffen sind (Modus "selected") bzw. ohnehin überall schreiben ("all").
      *
-     * @return array{writable: bool, selected_tokens: int, all_tokens: int}
+     * @return array{writable: bool, notebook_writable: bool, selected_tokens: int, all_tokens: int}
      */
     public function pageAccess(User $user, int $pageId): array
     {
         $page = $this->pages->find($user, $pageId);
-
-        $selected = 0;
-        $all = 0;
-        foreach ($this->tokens->allActiveForUser($user->id) as $row) {
-            match ((string) $row['write_mode']) {
-                McpToken::WRITE_SELECTED => ++$selected,
-                McpToken::WRITE_ALL => ++$all,
-                default => null,
-            };
-        }
+        $pageId = (int) $page['id'];
 
         return [
-            'writable' => $this->tokens->hasPageGrant($user->id, (int) $page['id']),
-            'selected_tokens' => $selected,
-            'all_tokens' => $all,
-        ];
+            'writable' => $this->tokens->hasPageGrant($user->id, $pageId),
+            'notebook_writable' => $this->tokens->hasNotebookGrantForPage($user->id, $pageId),
+        ] + $this->tokenCounts($user);
     }
 
     /**
@@ -167,7 +160,7 @@ final class McpTokenService
      * Freigeben setzt eigenes Schreibrecht voraus; entziehen geht immer, solange
      * die Seite sichtbar ist.
      *
-     * @return array{writable: bool, selected_tokens: int, all_tokens: int}
+     * @return array{writable: bool, notebook_writable: bool, selected_tokens: int, all_tokens: int}
      */
     public function setPageWritable(User $user, int $pageId, bool $writable, string $ipHash): array
     {
@@ -191,15 +184,83 @@ final class McpTokenService
         return $this->pageAccess($user, $pageId);
     }
 
+    /**
+     * Notizbücher für die MCP-Übersicht: alle, in die der Nutzer schreiben
+     * darf, plus bereits freigegebene (damit sich eine Freigabe auch nach
+     * einem entzogenen Schreibrecht noch zurücknehmen lässt).
+     *
+     * @return array{notebooks: list<array{id: int, name: string, owner_name: ?string, is_owner: bool, can_edit: bool, writable: bool}>, selected_tokens: int, all_tokens: int}
+     */
+    public function notebookAccessList(User $user): array
+    {
+        $granted = $this->tokens->grantedNotebookIds($user->id);
+        $notebooks = [];
+        foreach ($this->notebooks->listWithShared($user) as $notebook) {
+            $id = (int) $notebook['id'];
+            $canEdit = self::canEditNotebook($notebook);
+            if (!$canEdit && !isset($granted[$id])) {
+                continue;
+            }
+            $notebooks[] = [
+                'id' => $id,
+                'name' => (string) $notebook['name'],
+                'owner_name' => isset($notebook['owner_name']) ? (string) $notebook['owner_name'] : null,
+                'is_owner' => ($notebook['is_owner'] ?? false) === true,
+                'can_edit' => $canEdit,
+                'writable' => isset($granted[$id]),
+            ];
+        }
+
+        return ['notebooks' => $notebooks] + $this->tokenCounts($user);
+    }
+
+    /**
+     * Ganzes Notizbuch für die eigenen MCP-Clients freigeben (FR-MCP-03). Gilt
+     * für alle Seiten darin, auch künftige. Freigeben setzt Schreibrecht am
+     * Notizbuch voraus; jede einzelne Schreibaktion prüft es ohnehin erneut.
+     *
+     * @return array{writable: bool, selected_tokens: int, all_tokens: int}
+     */
+    public function setNotebookWritable(User $user, int $notebookId, bool $writable, string $ipHash): array
+    {
+        $notebook = $this->visibleNotebook($user, $notebookId);
+
+        if ($writable) {
+            if (!self::canEditNotebook($notebook)) {
+                throw new ForbiddenException('In diesem Notizbuch darfst du nur lesen.');
+            }
+            $this->tokens->grantNotebook($user->id, $notebookId);
+        } else {
+            $this->tokens->revokeNotebookGrant($user->id, $notebookId);
+        }
+        $this->auditLog->log(
+            $user->id,
+            $writable ? 'mcp_notebook_granted' : 'mcp_notebook_revoked',
+            'notebook',
+            $notebookId,
+            $ipHash,
+        );
+
+        return ['writable' => $writable] + $this->tokenCounts($user);
+    }
+
+    /** @return array<int, true> Notizbuch-ID => freigegeben */
+    public function grantedNotebookIds(User $user): array
+    {
+        return $this->tokens->grantedNotebookIds($user->id);
+    }
+
     /** Freigabe ohne Prüfung und Audit - für vom MCP-Client selbst angelegte Seiten. */
     public function grantCreatedPage(User $user, int $pageId): void
     {
         $this->tokens->grantPage($user->id, $pageId);
     }
 
+    /** Seite direkt oder über ihr Notizbuch freigegeben. */
     public function isPageGranted(User $user, int $pageId): bool
     {
-        return $this->tokens->hasPageGrant($user->id, $pageId);
+        return $this->tokens->hasPageGrant($user->id, $pageId)
+            || $this->tokens->hasNotebookGrantForPage($user->id, $pageId);
     }
 
     /**
@@ -209,6 +270,41 @@ final class McpTokenService
     public function grantedPageIds(User $user, array $pageIds): array
     {
         return $this->tokens->grantedPageIds($user->id, $pageIds);
+    }
+
+    /** @return array{selected_tokens: int, all_tokens: int} */
+    private function tokenCounts(User $user): array
+    {
+        $selected = 0;
+        $all = 0;
+        foreach ($this->tokens->allActiveForUser($user->id) as $row) {
+            match ((string) $row['write_mode']) {
+                McpToken::WRITE_SELECTED => ++$selected,
+                McpToken::WRITE_ALL => ++$all,
+                default => null,
+            };
+        }
+
+        return ['selected_tokens' => $selected, 'all_tokens' => $all];
+    }
+
+    /** @return array<string, mixed> */
+    private function visibleNotebook(User $user, int $notebookId): array
+    {
+        foreach ($this->notebooks->listWithShared($user) as $notebook) {
+            if ((int) $notebook['id'] === $notebookId) {
+                return $notebook;
+            }
+        }
+
+        throw new NotFoundException('Notizbuch nicht gefunden.');
+    }
+
+    /** @param array<string, mixed> $notebook Zeile aus NotebookService::listWithShared */
+    public static function canEditNotebook(array $notebook): bool
+    {
+        return ($notebook['is_owner'] ?? false) === true
+            || ($notebook['share_permission'] ?? 'write') !== 'read';
     }
 
     private function requireOwn(User $user, int $id): void

@@ -108,4 +108,27 @@ final class McpTokenController
             RequestIp::hash($request),
         ));
     }
+
+    /** Übersicht der Notizbücher samt MCP-Freigabe (Einstellungen › MCP-Zugang). */
+    public function notebooks(Request $request, Response $response): Response
+    {
+        return JsonResponse::json($response, $this->tokens->notebookAccessList(CurrentUser::require($request)));
+    }
+
+    /** @param array<string, string> $args */
+    public function updateNotebookAccess(Request $request, Response $response, array $args): Response
+    {
+        $user = CurrentUser::require($request);
+        $body = (array) ($request->getParsedBody() ?? []);
+        if (!is_bool($body['writable'] ?? null)) {
+            throw new ValidationException('writable muss true oder false sein.');
+        }
+
+        return JsonResponse::json($response, $this->tokens->setNotebookWritable(
+            $user,
+            (int) ($args['id'] ?? 0),
+            $body['writable'],
+            RequestIp::hash($request),
+        ));
+    }
 }
