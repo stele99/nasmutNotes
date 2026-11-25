@@ -382,7 +382,7 @@ final class McpTools
         $pageId = (int) $page['id'];
         $version = 1;
         if ($document !== null) {
-            $version = $this->notes->save($user, $pageId, $document, 1)['version'];
+            $version = $this->notes->save($user, $pageId, $document, 1, mcpClient: $token->label)['version'];
         }
 
         // Was der Client selbst angelegt hat, darf er weiter bearbeiten -
@@ -438,7 +438,14 @@ final class McpTools
 
             // Vor einem Ersetzen immer ein Versionsstand: So lässt sich jede
             // Änderung eines KI-Clients im Verlauf der Notiz zurücknehmen.
-            $saved = $this->notes->save($user, $pageId, $document, $expected, $mode === 'replace');
+            $saved = $this->notes->save(
+                $user,
+                $pageId,
+                $document,
+                $expected,
+                $mode === 'replace',
+                mcpClient: $token->label,
+            );
             $result['version'] = $saved['version'];
             $result['mode'] = $mode;
         }

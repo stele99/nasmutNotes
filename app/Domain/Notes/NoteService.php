@@ -42,7 +42,7 @@ final class NoteService
         $this->cryptoEnvelope = $cryptoEnvelope ?? new NoteCryptoEnvelope();
     }
 
-    /** @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string} */
+    /** @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string, last_editor_via: ?string} */
     public function get(User $user, int $pageId): array
     {
         $page = $this->pages->find($user, $pageId);
@@ -58,7 +58,7 @@ final class NoteService
 
     /**
      * @param array<string, mixed> $content
-     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string}
+     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string, last_editor_via: ?string}
      * @throws NoteContentException
      * @throws NoteEncryptionException
      * @throws VersionConflictException bei Versionskonflikt (Kap. 10.4).
@@ -71,6 +71,7 @@ final class NoteService
         int $expectedVersion,
         bool $forceSnapshot = false,
         string $expectedEncryptionState = self::STATE_PLAIN,
+        ?string $mcpClient = null,
     ): array {
         $page = $this->pages->find($user, $pageId);
         $this->assertIsNotePage($page);
@@ -118,13 +119,9 @@ final class NoteService
 
             if (
                 $currentState === self::STATE_PLAIN
-                && $this->shouldSnapshot($current, $user, $encoded, $forceSnapshot)
+                && $this->shouldSnapshot($current, $user, $encoded, $forceSnapshot, $mcpClient)
             ) {
-                $this->createSnapshot(
-                    $pageId,
-                    (string) $current['content'],
-                    $current['updated_by'] !== null ? (int) $current['updated_by'] : null,
-                );
+                $this->createSnapshot($pageId, $current);
             }
 
             $updatedAt = gmdate('Y-m-d\TH:i:s.v\Z');
@@ -135,6 +132,7 @@ final class NoteService
                 $expectedVersion,
                 $user->id,
                 $updatedAt,
+                $mcpClient,
             );
 
             if (!$saved) {
@@ -148,7 +146,7 @@ final class NoteService
             $this->commitTransaction();
             $transactionStarted = false;
 
-            return $this->savedContent($content, $expectedVersion + 1, $currentState, $updatedAt, $user);
+            return $this->savedContent($content, $expectedVersion + 1, $currentState, $updatedAt, $user, $mcpClient);
         } catch (VersionConflictException $e) {
             if ($transactionStarted) {
                 $this->rollBackTransaction();
@@ -167,7 +165,7 @@ final class NoteService
 
     /**
      * @param array<string, mixed> $content
-     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string}
+     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string, last_editor_via: ?string}
      * @throws NoteContentException
      * @throws NoteEncryptionException
      * @throws NoteWriteUnavailableException
@@ -298,7 +296,7 @@ final class NoteService
 
     /**
      * @return array{
-     *     versions: array<int, array{id: int, created_at: string, created_by_name: ?string, preview: string}>,
+     *     versions: array<int, array{id: int, created_at: string, created_by_name: ?string, created_via: ?string, preview: string}>,
      *     can_restore: bool
      * }
      */
@@ -320,7 +318,7 @@ final class NoteService
     }
 
     /**
-     * @return array{id: int, created_at: string, created_by_name: ?string, content: array<string, mixed>}
+     * @return array{id: int, created_at: string, created_by_name: ?string, created_via: ?string, content: array<string, mixed>}
      */
     public function getVersion(User $user, int $pageId, int $versionId): array
     {
@@ -337,12 +335,13 @@ final class NoteService
             'id' => (int) $row['id'],
             'created_at' => (string) $row['created_at'],
             'created_by_name' => $row['created_by_name'] !== null ? (string) $row['created_by_name'] : null,
+            'created_via' => isset($row['mcp_client']) ? (string) $row['mcp_client'] : null,
             'content' => json_decode((string) $row['content'], true) ?? ['type' => 'doc', 'content' => []],
         ];
     }
 
     /**
-     * @return array{content: array<string, mixed>, version: int, updated_at: string, last_editor_name: ?string}
+     * @return array{content: array<string, mixed>, version: int, updated_at: string, last_editor_name: ?string, last_editor_via: ?string}
      * @throws NoteEncryptionException
      * @throws VersionConflictException bei einer zwischenzeitlich geänderten Notiz.
      * @throws NoteWriteUnavailableException wenn SQLite den Schreibzugriff nicht reservieren kann.
@@ -412,11 +411,7 @@ final class NoteService
             }
 
             if ($this->shouldSnapshot($current, $user, $encoded, true)) {
-                $this->createSnapshot(
-                    $pageId,
-                    (string) $current['content'],
-                    $current['updated_by'] !== null ? (int) $current['updated_by'] : null,
-                );
+                $this->createSnapshot($pageId, $current);
             }
 
             $updatedAt = gmdate('Y-m-d\TH:i:s.v\Z');
@@ -502,7 +497,7 @@ final class NoteService
 
     /**
      * @param array<string, mixed> $content
-     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string}
+     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string, last_editor_via: ?string}
      */
     private function savedContent(
         array $content,
@@ -510,6 +505,7 @@ final class NoteService
         string $encryptionState,
         string $updatedAt,
         User $user,
+        ?string $mcpClient = null,
     ): array {
         return [
             'content' => $content,
@@ -517,6 +513,7 @@ final class NoteService
             'encryption_state' => $encryptionState,
             'updated_at' => $updatedAt,
             'last_editor_name' => $user->name,
+            'last_editor_via' => $mcpClient,
         ];
     }
 
@@ -532,14 +529,26 @@ final class NoteService
     /**
      * @param array<string, mixed> $current
      */
-    private function shouldSnapshot(array $current, User $user, string $newEncoded, bool $force): bool
-    {
+    private function shouldSnapshot(
+        array $current,
+        User $user,
+        string $newEncoded,
+        bool $force,
+        ?string $mcpClient = null,
+    ): bool {
         $oldContent = (string) $current['content'];
         if ($oldContent === $newEncoded || $this->isEmptyDoc($oldContent)) {
             return false;
         }
 
         if ($force) {
+            return true;
+        }
+
+        // Wechsel zwischen Editor und MCP-Client (oder zwischen zwei Clients):
+        // Jede Seite behält ihren eigenen Stand im Verlauf, sonst verschwämmen
+        // Handarbeit und KI-Änderung zu einer Fassung (FR-MCP-07).
+        if (($current['mcp_client'] ?? null) !== $mcpClient) {
             return true;
         }
 
@@ -556,9 +565,15 @@ final class NoteService
         return (time() - $updatedAt) >= self::IDLE_SECONDS;
     }
 
-    private function createSnapshot(int $pageId, string $content, ?int $createdBy): void
+    /** @param array<string, mixed> $current Gesicherter Stand samt Bearbeiter und MCP-Herkunft */
+    private function createSnapshot(int $pageId, array $current): void
     {
-        $this->noteVersions->insert($pageId, $content, $createdBy);
+        $this->noteVersions->insert(
+            $pageId,
+            (string) $current['content'],
+            $current['updated_by'] !== null ? (int) $current['updated_by'] : null,
+            isset($current['mcp_client']) ? (string) $current['mcp_client'] : null,
+        );
         $this->noteVersions->prune($pageId, self::MAX_VERSIONS);
     }
 
@@ -571,7 +586,7 @@ final class NoteService
 
     /**
      * @param array<string, mixed> $row
-     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string}
+     * @return array{content: array<string, mixed>, version: int, encryption_state: string, updated_at: string, last_editor_name: ?string, last_editor_via: ?string}
      */
     private function mapContent(array $row): array
     {
@@ -583,12 +598,13 @@ final class NoteService
                 : self::STATE_PLAIN,
             'updated_at' => (string) $row['updated_at'],
             'last_editor_name' => $row['last_editor_name'] !== null ? (string) $row['last_editor_name'] : null,
+            'last_editor_via' => isset($row['mcp_client']) ? (string) $row['mcp_client'] : null,
         ];
     }
 
     /**
      * @param array<string, mixed> $row
-     * @return array{id: int, created_at: string, created_by_name: ?string, preview: string}
+     * @return array{id: int, created_at: string, created_by_name: ?string, created_via: ?string, preview: string}
      */
     private function mapVersionSummary(array $row): array
     {
@@ -605,6 +621,7 @@ final class NoteService
             'id' => (int) $row['id'],
             'created_at' => (string) $row['created_at'],
             'created_by_name' => $row['created_by_name'] !== null ? (string) $row['created_by_name'] : null,
+            'created_via' => isset($row['mcp_client']) ? (string) $row['mcp_client'] : null,
             'preview' => $preview,
         ];
     }

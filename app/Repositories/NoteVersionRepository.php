@@ -12,17 +12,18 @@ final class NoteVersionRepository
     {
     }
 
-    public function insert(int $pageId, string $content, ?int $createdBy): int
+    public function insert(int $pageId, string $content, ?int $createdBy, ?string $mcpClient = null): int
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO note_versions (page_id, content, created_at, created_by)
-             VALUES (:page_id, :content, :created_at, :created_by)'
+            'INSERT INTO note_versions (page_id, content, created_at, created_by, mcp_client)
+             VALUES (:page_id, :content, :created_at, :created_by, :mcp_client)'
         );
         $stmt->execute([
             'page_id' => $pageId,
             'content' => $content,
             'created_at' => gmdate('Y-m-d\TH:i:s.v\Z'),
             'created_by' => $createdBy,
+            'mcp_client' => $mcpClient,
         ]);
 
         return (int) $this->pdo->lastInsertId();
@@ -39,6 +40,7 @@ final class NoteVersionRepository
                     note_versions.content,
                     note_versions.created_at,
                     note_versions.created_by,
+                    note_versions.mcp_client,
                     users.name AS created_by_name
                FROM note_versions
                LEFT JOIN users ON users.id = note_versions.created_by
@@ -59,6 +61,7 @@ final class NoteVersionRepository
                     note_versions.content,
                     note_versions.created_at,
                     note_versions.created_by,
+                    note_versions.mcp_client,
                     users.name AS created_by_name
                FROM note_versions
                LEFT JOIN users ON users.id = note_versions.created_by

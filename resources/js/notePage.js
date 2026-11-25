@@ -47,6 +47,18 @@ import {
 const DEBOUNCE_MS = 1500;
 const LOCAL_CACHE_PREFIX = 'notes-note-cache-';
 
+
+/**
+ * Bearbeiter samt Herkunft: Kam eine Fassung über einen MCP-Client, steht
+ * dessen Name dabei (FR-MCP-07) - etwa „Steffen über MCP „Claude Desktop““.
+ */
+export function editorLabel(name, mcpClient) {
+  if (!mcpClient) {
+    return name || '';
+  }
+  return name ? `${name} über MCP „${mcpClient}“` : `MCP „${mcpClient}“`;
+}
+
 export function noteEditorPage() {
   // ProseMirror keeps mutable transaction state and must not be made reactive by Alpine.
   let editor = null;
@@ -110,6 +122,8 @@ export function noteEditorPage() {
     savingPageTitle: false,
     updatedAt: null,
     lastEditorName: null,
+    // Name des MCP-Zugangs, falls der aktuelle Stand von dort kam (FR-MCP-07).
+    lastEditorVia: null,
     visibilityHandler: null,
     beforeUnloadHandler: null,
     keyDownHandler: null,
@@ -326,6 +340,7 @@ export function noteEditorPage() {
       this.version = initial.version;
       this.updatedAt = initial.updated_at;
       this.lastEditorName = initial.last_editor_name;
+      this.lastEditorVia = initial.last_editor_via || null;
       this.encryptionState = initial.encryption_state
         || (isCryptoEnvelope(initial.content) ? 'encrypted' : 'plain');
       if (fromOffline) {
@@ -422,6 +437,7 @@ export function noteEditorPage() {
         this.version = Number(detail.result.version);
         this.updatedAt = detail.result.updated_at;
         this.lastEditorName = detail.result.last_editor_name;
+        this.lastEditorVia = detail.result.last_editor_via || null;
         this.offlineConflictId = null;
         this.conflictContent = null;
         this.conflictDialogOpen = false;
@@ -1020,6 +1036,7 @@ export function noteEditorPage() {
       this.version = Number(result.version);
       this.updatedAt = result.updated_at || this.updatedAt;
       this.lastEditorName = result.last_editor_name || this.lastEditorName;
+      this.lastEditorVia = result.last_editor_via || null;
       this.status = 'saved';
       this.queuedRevision = this.editorRevision;
     },
@@ -1322,6 +1339,7 @@ export function noteEditorPage() {
               this.version = Number(synced.version);
               this.updatedAt = synced.updated_at;
               this.lastEditorName = synced.last_editor_name;
+              this.lastEditorVia = synced.last_editor_via || null;
               if (this.editorRevision === savingRevision) {
                 this.status = 'saved';
                 this.clearLocalCache();
@@ -1575,7 +1593,7 @@ export function noteEditorPage() {
         dateStyle: 'medium',
         timeStyle: 'short',
       }).format(new Date(version.created_at));
-      return version.created_by_name ? `${date} · ${version.created_by_name}` : date;
+      return [date, editorLabel(version.created_by_name, version.created_via)].filter(Boolean).join(' · ');
     },
 
     versionIdValue(version) {
@@ -1680,6 +1698,7 @@ export function noteEditorPage() {
         this.version = result.version;
         this.updatedAt = result.updated_at;
         this.lastEditorName = result.last_editor_name;
+        this.lastEditorVia = result.last_editor_via || null;
         editor?.commands.setContent(result.content, { emitUpdate: false });
         this.status = 'saved';
         try {
@@ -1695,6 +1714,7 @@ export function noteEditorPage() {
           this.version = Number(current.version);
           this.updatedAt = current.updated_at;
           this.lastEditorName = current.last_editor_name;
+          this.lastEditorVia = current.last_editor_via || null;
           editor?.commands.setContent(current.content, { emitUpdate: false });
           this.status = 'saved';
           try {
@@ -2577,7 +2597,8 @@ export function noteEditorPage() {
         dateStyle: 'medium',
         timeStyle: 'short',
       }).format(new Date(this.updatedAt));
-      return this.lastEditorName ? `Zuletzt geändert von ${this.lastEditorName}, ${date}` : `Zuletzt geändert ${date}`;
+      const editor = editorLabel(this.lastEditorName, this.lastEditorVia);
+      return editor ? `Zuletzt geändert von ${editor}, ${date}` : `Zuletzt geändert ${date}`;
     },
 
     writeLocalCache(content, revision = this.editorRevision) {

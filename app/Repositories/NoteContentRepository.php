@@ -39,10 +39,14 @@ final class NoteContentRepository
         int $expectedVersion,
         int $updatedBy,
         string $updatedAt,
+        ?string $mcpClient = null,
     ): bool {
+        // mcp_client wird bei jedem Speichern neu gesetzt: Eine Änderung im
+        // Editor löscht die MCP-Herkunft des vorigen Stands (FR-MCP-07).
         $stmt = $this->pdo->prepare(
             'UPDATE note_contents
-              SET content = :content, content_text = :content_text, version = version + 1, updated_at = :now, updated_by = :updated_by
+              SET content = :content, content_text = :content_text, version = version + 1, updated_at = :now,
+                  updated_by = :updated_by, mcp_client = :mcp_client
              WHERE page_id = :page_id AND version = :expected_version'
         );
         $stmt->execute([
@@ -52,6 +56,7 @@ final class NoteContentRepository
             'page_id' => $pageId,
             'expected_version' => $expectedVersion,
             'updated_by' => $updatedBy,
+            'mcp_client' => $mcpClient,
         ]);
 
         return $stmt->rowCount() === 1;
@@ -62,7 +67,7 @@ final class NoteContentRepository
         $stmt = $this->pdo->prepare(
             'UPDATE note_contents
                 SET content = :content, content_text = :content_text, version = 1,
-                    updated_at = :now, updated_by = :updated_by
+                    updated_at = :now, updated_by = :updated_by, mcp_client = NULL
               WHERE page_id = :page_id'
         );
         $stmt->execute([

@@ -445,6 +445,7 @@ export async function cacheNoteContent(pageId, payload) {
     version: Number(payload.version || 1),
     updated_at: payload.updated_at || null,
     last_editor_name: payload.last_editor_name || null,
+    last_editor_via: payload.last_editor_via || null,
     encryption_state: encryptionState,
     dirty: Boolean(payload.dirty),
     cached_at: new Date().toISOString(),
