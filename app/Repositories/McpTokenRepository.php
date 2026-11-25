@@ -212,6 +212,66 @@ final class McpTokenRepository
         return $granted;
     }
 
+    public function excludeNotebook(int $userId, int $notebookId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO mcp_notebook_exclusions (user_id, notebook_id, created_at)
+             VALUES (:user_id, :notebook_id, :now)'
+        );
+        $stmt->execute(['user_id' => $userId, 'notebook_id' => $notebookId, 'now' => self::now()]);
+    }
+
+    public function removeNotebookExclusion(int $userId, int $notebookId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM mcp_notebook_exclusions WHERE user_id = :user_id AND notebook_id = :notebook_id'
+        );
+        $stmt->execute(['user_id' => $userId, 'notebook_id' => $notebookId]);
+    }
+
+    /** @return array<int, true> Notizbuch-ID => gesperrt */
+    public function excludedNotebookIds(int $userId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT notebook_id FROM mcp_notebook_exclusions WHERE user_id = :user_id');
+        $stmt->execute(['user_id' => $userId]);
+
+        $excluded = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $notebookId) {
+            $excluded[(int) $notebookId] = true;
+        }
+
+        return $excluded;
+    }
+
+    /**
+     * Seiten, die in einem für MCP gesperrten Notizbuch liegen. Geprüft wird
+     * das tatsächliche notebook_id der Seite - auch bei geteilten Seiten, deren
+     * Notizbuch die Seitenliste dem Empfänger nicht zeigt.
+     *
+     * @param list<int> $pageIds
+     * @return array<int, true> Seiten-ID => gesperrt
+     */
+    public function excludedPageIds(int $userId, array $pageIds): array
+    {
+        if ($pageIds === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($pageIds), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT p.id FROM pages p
+             JOIN mcp_notebook_exclusions x ON x.notebook_id = p.notebook_id AND x.user_id = ?
+             WHERE p.id IN ({$placeholders})"
+        );
+        $stmt->execute([$userId, ...$pageIds]);
+
+        $excluded = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $pageId) {
+            $excluded[(int) $pageId] = true;
+        }
+
+        return $excluded;
+    }
+
     private static function now(): string
     {
         return gmdate('Y-m-d\TH:i:s.v\Z');

@@ -168,6 +168,12 @@ final class McpTools
     private function listNotebooks(McpToken $token, User $user): array
     {
         $granted = $this->tokens->grantedNotebookIds($user);
+        $excluded = $this->tokens->excludedNotebookIds($user);
+        // Gesperrte Notizbücher (FR-MCP-08) existieren für den Client nicht.
+        $visible = array_filter(
+            $this->notebooks->listWithShared($user),
+            static fn (array $notebook): bool => !isset($excluded[(int) $notebook['id']]),
+        );
         $notebooks = array_map(static function (array $notebook) use ($token, $granted): array {
             $canEdit = McpTokenService::canEditNotebook($notebook);
 
@@ -186,7 +192,7 @@ final class McpTools
                     default => false,
                 },
             ];
-        }, $this->notebooks->listWithShared($user));
+        }, $visible);
 
         return ['notebooks' => array_values($notebooks)];
     }
@@ -205,7 +211,11 @@ final class McpTools
         $limit = min(self::MAX_LIMIT, max(1, self::optionalInt($args, 'limit') ?? self::DEFAULT_LIMIT));
         $offset = max(0, self::optionalInt($args, 'offset') ?? 0);
 
-        $all = $this->pages->list($user, 'updated', $type, false, $notebookId);
+        if ($notebookId !== null) {
+            $this->assertNotebookVisible($user, $notebookId);
+        }
+
+        $all = $this->withoutExcluded($user, $this->pages->list($user, 'updated', $type, false, $notebookId));
         $slice = array_slice($all, $offset, $limit);
 
         return [
@@ -227,6 +237,9 @@ final class McpTools
         }
         $notebookId = self::optionalInt($args, 'notebook_id');
         $offset = max(0, self::optionalInt($args, 'offset') ?? 0);
+        if ($notebookId !== null) {
+            $this->assertNotebookVisible($user, $notebookId);
+        }
 
         $result = $this->search->search(
             $this->pages->workspaceIdFor($user),
@@ -237,6 +250,7 @@ final class McpTools
             $offset,
         );
 
+        $result['pages'] = $this->withoutExcluded($user, $result['pages']);
         $ids = array_values(array_map(static fn (array $page): int => (int) $page['id'], $result['pages']));
         $granted = $this->tokens->grantedPageIds($user, $ids);
 
@@ -263,7 +277,7 @@ final class McpTools
      */
     private function readPage(McpToken $token, User $user, array $args): array
     {
-        $page = $this->pages->find($user, self::requiredInt($args, 'page_id'));
+        $page = $this->visiblePage($user, self::requiredInt($args, 'page_id'));
         if ($page['deleted_at'] !== null) {
             throw new McpToolException('Die Seite liegt im Papierkorb.');
         }
@@ -368,6 +382,9 @@ final class McpTools
         $title = self::requiredString($args, 'title');
         $markdown = self::optionalString($args, 'markdown') ?? '';
         $notebookId = self::optionalInt($args, 'notebook_id');
+        if ($notebookId !== null) {
+            $this->assertNotebookVisible($user, $notebookId);
+        }
 
         // Inhalt vor dem Anlegen prüfen: Eine Seite ohne den gewünschten
         // Inhalt wäre schlechter als ein klarer Fehler.
@@ -595,6 +612,48 @@ final class McpTools
     // Hilfen
 
     /**
+     * Jeder Seitenzugriff des Clients läuft hierüber: Eine Seite in einem für
+     * MCP gesperrten Notizbuch (FR-MCP-08) gilt als nicht vorhanden - gleiche
+     * Meldung wie für eine fremde Seite, damit der Client nicht einmal ihre
+     * Existenz erfährt. Die Sperre hat Vorrang vor Schreibmodus und Freigaben.
+     *
+     * @return array<string, mixed>
+     */
+    private function visiblePage(User $user, int $pageId): array
+    {
+        $page = $this->pages->find($user, $pageId);
+        if ($this->tokens->isPageExcluded($user, (int) $page['id'])) {
+            throw new NotFoundException("Seite #{$pageId} nicht gefunden.");
+        }
+
+        return $page;
+    }
+
+    private function assertNotebookVisible(User $user, int $notebookId): void
+    {
+        if (isset($this->tokens->excludedNotebookIds($user)[$notebookId])) {
+            throw new NotFoundException('Notizbuch nicht gefunden.');
+        }
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $pages
+     * @return list<array<string, mixed>>
+     */
+    private function withoutExcluded(User $user, array $pages): array
+    {
+        $excluded = $this->tokens->excludedPageIds(
+            $user,
+            array_values(array_map(static fn (array $page): int => (int) $page['id'], $pages)),
+        );
+
+        return array_values(array_filter(
+            $pages,
+            static fn (array $page): bool => !isset($excluded[(int) $page['id']]),
+        ));
+    }
+
+    /**
      * Die zweite Schranke neben dem Schreibrecht des Nutzers: der Schreibmodus
      * des Tokens und - im Modus "selected" - die Freigabe der Seite.
      *
@@ -602,7 +661,7 @@ final class McpTools
      */
     private function writablePage(McpToken $token, User $user, int $pageId): array
     {
-        $page = $this->pages->find($user, $pageId);
+        $page = $this->visiblePage($user, $pageId);
         if ($token->writeMode === McpToken::WRITE_NONE) {
             throw new McpToolException('Dieser MCP-Zugang darf nur lesen.');
         }

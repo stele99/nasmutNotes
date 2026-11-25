@@ -158,7 +158,7 @@ final class McpServer
             . ' Aufgabenliste (Kapitel mit Aufgaben) und Logbuch (Einträge mit Spalten). Finde Seiten mit'
             . ' search_pages oder list_pages und lies sie mit read_page. '
             . $write . $create
-            . ' Verschlüsselte Notizen sind weder les- noch änderbar.';
+            . ' Verschlüsselte Notizen und vom Nutzer für MCP gesperrte Notizbücher sind nicht zugänglich.';
     }
 
     /**

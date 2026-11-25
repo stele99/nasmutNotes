@@ -673,10 +673,10 @@ export function workspaceShell() {
       }
     },
 
-    // ------------------------------------- MCP-Freigabe ganzer Notizbücher
+    // ---------------------- MCP: Notizbücher freigeben oder sperren
 
-    /** Freigegebene Notizbuch-IDs; null, solange nicht geladen. */
-    notebookMcpGrants: null,
+    /** Zustand je Notizbuch-ID (default/write/excluded); null, solange nicht geladen. */
+    notebookMcpModes: null,
     notebookMcpSaving: false,
 
     async loadNotebookMcpGrants() {
@@ -685,21 +685,31 @@ export function workspaceShell() {
       }
       try {
         const data = await apiFetch('/api/profile/mcp-notebooks');
-        this.notebookMcpGrants = (data.notebooks || [])
-          .filter((notebook) => notebook.writable)
-          .map((notebook) => Number(notebook.id));
+        const modes = {};
+        (data.notebooks || []).forEach((notebook) => {
+          modes[Number(notebook.id)] = notebook.mode || 'default';
+        });
+        this.notebookMcpModes = modes;
       } catch (error) {
-        this.notebookMcpGrants = null;
+        this.notebookMcpModes = null;
       }
     },
 
-    isNotebookMcpWritable(notebook) {
-      return Array.isArray(this.notebookMcpGrants) && this.notebookMcpGrants.includes(Number(notebook.id));
+    notebookMcpMode(notebook) {
+      return this.notebookMcpModes?.[Number(notebook.id)] || 'default';
     },
 
-    /** Freigeben setzt Schreibrecht voraus; zurücknehmen geht immer. */
+    isNotebookMcpWritable(notebook) {
+      return this.notebookMcpMode(notebook) === 'write';
+    },
+
+    isNotebookMcpExcluded(notebook) {
+      return this.notebookMcpMode(notebook) === 'excluded';
+    },
+
+    /** Freigeben setzt Schreibrecht voraus; zurücknehmen geht immer. Gesperrt: kein Freigeben. */
     notebookMcpVisible(notebook) {
-      if (this.notebookMcpGrants === null) {
+      if (this.notebookMcpModes === null || this.isNotebookMcpExcluded(notebook)) {
         return false;
       }
       const canEdit = notebook.is_owner === true || notebook.share_permission !== 'read';
@@ -707,32 +717,52 @@ export function workspaceShell() {
       return canEdit || this.isNotebookMcpWritable(notebook);
     },
 
+    notebookMcpExclusionVisible() {
+      return this.notebookMcpModes !== null;
+    },
+
     notebookMcpLabel(notebook) {
       return this.isNotebookMcpWritable(notebook) ? 'MCP-Freigabe entziehen' : 'Für MCP freigeben';
     },
 
-    async toggleNotebookMcp(notebook) {
+    notebookMcpExclusionLabel(notebook) {
+      return this.isNotebookMcpExcluded(notebook) ? 'MCP-Sperre aufheben' : 'Für MCP sperren';
+    },
+
+    toggleNotebookMcp(notebook) {
+      return this.setNotebookMcpMode(notebook, this.isNotebookMcpWritable(notebook) ? 'default' : 'write');
+    },
+
+    toggleNotebookMcpExclusion(notebook) {
+      return this.setNotebookMcpMode(notebook, this.isNotebookMcpExcluded(notebook) ? 'default' : 'excluded');
+    },
+
+    async setNotebookMcpMode(notebook, mode) {
       if (this.notebookMcpSaving) {
         return;
       }
-      const writable = !this.isNotebookMcpWritable(notebook);
+      const previous = this.notebookMcpMode(notebook);
       this.notebookMcpSaving = true;
       this.closeNotebookMenu();
       try {
         const result = await apiFetch(`/api/notebooks/${notebook.id}/mcp-access`, {
           method: 'PUT',
-          body: JSON.stringify({ writable }),
+          body: JSON.stringify({ mode }),
         });
         await this.loadNotebookMcpGrants();
-        if (!writable) {
-          showToast(`MCP-Clients dürfen „${notebook.name}“ nicht mehr bearbeiten.`);
-        } else if (result.selected_tokens === 0 && result.all_tokens === 0) {
+        if (mode === 'excluded') {
+          showToast(`„${notebook.name}“ ist für MCP-Clients gesperrt - sie sehen weder das Notizbuch noch seine Seiten.`);
+        } else if (mode === 'write' && result.selected_tokens === 0 && result.all_tokens === 0) {
           showToast(`„${notebook.name}“ freigegeben - wirkt, sobald ein MCP-Zugang „Nur freigegebene Seiten bearbeiten“ hat.`);
-        } else {
+        } else if (mode === 'write') {
           showToast(`MCP-Clients dürfen alle Seiten in „${notebook.name}“ bearbeiten.`);
+        } else if (previous === 'excluded') {
+          showToast(`MCP-Sperre für „${notebook.name}“ aufgehoben.`);
+        } else {
+          showToast(`MCP-Clients dürfen „${notebook.name}“ nicht mehr bearbeiten.`);
         }
       } catch (error) {
-        showToast(error.message || 'Die MCP-Freigabe konnte nicht gespeichert werden.', 'error');
+        showToast(error.message || 'Die MCP-Einstellung konnte nicht gespeichert werden.', 'error');
       } finally {
         this.notebookMcpSaving = false;
       }

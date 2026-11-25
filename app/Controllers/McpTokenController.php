@@ -120,8 +120,17 @@ final class McpTokenController
     {
         $user = CurrentUser::require($request);
         $body = (array) ($request->getParsedBody() ?? []);
+        // `mode` (default/write/excluded, FR-MCP-08) oder - kürzer - `writable`.
+        if (array_key_exists('mode', $body)) {
+            return JsonResponse::json($response, $this->tokens->setNotebookMode(
+                $user,
+                (int) ($args['id'] ?? 0),
+                $body['mode'],
+                RequestIp::hash($request),
+            ));
+        }
         if (!is_bool($body['writable'] ?? null)) {
-            throw new ValidationException('writable muss true oder false sein.');
+            throw new ValidationException('mode oder writable angeben.');
         }
 
         return JsonResponse::json($response, $this->tokens->setNotebookWritable(
