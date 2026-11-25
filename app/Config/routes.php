@@ -145,6 +145,8 @@ return static function (App $app, ContainerInterface $container): void {
         $group->patch('/{id}', [McpTokenController::class, 'update']);
         $group->delete('/{id}', [McpTokenController::class, 'destroy']);
     })->add(new RequireAuthMiddleware(true));
+    $app->get('/api/profile/mcp-notebooks', [McpTokenController::class, 'notebooks'])
+        ->add(new RequireAuthMiddleware(true));
 
     // Eigene Anmeldungen: einsehen, einzeln oder alle anderen beenden.
     $app->group('/api/profile/sessions', function ($group): void {
@@ -177,6 +179,8 @@ return static function (App $app, ContainerInterface $container): void {
         $group->patch('/{id}/shares/{userId}', [NotebookShareController::class, 'update']);
         $group->delete('/{id}/shares/{userId}', [NotebookShareController::class, 'destroy']);
         $group->delete('/{id}/share-access', [NotebookShareController::class, 'leave']);
+        // Ganzes Notizbuch für die eigenen MCP-Clients freigeben (FR-MCP-03).
+        $group->put('/{id}/mcp-access', [McpTokenController::class, 'updateNotebookAccess']);
     })->add(new RequireAuthMiddleware(true));
 
     $app->group('/api/pages', function ($group): void {

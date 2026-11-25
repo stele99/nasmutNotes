@@ -103,7 +103,7 @@ final class McpTools
             }
 
             $data = match ($name) {
-                'list_notebooks' => $this->listNotebooks($user),
+                'list_notebooks' => $this->listNotebooks($token, $user),
                 'list_pages' => $this->listPages($token, $user, $arguments),
                 'search_pages' => $this->searchPages($token, $user, $arguments),
                 'read_page' => $this->readPage($token, $user, $arguments),
@@ -165,17 +165,28 @@ final class McpTools
     // Lesen
 
     /** @return array<string, mixed> */
-    private function listNotebooks(User $user): array
+    private function listNotebooks(McpToken $token, User $user): array
     {
-        $notebooks = array_map(static fn (array $notebook): array => [
-            'id' => (int) $notebook['id'],
-            'name' => (string) $notebook['name'],
-            'is_owner' => (bool) ($notebook['is_owner'] ?? true),
-            'owner_name' => $notebook['owner_name'] ?? null,
-            'permission' => ($notebook['is_owner'] ?? true) === true
-                ? 'write'
-                : (($notebook['share_permission'] ?? 'write') === 'read' ? 'read' : 'write'),
-        ], $this->notebooks->listWithShared($user));
+        $granted = $this->tokens->grantedNotebookIds($user);
+        $notebooks = array_map(static function (array $notebook) use ($token, $granted): array {
+            $canEdit = McpTokenService::canEditNotebook($notebook);
+
+            return [
+                'id' => (int) $notebook['id'],
+                'name' => (string) $notebook['name'],
+                'is_owner' => (bool) ($notebook['is_owner'] ?? true),
+                'owner_name' => $notebook['owner_name'] ?? null,
+                'permission' => $canEdit ? 'write' : 'read',
+                // Darf dieser Client Seiten darin ändern? Im Modus "selected"
+                // nur bei freigegebenem Notizbuch; einzeln freigegebene Seiten
+                // zeigt read_page.
+                'mcp_can_write' => $canEdit && match ($token->writeMode) {
+                    McpToken::WRITE_ALL => true,
+                    McpToken::WRITE_SELECTED => isset($granted[(int) $notebook['id']]),
+                    default => false,
+                },
+            ];
+        }, $this->notebooks->listWithShared($user));
 
         return ['notebooks' => array_values($notebooks)];
     }
@@ -593,8 +604,8 @@ final class McpTools
             && !$this->tokens->isPageGranted($user, (int) $page['id'])
         ) {
             throw new McpToolException(
-                'Diese Seite ist nicht für MCP-Clients freigegeben. Der Nutzer kann das im Teilen-Dialog'
-                . ' der Seite unter „MCP-Clients" einschalten.',
+                'Diese Seite ist nicht für MCP-Clients freigegeben. Der Nutzer kann sie im Teilen-Dialog'
+                . ' der Seite freigeben oder ihr ganzes Notizbuch über dessen Menü („Für MCP freigeben").',
             );
         }
         $this->pages->assertCanWrite($user, (int) $page['id']);
@@ -854,7 +865,8 @@ final class McpTools
         return [
             'list_notebooks' => [
                 'title' => 'Notizbücher auflisten',
-                'description' => 'Listet die Notizbücher des Nutzers (eigene und mit ihm geteilte).',
+                'description' => 'Listet die Notizbücher des Nutzers (eigene und mit ihm geteilte).'
+                    . ' mcp_can_write zeigt, ob dieser Client Seiten darin ändern darf.',
                 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
                 'annotations' => $readOnly,
             ],

@@ -44,6 +44,8 @@ const ACTION_LABELS = {
   mcp_token_revoked: 'MCP-Zugang widerrufen',
   mcp_page_granted: 'Seite für MCP freigegeben',
   mcp_page_revoked: 'MCP-Freigabe der Seite entzogen',
+  mcp_notebook_granted: 'Notizbuch für MCP freigegeben',
+  mcp_notebook_revoked: 'MCP-Freigabe des Notizbuchs entzogen',
   mcp_page_created: 'Notiz per MCP angelegt',
   mcp_note_updated: 'Notiz per MCP geändert',
   mcp_task_created: 'Aufgabe per MCP angelegt',

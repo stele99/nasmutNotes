@@ -35,6 +35,7 @@ use App\Repositories\TaskRepository;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkspaceRepository;
 use App\Support\AdminEmails;
+use App\Support\ForbiddenException;
 use App\Support\NotFoundException;
 use App\Support\RateLimiter;
 use App\Support\ValidationException;
@@ -53,6 +54,7 @@ final class McpServerTest extends TestCase
     private PageService $pages;
     private NoteService $notes;
     private McpTokenService $tokens;
+    private NotebookService $notebooks;
     private McpServer $server;
     private User $user;
     private User $otherUser;
@@ -65,6 +67,7 @@ final class McpServerTest extends TestCase
         $pageRepository = new PageRepository($this->pdo);
         $notebookShares = new NotebookShareRepository($this->pdo);
         $notebooks = new NotebookService($this->pdo, new NotebookRepository($this->pdo), $workspaces, $notebookShares);
+        $this->notebooks = $notebooks;
         $this->pages = new PageService(
             $pageRepository,
             $workspaces,
@@ -90,6 +93,7 @@ final class McpServerTest extends TestCase
             new McpTokenRepository($this->pdo),
             new UserRepository($this->pdo, new AdminEmails('')),
             $this->pages,
+            $notebooks,
             $auditLog,
         );
         $this->server = new McpServer(new McpTools(
@@ -594,5 +598,106 @@ final class McpServerTest extends TestCase
 
         self::assertSame(201, $response->getStatusCode());
         self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
+    }
+
+    private function notebook(string $name, ?User $user = null): int
+    {
+        return (int) $this->notebooks->create($user ?? $this->user, ['name' => $name])['id'];
+    }
+
+    private function shareNotebook(int $notebookId, User $with, string $permission): void
+    {
+        $this->pdo->prepare(
+            'INSERT OR REPLACE INTO notebook_shares (user_id, notebook_id, permission) VALUES (:u, :n, :p)'
+        )->execute(['u' => $with->id, 'n' => $notebookId, 'p' => $permission]);
+    }
+
+    public function testNotebookGrantCoversAllPagesIncludingFutureOnes(): void
+    {
+        $notebookId = $this->notebook('Projekt');
+        $existing = $this->note('Alt', 'Anfang');
+        $this->pages->update($this->user, $existing, ['notebook_id' => $notebookId]);
+        $outside = $this->note('Draußen', 'Anfang');
+        $token = $this->token(McpToken::WRITE_SELECTED);
+
+        $denied = $this->call($token, 'update_note', ['page_id' => $existing, 'markdown' => 'x']);
+        self::assertToolError($denied, 'ganzes Notizbuch');
+
+        $access = $this->tokens->setNotebookWritable($this->user, $notebookId, true, 'ip');
+        self::assertTrue($access['writable']);
+
+        $allowed = $this->call($token, 'update_note', ['page_id' => $existing, 'markdown' => 'x']);
+        self::assertFalse($allowed['isError'] ?? false, (string) json_encode($allowed));
+
+        // Später ins Notizbuch gelegte Seiten sind sofort mit freigegeben ...
+        $later = (int) $this->pages->create($this->user, 'task', 'Neu', null, $notebookId)['id'];
+        $added = $this->call($token, 'add_task', ['page_id' => $later, 'title' => 'Aufgabe']);
+        self::assertFalse($added['isError'] ?? false, (string) json_encode($added));
+        self::assertTrue($this->tokens->pageAccess($this->user, $later)['notebook_writable']);
+        self::assertFalse($this->tokens->pageAccess($this->user, $later)['writable']);
+
+        // ... Seiten außerhalb nicht, und herausverschobene verlieren die Freigabe.
+        self::assertToolError(
+            $this->call($token, 'update_note', ['page_id' => $outside, 'markdown' => 'x']),
+            'nicht für MCP-Clients freigegeben',
+        );
+        $this->pages->update($this->user, $existing, ['notebook_id' => null]);
+        self::assertToolError(
+            $this->call($token, 'update_note', ['page_id' => $existing, 'markdown' => 'y']),
+            'nicht für MCP-Clients freigegeben',
+        );
+
+        $notebooks = $this->call($token, 'list_notebooks', [])['structuredContent']['notebooks'];
+        self::assertTrue($notebooks[0]['mcp_can_write']);
+
+        $this->tokens->setNotebookWritable($this->user, $notebookId, false, 'ip');
+        self::assertToolError(
+            $this->call($token, 'add_task', ['page_id' => $later, 'title' => 'Zwei']),
+            'nicht für MCP-Clients freigegeben',
+        );
+    }
+
+    public function testReadOnlyNotebookShareCannotBeGranted(): void
+    {
+        $notebookId = $this->notebook('Fremd', $this->otherUser);
+        $this->shareNotebook($notebookId, $this->user, 'read');
+
+        $this->expectException(ForbiddenException::class);
+        $this->tokens->setNotebookWritable($this->user, $notebookId, true, 'ip');
+    }
+
+    public function testForeignNotebookCannotBeGranted(): void
+    {
+        $notebookId = $this->notebook('Fremd', $this->otherUser);
+
+        $this->expectException(NotFoundException::class);
+        $this->tokens->setNotebookWritable($this->user, $notebookId, true, 'ip');
+    }
+
+    public function testNotebookGrantNeverOutlivesTheUsersOwnWriteRight(): void
+    {
+        $notebookId = $this->notebook('Team', $this->otherUser);
+        $this->shareNotebook($notebookId, $this->user, 'write');
+        $pageId = (int) $this->pages->create($this->otherUser, 'note', 'Gemeinsam', null, $notebookId)['id'];
+        $this->tokens->setNotebookWritable($this->user, $notebookId, true, 'ip');
+        $token = $this->token(McpToken::WRITE_SELECTED);
+
+        $allowed = $this->call($token, 'update_note', ['page_id' => $pageId, 'markdown' => 'von A']);
+        self::assertFalse($allowed['isError'] ?? false, (string) json_encode($allowed));
+
+        // Die Freigabe gilt nur für A: B's eigene Clients bleiben außen vor.
+        self::assertFalse($this->tokens->isPageGranted($this->otherUser, $pageId));
+
+        // Wird A auf Lesen herabgestuft, schreibt auch sein Client nicht mehr.
+        $this->shareNotebook($notebookId, $this->user, 'read');
+        self::assertToolError(
+            $this->call($token, 'update_note', ['page_id' => $pageId, 'markdown' => 'nochmal']),
+            'nur lesend',
+        );
+
+        // Die Übersicht zeigt die verbliebene Freigabe, damit A sie zurücknehmen kann.
+        $list = $this->tokens->notebookAccessList($this->user)['notebooks'];
+        self::assertSame([['id' => $notebookId, 'name' => 'Team', 'owner_name' => 'b@example.com', 'is_owner' => false, 'can_edit' => false, 'writable' => true]], $list);
+        self::assertFalse($this->tokens->setNotebookWritable($this->user, $notebookId, false, 'ip')['writable']);
     }
 }
