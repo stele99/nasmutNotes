@@ -54,7 +54,11 @@ final class McpTokenController
             RequestIp::hash($request),
         );
 
-        return JsonResponse::json($response, $result, 201);
+        // Die Antwort trägt den einzigen Klartext des Tokens: nirgends
+        // zwischenspeichern (Browser, Proxy, CDN).
+        return JsonResponse::json($response, $result, 201)
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Pragma', 'no-cache');
     }
 
     /** @param array<string, string> $args */

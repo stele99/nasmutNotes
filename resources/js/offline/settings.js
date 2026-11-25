@@ -246,6 +246,7 @@ export function offlineSettings() {
         return;
       }
       this.open = false;
+      this.forgetMcpSecret();
     },
 
     /** @param {CustomEvent} event */
