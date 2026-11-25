@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Domain\Mcp;
 
 use App\Controllers\McpController;
+use App\Controllers\McpTokenController;
 use App\Domain\Export\MarkdownRenderer;
 use App\Domain\Import\MarkdownConverter;
 use App\Domain\Log\LogService;
@@ -552,5 +553,46 @@ final class McpServerTest extends TestCase
         $list = (string) $this->post('{"jsonrpc":"2.0","id":2,"method":"tools/list"}', "Bearer {$raw}")->getBody();
         // Leere Eigenschaften müssen als JSON-Objekt ankommen, nicht als Liste.
         self::assertStringContainsString('"inputSchema":{"type":"object","properties":{}}', $list);
+    }
+
+    public function testTokenIsStoredOnlyAsHashAndNeverReturnedAgain(): void
+    {
+        $issued = $this->tokens->issue($this->user, 'Claude', McpToken::WRITE_ALL, true, 'ip');
+        $raw = (string) $issued['token'];
+        self::assertMatchesRegularExpression('/^nmcp_[0-9a-f]{64}$/', $raw);
+
+        $stmt = $this->pdo->prepare('SELECT * FROM mcp_tokens WHERE id = :id');
+        $stmt->execute(['id' => $issued['id']]);
+        $row = $stmt->fetch();
+        self::assertIsArray($row);
+        self::assertSame(hash('sha256', $raw), $row['token_hash']);
+        // Weder der Token noch sein Zufallsteil steht irgendwo in der Zeile.
+        $stored = implode('|', array_map('strval', $row));
+        self::assertStringNotContainsString($raw, $stored);
+        self::assertStringNotContainsString(substr($raw, strlen(McpTokenService::TOKEN_PREFIX)), $stored);
+
+        $auditStmt = $this->pdo->prepare('SELECT group_concat(metadata) FROM audit_log');
+        $auditStmt->execute();
+        $audit = (string) $auditStmt->fetchColumn();
+        self::assertStringNotContainsString($raw, $audit);
+
+        self::assertArrayNotHasKey('token', $this->tokens->listFor($this->user)[0]);
+        self::assertArrayNotHasKey(
+            'token',
+            $this->tokens->update($this->user, (int) $issued['id'], ['label' => 'Neu'], 'ip'),
+        );
+    }
+
+    public function testCreateResponseIsNotCacheable(): void
+    {
+        $request = (new ServerRequestFactory())->createServerRequest('POST', '/api/profile/mcp-tokens')
+            ->withAttribute('user', $this->user)
+            ->withParsedBody(['label' => 'Claude', 'write_mode' => 'none', 'can_create' => false]);
+        $controller = new McpTokenController($this->tokens, new RateLimiter($this->pdo, true));
+
+        $response = $controller->store($request, (new ResponseFactory())->createResponse());
+
+        self::assertSame(201, $response->getStatusCode());
+        self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
     }
 }

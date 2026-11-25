@@ -62,6 +62,16 @@ export function mcpSettingsMixin(instance) {
       create: `mcp-token-create-${instance}`,
     },
 
+    /**
+     * Den Klartext-Token vergessen: Er ist nur bis zum Schließen des Dialogs
+     * sichtbar und lässt sich danach nirgends mehr abrufen - auch nicht durch
+     * erneutes Öffnen der Einstellungen (FR-MCP-01).
+     */
+    forgetMcpSecret() {
+      this.mcpLastCreated = null;
+      this.mcpCopied = '';
+    },
+
     mcpEndpoint() {
       return mcpEndpointUrl();
     },
